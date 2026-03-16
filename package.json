@@ -1,0 +1,24 @@
+{
+	"name": "@pieverse/purr-cli",
+	"version": "0.1.0",
+	"description": "Calldata builder CLI for on-chain step construction",
+	"type": "module",
+	"bin": {
+		"purr": "./dist/purr.js"
+	},
+	"scripts": {
+		"build": "tsc",
+		"bundle": "esbuild src/main.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/purr.bundle.cjs",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"viem": "^2.46.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"esbuild": "^0.24.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.0.0"
+	}
+}

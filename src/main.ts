@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+declare const PURR_VERSION: string
 import { configGet, configList, configSet } from './api-client.js'
 import { executeStepsFromFile, executeStepsFromJson } from './executor.js'
 import { requireArgOrFile } from './file-input.js'
@@ -116,10 +117,7 @@ async function main(): Promise<void> {
 	const [group, command, ...rest] = process.argv.slice(2)
 
 	if (group === 'version' || group === '--version' || group === '-v') {
-		const { createRequire } = await import('node:module')
-		const require = createRequire(import.meta.url)
-		const pkg = require('../package.json') as { version: string }
-		console.log(`purr ${pkg.version}`)
+		console.log(`purr ${PURR_VERSION}`)
 		return
 	}
 

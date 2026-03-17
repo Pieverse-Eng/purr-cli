@@ -68,12 +68,12 @@ export function resolveCredentials(): Credentials {
 
 	const apiUrl = process.env.WALLET_API_URL ?? config['api-url']
 	const apiToken = process.env.WALLET_API_TOKEN ?? config['api-token']
-	const instanceId = process.env.WALLET_INSTANCE_ID ?? config['instance-id']
+	const instanceId = process.env.INSTANCE_ID ?? config['instance-id']
 
 	const missing: string[] = []
 	if (!apiUrl) missing.push('WALLET_API_URL env var or api-url config')
 	if (!apiToken) missing.push('WALLET_API_TOKEN env var or api-token config')
-	if (!instanceId) missing.push('WALLET_INSTANCE_ID env var or instance-id config')
+	if (!instanceId) missing.push('INSTANCE_ID env var or instance-id config')
 
 	if (missing.length > 0) {
 		throw new Error(

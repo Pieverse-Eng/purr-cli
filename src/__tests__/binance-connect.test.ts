@@ -87,7 +87,7 @@ describe('binance-connect', () => {
 			expect(result).toEqual({ networks: ['BSC', 'ETH'] })
 
 			const [url] = mock.mock.calls[0]
-			expect(url).toContain('/crypto-network-list')
+			expect(url).toContain('/crypto-network')
 		})
 	})
 
@@ -106,8 +106,8 @@ describe('binance-connect', () => {
 			const body = JSON.parse(mock.mock.calls[0][1].body)
 			expect(body.fiatCurrency).toBe('USD')
 			expect(body.cryptoCurrency).toBe('USDT')
-			expect(body.fiatAmount).toBe('50')
-			expect(body).not.toHaveProperty('paymentMethod')
+			expect(body.requestedAmount).toBe('50')
+			expect(body).not.toHaveProperty('payMethodCode')
 		})
 
 		it('includes optional paymentMethod', async () => {
@@ -122,7 +122,7 @@ describe('binance-connect', () => {
 			})
 
 			const body = JSON.parse(mock.mock.calls[0][1].body)
-			expect(body.paymentMethod).toBe('CARD')
+			expect(body.payMethodCode).toBe('CARD')
 		})
 	})
 
@@ -146,9 +146,9 @@ describe('binance-connect', () => {
 				redirectUrl: 'https://pay.binance.com/checkout/abc',
 			})
 			const body = JSON.parse(mock.mock.calls[0][1].body)
-			expect(body.cryptoNetwork).toBe('BSC')
-			expect(body.walletAddress).toBe('0x1234567890123456789012345678901234567890')
-			expect(body.fiatAmount).toBe('50')
+			expect(body.network).toBe('BSC')
+			expect(body.address).toBe('0x1234567890123456789012345678901234567890')
+			expect(body.requestedAmount).toBe('50')
 		})
 
 		it('auto-generates externalOrderId', async () => {
@@ -164,7 +164,7 @@ describe('binance-connect', () => {
 			})
 
 			const body = JSON.parse(mock.mock.calls[0][1].body)
-			expect(body.externalOrderId).toMatch(/^oc_[^_]+_\d+_[a-f0-9]+$/)
+			expect(body.externalOrderId).toMatch(/^oc[a-z0-9]+$/)
 		})
 
 		it('uses custom externalOrderId when provided', async () => {
@@ -194,7 +194,7 @@ describe('binance-connect', () => {
 			expect(result).toEqual({ status: 'completed', cryptoAmount: '49.85' })
 
 			const body = JSON.parse(mock.mock.calls[0][1].body)
-			expect(body.orderId).toBe('bc-123')
+			expect(body.externalOrderId).toBe('bc-123')
 		})
 	})
 

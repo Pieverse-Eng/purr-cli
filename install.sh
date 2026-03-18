@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Purr CLI installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.sh | bash
-# Pin a version: PURR_VERSION=v0.1.0 curl -fsSL ... | bash
+# Pin a version: curl -fsSL ... | PURR_VERSION=v0.1.0 bash
 
 REPO="Pieverse-Eng/purr-cli"
 INSTALL_DIR="$HOME/.purrfectclaw/bin"

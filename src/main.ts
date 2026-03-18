@@ -48,6 +48,20 @@ import {
 	buildV3IncreaseLiquiditySteps,
 	buildV3MintSteps,
 } from './vendors/pancake.js'
+import {
+	buildOpenSeaBuySteps,
+	buildOpenSeaCancelListingPreview,
+	buildOpenSeaCancelOfferPreview,
+	buildOpenSeaListingPreview,
+	buildOpenSeaOfferPreview,
+	buildOpenSeaSellSteps,
+	buildOpenSeaSwapSteps,
+	cancelOpenSeaListing,
+	cancelOpenSeaOffer,
+	createOpenSeaListing,
+	createOpenSeaOffer,
+	OpenSeaCliError,
+} from './vendors/opensea.js'
 
 function parseArgs(argv: string[]): Record<string, string> {
 	const result: Record<string, string> = {}
@@ -97,6 +111,15 @@ function parseIntegerArg(value: string | undefined, name: string): number | unde
 	return parsed
 }
 
+function parseFloatArg(value: string | undefined, name: string): number | undefined {
+	if (value === undefined) return undefined
+	const parsed = Number.parseFloat(value)
+	if (!Number.isFinite(parsed)) {
+		throw new Error(`Invalid --${name}: "${value}"`)
+	}
+	return parsed
+}
+
 function parseBooleanFlag(value: string | undefined): boolean | undefined {
 	if (value === undefined) return undefined
 	const normalized = value.trim().toLowerCase()
@@ -111,6 +134,34 @@ function parseDeadline(value: string): number {
 		throw new Error(`Invalid --deadline: "${value}" — must be a positive unix timestamp`)
 	}
 	return n
+}
+
+function formatOpenSeaError(err: unknown): string {
+	if (err instanceof OpenSeaCliError) {
+		return JSON.stringify(
+			{
+				error: {
+					code: err.code,
+					message: err.message,
+					...(err.details ? { details: err.details } : {}),
+				},
+			},
+			null,
+			2,
+		)
+	}
+
+	const message = err instanceof Error ? err.message : String(err)
+	return JSON.stringify(
+		{
+			error: {
+				code: 'OPENSEA_ERROR',
+				message,
+			},
+		},
+		null,
+		2,
+	)
 }
 
 async function main(): Promise<void> {
@@ -184,6 +235,7 @@ Groups:
   binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
   dflow             DFlow Solana-only swap
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
+  opensea           OpenSea execution/signing helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
@@ -200,6 +252,14 @@ Examples:
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
+  purr opensea buy --chain ethereum --collection pudgypenguins --token-id 5598 --wallet 0x...
+  purr opensea sell --chain ethereum --collection pudgypenguins --token-id 7576 --wallet 0x...
+  purr opensea cancel-offer --chain ethereum --order-hash 0x... --wallet 0x...
+  purr opensea cancel-list --chain ethereum --order-hash 0x... --wallet 0x...
+  purr opensea make-offer --chain ethereum --collection pudgypenguins --token-id 7576 --wallet 0x... --amount 200000000000000
+  purr opensea create-list --chain ethereum --collection pudgypenguins --token-id 7576 --wallet 0x... --amount 4250000000000000000
+  purr opensea swap --from-chain base --from-address 0x0000000000000000000000000000000000000000 --to-chain base --to-address 0x4200000000000000000000000000000000000006 --quantity 1000000000000000 --wallet 0x...
+  purr opensea swap --from-chain base --from-address 0x0000000000000000000000000000000000000000 --to-chain base --to-address 0x4200000000000000000000000000000000000006 --quantity 1000000000000000 --wallet 0x... --execute
   purr binance-connect quote --fiat USD --crypto USDT --amount 50
   purr binance-connect buy --fiat USD --crypto USDT --amount 50 --network BSC --wallet 0x...
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -422,6 +482,118 @@ Examples:
 			}
 			console.log(JSON.stringify(result))
 			return
+		}
+
+		case 'opensea': {
+			switch (command) {
+				case 'buy':
+					output = await buildOpenSeaBuySteps({
+						chain: requireArg(args, 'chain'),
+						collection: requireArg(args, 'collection'),
+						tokenId: requireArg(args, 'token-id'),
+						wallet: requireArg(args, 'wallet'),
+					})
+					break
+				case 'sell':
+					output = await buildOpenSeaSellSteps({
+						chain: requireArg(args, 'chain'),
+						collection: requireArg(args, 'collection'),
+						tokenId: requireArg(args, 'token-id'),
+						wallet: requireArg(args, 'wallet'),
+					})
+					break
+				case 'cancel-offer': {
+					const cancelArgs = {
+						chain: requireArg(args, 'chain'),
+						orderHash: requireArg(args, 'order-hash'),
+						wallet: requireArg(args, 'wallet'),
+						protocolAddress: args['protocol-address'],
+					}
+					if (executeFlag) {
+						const result = await cancelOpenSeaOffer(cancelArgs)
+						console.log(JSON.stringify(result, null, 2))
+						return
+					}
+					const preview = await buildOpenSeaCancelOfferPreview(cancelArgs)
+					console.log(JSON.stringify(preview, null, 2))
+					return
+				}
+				case 'cancel-list': {
+					const cancelArgs = {
+						chain: requireArg(args, 'chain'),
+						orderHash: requireArg(args, 'order-hash'),
+						wallet: requireArg(args, 'wallet'),
+						protocolAddress: args['protocol-address'],
+					}
+					if (executeFlag) {
+						const result = await cancelOpenSeaListing(cancelArgs)
+						console.log(JSON.stringify(result, null, 2))
+						return
+					}
+					const preview = await buildOpenSeaCancelListingPreview(cancelArgs)
+					console.log(JSON.stringify(preview, null, 2))
+					return
+				}
+				case 'make-offer': {
+					const offerArgs = {
+						chain: requireArg(args, 'chain'),
+						collection: requireArg(args, 'collection'),
+						tokenId: requireArg(args, 'token-id'),
+						wallet: requireArg(args, 'wallet'),
+						amount: requireArg(args, 'amount'),
+						protocolAddress: args['protocol-address'],
+						startTime: parseIntegerArg(args['start-time'], 'start-time'),
+						endTime: parseIntegerArg(args['end-time'], 'end-time'),
+						durationSeconds: parseIntegerArg(args['duration-seconds'], 'duration-seconds'),
+					}
+					if (executeFlag) {
+						const result = await createOpenSeaOffer(offerArgs)
+						console.log(JSON.stringify(result, null, 2))
+						return
+					}
+					const preview = await buildOpenSeaOfferPreview(offerArgs)
+					console.log(JSON.stringify(preview, null, 2))
+					return
+				}
+				case 'create-list': {
+					const listingArgs = {
+						chain: requireArg(args, 'chain'),
+						collection: requireArg(args, 'collection'),
+						tokenId: requireArg(args, 'token-id'),
+						wallet: requireArg(args, 'wallet'),
+						amount: requireArg(args, 'amount'),
+						protocolAddress: args['protocol-address'],
+						startTime: parseIntegerArg(args['start-time'], 'start-time'),
+						endTime: parseIntegerArg(args['end-time'], 'end-time'),
+						durationSeconds: parseIntegerArg(args['duration-seconds'], 'duration-seconds'),
+					}
+					if (executeFlag) {
+						const result = await createOpenSeaListing(listingArgs)
+						console.log(JSON.stringify(result, null, 2))
+						return
+					}
+					const preview = await buildOpenSeaListingPreview(listingArgs)
+					console.log(JSON.stringify(preview, null, 2))
+					return
+				}
+				case 'swap':
+					output = await buildOpenSeaSwapSteps({
+						fromChain: requireArg(args, 'from-chain'),
+						fromAddress: requireArg(args, 'from-address'),
+						toChain: requireArg(args, 'to-chain'),
+						toAddress: requireArg(args, 'to-address'),
+						quantity: requireArg(args, 'quantity'),
+						wallet: requireArg(args, 'wallet'),
+						slippage: parseFloatArg(args.slippage, 'slippage'),
+						recipient: args.recipient,
+					})
+					break
+				default:
+					throw new Error(
+						`Unknown opensea command: ${command}. Use: buy, sell, cancel-offer, cancel-list, make-offer, create-list, swap`,
+					)
+			}
+			break
 		}
 
 		case 'pancake': {
@@ -648,7 +820,7 @@ Examples:
 
 		default:
 			throw new Error(
-				`Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, pancake, lista, evm, wallet, execute, config, version`,
+				`Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
 			)
 	}
 
@@ -662,6 +834,10 @@ Examples:
 }
 
 main().catch((err) => {
+	if (process.argv[2] === 'opensea') {
+		console.error(formatOpenSeaError(err))
+		process.exit(1)
+	}
 	console.error(err.message)
 	process.exit(1)
 })

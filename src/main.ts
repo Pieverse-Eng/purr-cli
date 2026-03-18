@@ -397,6 +397,7 @@ Examples:
 						fiatCurrency: requireArg(args, 'fiat'),
 						cryptoCurrency: requireArg(args, 'crypto'),
 						fiatAmount: requireArg(args, 'amount'),
+						network: args.network,
 						paymentMethod: args['payment-method'],
 					})
 					break

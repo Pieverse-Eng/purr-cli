@@ -107,27 +107,31 @@ async function request(path: string, body?: Record<string, unknown>): Promise<un
 // Endpoints
 // ---------------------------------------------------------------------------
 
-const BUY = '/papi/v1/ramp/connect/buy'
+const BASE = '/papi/v1/ramp/connect'
+const BUY = `${BASE}/buy`
 
 export async function getTradingPairs(): Promise<unknown> {
 	return request(`${BUY}/trading-pairs`)
 }
 
 export async function getNetworks(): Promise<unknown> {
-	return request(`${BUY}/crypto-network-list`)
+	return request(`${BASE}/crypto-network`)
 }
 
 export async function getQuote(args: {
 	fiatCurrency: string
 	cryptoCurrency: string
 	fiatAmount: string
+	network?: string
 	paymentMethod?: string
 }): Promise<unknown> {
-	return request(`${BUY}/get-estimated-quote`, {
+	return request(`${BUY}/estimated-quote`, {
 		fiatCurrency: args.fiatCurrency,
 		cryptoCurrency: args.cryptoCurrency,
-		fiatAmount: args.fiatAmount,
-		...(args.paymentMethod != null && { paymentMethod: args.paymentMethod }),
+		requestedAmount: args.fiatAmount,
+		amountType: 1,
+		...(args.network != null && { network: args.network }),
+		...(args.paymentMethod != null && { payMethodCode: args.paymentMethod }),
 	})
 }
 
@@ -141,20 +145,23 @@ export async function createOrder(args: {
 	paymentMethod?: string
 }): Promise<unknown> {
 	const instanceId = process.env.INSTANCE_ID ?? 'unknown'
+	// externalOrderId must be alphanumeric only per Binance docs
 	const externalOrderId =
-		args.externalOrderId ?? `oc_${instanceId}_${Date.now()}_${randomUUID().slice(0, 8)}`
+		args.externalOrderId ??
+		`oc${instanceId.replace(/-/g, '')}${Date.now()}${randomUUID().slice(0, 8).replace(/-/g, '')}`
 
 	return request(`${BUY}/pre-order`, {
 		fiatCurrency: args.fiatCurrency,
 		cryptoCurrency: args.cryptoCurrency,
-		fiatAmount: args.fiatAmount,
-		cryptoNetwork: args.cryptoNetwork,
-		walletAddress: args.walletAddress,
+		requestedAmount: args.fiatAmount,
+		amountType: 1,
+		network: args.cryptoNetwork,
+		address: args.walletAddress,
 		externalOrderId,
-		...(args.paymentMethod != null && { paymentMethod: args.paymentMethod }),
+		...(args.paymentMethod != null && { payMethodCode: args.paymentMethod }),
 	})
 }
 
 export async function queryOrder(orderId: string): Promise<unknown> {
-	return request(`${BUY}/query-order`, { orderId })
+	return request(`${BASE}/order`, { externalOrderId: orderId })
 }

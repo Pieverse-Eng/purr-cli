@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 const OPENSEA_BASE_URL = 'https://api.opensea.io'
+const REQUEST_TIMEOUT_MS = 30_000
 export const OPENSEA_SEAPORT_V1_6 = '0x0000000000000068f116a894984e2db1123eb395'
 export const OPENSEA_CONDUIT_KEY =
 	'0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000'
@@ -86,7 +87,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		const res = await fetch(url, {
 			...init,
 			headers,
-			signal: AbortSignal.timeout(12000),
+			signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 		})
 
 		if (!res.ok) {
@@ -101,7 +102,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 		}
 
 		// Node fetch does not reliably honor local proxy env vars in some environments.
-		// Fall back to curl, which is already the canonical transport for the vendored skill.
+		// Fall back to curl only for connection-level failures (not HTTP errors).
+		const msg = error instanceof Error ? error.message : ''
+		const isConnectionFailure =
+			msg.includes('fetch failed') ||
+			msg.includes('ECONNREFUSED') ||
+			msg.includes('ENOTFOUND') ||
+			msg.includes('UND_ERR') ||
+			(error instanceof DOMException && error.name === 'TimeoutError')
+		if (!isConnectionFailure) throw error
+
 		return curlRequest<T>(url, headers, init?.method, init?.body)
 	}
 }
@@ -112,7 +122,7 @@ async function curlRequest<T>(
 	method?: string,
 	body?: BodyInit | null,
 ): Promise<T> {
-	const args = ['-sS', '--connect-timeout', '10', '--max-time', '30', '-w', '\n%{http_code}']
+	const args = ['-sS', '--connect-timeout', '10', '--max-time', String(REQUEST_TIMEOUT_MS / 1000), '-w', '\n%{http_code}']
 	for (const [key, value] of Object.entries(headers)) {
 		args.push('-H', `${key}: ${value}`)
 	}

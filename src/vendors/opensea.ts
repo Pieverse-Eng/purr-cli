@@ -1720,6 +1720,12 @@ export async function buildOpenSeaOfferPreview(
 	args: OpenSeaOfferArgs,
 ): Promise<OpenSeaOfferPreview> {
 	const prepared = await buildPreparedOfferOrder(args)
+	return buildOfferPreviewFromPrepared(prepared)
+}
+
+function buildOfferPreviewFromPrepared(
+	prepared: Awaited<ReturnType<typeof buildPreparedOfferOrder>>,
+): OpenSeaOfferPreview {
 	const paymentItem = prepared.parameters.offer[0]
 	if (!paymentItem) {
 		throw new Error('Prepared OpenSea offer order did not include a payment offer item')
@@ -1741,7 +1747,7 @@ export async function createOpenSeaOffer(
 ): Promise<OpenSeaOfferExecutionResult> {
 	const wallet = requireAddress(args.wallet, 'wallet')
 	const prepared = await buildPreparedOfferOrder(args)
-	const preview = await buildOpenSeaOfferPreview(args)
+	const preview = buildOfferPreviewFromPrepared(prepared)
 	const approval =
 		preview.steps.length > 0
 			? await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
@@ -1768,6 +1774,13 @@ export async function buildOpenSeaListingPreview(
 ): Promise<OpenSeaListingPreview> {
 	const wallet = requireAddress(args.wallet, 'wallet')
 	const prepared = await buildPreparedListingOrder(args)
+	return buildListingPreviewFromPrepared(prepared, wallet)
+}
+
+async function buildListingPreviewFromPrepared(
+	prepared: Awaited<ReturnType<typeof buildPreparedListingOrder>>,
+	wallet: `0x${string}`,
+): Promise<OpenSeaListingPreview> {
 	const steps = await buildListingApprovalStepsFromOrder(
 		prepared.parameters,
 		wallet,
@@ -1790,7 +1803,7 @@ export async function createOpenSeaListing(
 ): Promise<OpenSeaListingExecutionResult> {
 	const wallet = requireAddress(args.wallet, 'wallet')
 	const prepared = await buildPreparedListingOrder(args)
-	const preview = await buildOpenSeaListingPreview(args)
+	const preview = await buildListingPreviewFromPrepared(prepared, wallet)
 	const approval =
 		preview.steps.length > 0
 			? await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))

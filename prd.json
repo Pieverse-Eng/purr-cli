@@ -191,7 +191,7 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "Uses installer.uninstallSkill() for file cleanup and lock.removeLockEntry() / lock.upsertLockEntry() for state. Interactive mode via @clack/prompts."
     },
     {
@@ -206,7 +206,7 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "Use vitest (already in devDependencies). Mock filesystem for lock tests. Use a small test ZIP buffer for installer tests."
     }
   ]

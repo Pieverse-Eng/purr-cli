@@ -22,6 +22,10 @@
 - Install flow: downloadSkill() → installSkill() → upsertLockEntry() — each step can fail independently, wrap in try/catch
 - Interactive prompts: use @clack/prompts (text, select, multiselect, isCancel), dynamically imported to keep non-interactive path lightweight
 - TTY detection: check process.stdin.isTTY before showing interactive prompts; fall back to usage/error in non-TTY
+- Remove command: single-agent removal updates lock entry (upsertLockEntry), full removal deletes lock entry (removeLockEntry) + canonical dir
+- Confirmation prompts: skip with --yes or --json flag; require TTY for interactive confirmation
+- Tests: use real temp directories (tmpdir()) for filesystem tests — no mocking of fs needed; use fflate's zipSync to create test ZIP buffers
+- Tests: tsconfig excludes src/__tests__ from compilation; vitest handles test files independently
 
 ---
 
@@ -127,4 +131,31 @@
   - TTY check (process.stdin.isTTY) gates interactive mode — non-TTY falls back to error messages with usage instructions
   - slug variable changed from const to let to support reassignment from interactive prompt
   - Agent validation only runs on the explicit --agent flag path; interactive multi-select already provides valid agents
+---
+
+## 2026-03-19 - US-010
+- What was implemented: Remove skill command in src/skill/commands/remove.ts
+- Files changed: src/skill/commands/remove.ts (rewritten from stub)
+- **Learnings for future iterations:**
+  - Single-agent removal: uninstallSkill(agentSlug) removes agent dir, then update lock entry's agent_installs via upsertLockEntry()
+  - When last agent is removed: also call uninstallSkill() without agentSlug to remove canonical, then removeLockEntry()
+  - Full removal iterates Object.keys(entry.agent_installs) to remove each agent dir before removing canonical
+  - Confirmation prompt skipped for --json mode (programmatic use shouldn't block on interactive prompts)
+  - Agent slug validation happens before lock entry lookup to fail fast on invalid agents
+  - Lock entry agent_installs validated to confirm the specified agent actually has an install before proceeding
+---
+
+## 2026-03-19 - US-011
+- What was implemented: Unit tests for core skill modules (lock, agents, installer)
+- Files changed: src/__tests__/skill-lock.test.ts (new), src/__tests__/skill-agents.test.ts (new), src/__tests__/skill-installer.test.ts (new)
+- **Test coverage:**
+  - skill-lock: 11 tests — readLock empty/corrupt, writeLock+readLock roundtrip, atomic write, upsertLockEntry add/update/preserve, removeLockEntry, getLockEntry
+  - skill-agents: 9 tests — registry completeness, agent shape validation, path functions, getAgent lookup, detectInstalled shape and subset
+  - skill-installer: 5 tests — extractZip normal extraction, path traversal rejection (.. and embedded ..), SHA256 pass on correct hash, SHA256 fail on mismatch
+- **Learnings for future iterations:**
+  - Use real temp directories (os.tmpdir) instead of mocking fs — simpler, more reliable, tests actual filesystem behavior
+  - fflate's zipSync creates test ZIP buffers easily: `zipSync({ 'file.txt': new TextEncoder().encode('content') })`
+  - vi.spyOn(process, 'cwd') works for redirecting lock file paths to temp dirs
+  - tsconfig excludes __tests__ but vitest handles them independently — no config changes needed
+  - installSkill with empty agents array is valid and useful for testing SHA256 verification in isolation
 ---

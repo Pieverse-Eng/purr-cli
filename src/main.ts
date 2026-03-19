@@ -186,6 +186,7 @@ Groups:
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
+  skill             Skill management (list, install, remove)
   wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
@@ -622,6 +623,31 @@ Examples:
 			break
 		}
 
+		case 'skill': {
+			const positional = rest.filter((a) => !a.startsWith('--'))
+			switch (command) {
+				case 'list': {
+					const { skillList } = await import('./skill/commands/list.js')
+					await skillList(args)
+					return
+				}
+				case 'install': {
+					const { skillInstall } = await import('./skill/commands/install.js')
+					await skillInstall(args, positional)
+					return
+				}
+				case 'remove': {
+					const { skillRemove } = await import('./skill/commands/remove.js')
+					await skillRemove(args, positional)
+					return
+				}
+				default:
+					throw new Error(
+						`Unknown skill command: ${command}. Use: list, install, remove`,
+					)
+			}
+		}
+
 		case 'wallet': {
 			switch (command) {
 				case 'address':
@@ -648,7 +674,7 @@ Examples:
 
 		default:
 			throw new Error(
-				`Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, pancake, lista, evm, wallet, execute, config, version`,
+				`Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, pancake, lista, skill, evm, wallet, execute, config, version`,
 			)
 	}
 

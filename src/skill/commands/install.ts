@@ -1,43 +1,133 @@
 import pc from 'picocolors'
-import { downloadSkill } from '../api.js'
-import { getAgent } from '../agents.js'
+import { downloadSkill, listSkills } from '../api.js'
+import { getAgent, detectInstalled, getAllAgents } from '../agents.js'
 import { installSkill } from '../installer.js'
 import { getLockEntry, upsertLockEntry } from '../lock.js'
 import type { LockEntry } from '../lock.js'
 
+function isTTY(): boolean {
+	return process.stdin.isTTY === true
+}
+
+/**
+ * Interactively search and select a skill slug from the marketplace.
+ */
+async function promptSkillSlug(): Promise<string> {
+	const { text, select, isCancel } = await import('@clack/prompts')
+
+	const searchInput = await text({
+		message: 'Search for a skill on the marketplace',
+		placeholder: 'e.g. code-review, linting...',
+	})
+
+	if (isCancel(searchInput)) {
+		process.exit(0)
+	}
+
+	const searchTerm = (searchInput as string).trim()
+
+	let skills: Awaited<ReturnType<typeof listSkills>>
+	try {
+		skills = await listSkills({ search: searchTerm || undefined, limit: 20 })
+	} catch (err) {
+		console.error(err instanceof Error ? err.message : String(err))
+		process.exit(1)
+	}
+
+	if (skills.skills.length === 0) {
+		console.error(`No skills found${searchTerm ? ` matching "${searchTerm}"` : ''}.`)
+		process.exit(1)
+	}
+
+	const selected = await select({
+		message: 'Select a skill to install',
+		options: skills.skills.map((s) => ({
+			value: s.slug,
+			label: `${s.name} ${pc.dim(`(${s.slug})`)}`,
+			hint: s.description,
+		})),
+	})
+
+	if (isCancel(selected)) {
+		process.exit(0)
+	}
+
+	return selected as string
+}
+
+/**
+ * Interactively select target agents from detected installed agents.
+ */
+async function promptAgentSelection(): Promise<string[]> {
+	const { multiselect, isCancel } = await import('@clack/prompts')
+
+	const detected = detectInstalled()
+
+	if (detected.length === 0) {
+		console.error('No agents detected on this system.')
+		console.error('Specify target agent(s) manually with --agent <name>')
+		console.error(`Valid agents: ${getAllAgents().map(a => a.slug).join(', ')}`)
+		process.exit(1)
+	}
+
+	const selected = await multiselect({
+		message: 'Select target agent(s) to install the skill to',
+		options: detected.map((a) => ({
+			value: a.slug,
+			label: a.name,
+		})),
+		required: true,
+	})
+
+	if (isCancel(selected)) {
+		process.exit(0)
+	}
+
+	return selected as string[]
+}
+
 export async function skillInstall(args: Record<string, string>, positional: string[]): Promise<void> {
-	const slug = positional[0]
+	let slug = positional[0]
 	const isJson = args.json === 'true'
 	const isGlobal = args.global === 'true'
 	const isCopy = args.copy === 'true'
 	const isForce = args.force === 'true'
 	const scope = isGlobal ? 'global' : 'local' as const
 
+	// Interactive skill search if no slug provided
 	if (!slug) {
-		console.error('Usage: purr skill install <slug> --agent <name> [--global] [--copy] [--force] [--json]')
-		console.error('  --agent   Target agent(s), comma-separated (e.g. claude-code,cursor)')
-		console.error('  --global  Install to global scope')
-		console.error('  --copy    Force copy mode instead of symlink')
-		console.error('  --force   Overwrite if already installed')
-		console.error('  --json    Output result as JSON')
-		process.exit(1)
+		if (!isTTY()) {
+			console.error('Usage: purr skill install <slug> --agent <name> [--global] [--copy] [--force] [--json]')
+			console.error('  --agent   Target agent(s), comma-separated (e.g. claude-code,cursor)')
+			console.error('  --global  Install to global scope')
+			console.error('  --copy    Force copy mode instead of symlink')
+			console.error('  --force   Overwrite if already installed')
+			console.error('  --json    Output result as JSON')
+			process.exit(1)
+		}
+		slug = await promptSkillSlug()
 	}
 
+	// Interactive agent selection if no --agent provided
+	let agentSlugs: string[]
 	const agentArg = args.agent
 	if (!agentArg) {
-		console.error('Error: --agent flag is required. Specify target agent(s), e.g. --agent claude-code')
-		console.error('Use comma-separated values for multiple agents: --agent claude-code,cursor')
-		process.exit(1)
-	}
-
-	const agentSlugs = agentArg.split(',').map(s => s.trim()).filter(Boolean)
-
-	// Validate all agent names
-	for (const agentSlug of agentSlugs) {
-		const agent = getAgent(agentSlug)
-		if (!agent) {
-			console.error(`Error: Unknown agent "${agentSlug}". Valid agents: openclaw, claude-code, cursor, windsurf, cline, github-copilot`)
+		if (!isTTY()) {
+			console.error('Error: --agent flag is required. Specify target agent(s), e.g. --agent claude-code')
+			console.error('Use comma-separated values for multiple agents: --agent claude-code,cursor')
 			process.exit(1)
+		}
+		agentSlugs = await promptAgentSelection()
+	} else {
+		agentSlugs = agentArg.split(',').map(s => s.trim()).filter(Boolean)
+
+		// Validate all agent names
+		for (const agentSlug of agentSlugs) {
+			const agent = getAgent(agentSlug)
+			if (!agent) {
+				console.error(`Error: Unknown agent "${agentSlug}". Valid agents: ${getAllAgents().map(a => a.slug).join(', ')}`)
+				process.exit(1)
+			}
 		}
 	}
 

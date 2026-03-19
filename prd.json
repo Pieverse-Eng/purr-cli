@@ -96,7 +96,7 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Follow existing routing pattern in main.ts (switch on group, then switch on command). Stub handlers can just print 'not implemented yet'."
     },
     {
@@ -115,7 +115,7 @@
         "Typecheck passes"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Add picocolors as dependency. Default output is human-friendly table; --json outputs raw API response."
     },
     {
@@ -132,7 +132,7 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Reads lock file via lock.ts module. Same list.ts file handles both --remote and installed modes."
     },
     {
@@ -154,7 +154,7 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "This is the non-interactive path. All required info provided via flags. Orchestrates: api.downloadSkill() -> installer.installSkill() -> lock.upsertLockEntry()."
     },
     {
@@ -170,7 +170,7 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "Extends install.ts from US-008. @clack/prompts provides select(), multiselect(), text() for interactive UI. Check if stdin is TTY before showing prompts."
     },
     {

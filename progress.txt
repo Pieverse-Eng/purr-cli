@@ -1,0 +1,63 @@
+## Codebase Patterns
+- Config directory: ~/.purrfectclaw (used by api-client.ts for config storage)
+- CLI routing: main.ts uses switch/case on group then command, with parseArgs() for flags
+- Module pattern: ESM with .js extensions in imports, verbatimModuleSyntax enabled
+- Typecheck: `npx tsc --noEmit` (tsc not globally installed, use npx)
+- GPG signing disabled for commits on this branch (local GPG config issue)
+- homedir() from node:os used for home directory paths
+- Lock file uses atomic write (write .tmp then rename) to prevent corruption
+- Lock file paths: local = ./skills-lock.json, global = ~/.purrfectclaw/skills-lock.json
+- Marketplace API: base URL resolved via SKILL_MARKETPLACE_URL env → config 'skill-marketplace-url' → hardcoded default
+- Config reading: reuse readConfigFile pattern from api-client.ts (read ~/.purrfectclaw/config.json, return {} on missing/corrupt)
+- API client uses native fetch (Node 18+), no auth needed for public marketplace API
+- URL params: use encodeURIComponent for path segments, URLSearchParams for query strings
+- Canonical skill paths: local = .skills/<slug>/, global = ~/.purrfectclaw/skills/<slug>/
+- ZIP extraction: use fflate (unzipSync), always validate against zip-slip before writing
+- Symlink with 'junction' type for cross-platform compat; auto-fallback to copy on failure
+
+---
+
+## 2026-03-19 - US-001
+- What was implemented: Agent registry module at src/skill/agents.ts
+- Files changed: src/skill/agents.ts (new)
+- **Learnings for future iterations:**
+  - Agent definitions use readonly interface with function properties for path computation
+  - detectInstalled() probes config directories (e.g., ~/.claude, ~/.cursor) to determine agent presence
+  - getAllAgents() exported for listing all registered agents
+  - homedir() cached at module level for consistent path resolution
+---
+
+## 2026-03-19 - US-002
+- What was implemented: Lock file CRUD module at src/skill/lock.ts
+- Files changed: src/skill/lock.ts (new)
+- **Learnings for future iterations:**
+  - LockEntry and LockFile types use readonly properties for immutability
+  - readLock() returns empty `{ skills: [] }` on missing or corrupt files (fail-safe)
+  - writeLock() uses atomic write (write to .tmp, then rename) to prevent corruption
+  - upsertLockEntry() creates new skills array via spread + findIndex pattern
+  - lockFilePath() derives path from scope: local uses cwd(), global uses ~/.purrfectclaw/
+---
+
+## 2026-03-19 - US-003
+- What was implemented: Marketplace API client at src/skill/api.ts
+- Files changed: src/skill/api.ts (new)
+- **Learnings for future iterations:**
+  - SkillMeta and SkillListResponse types defined with readonly properties
+  - Base URL resolution: env var SKILL_MARKETPLACE_URL → config 'skill-marketplace-url' → hardcoded default
+  - loadConfig() replicates readConfigFile pattern from api-client.ts (private, not shared)
+  - downloadSkill() reads SHA256 from X-Skill-SHA256 response header
+  - All fetch calls wrapped in try/catch for network error handling with clear messages
+  - 404 responses handled specifically for getSkill() and downloadSkill()
+---
+
+## 2026-03-19 - US-004
+- What was implemented: ZIP installer module at src/skill/installer.ts
+- Files changed: src/skill/installer.ts (new), package.json (added fflate dependency)
+- **Learnings for future iterations:**
+  - extractZip() uses fflate's unzipSync with zip-slip validation (rejects .., absolute paths, entries escaping target)
+  - installSkill() flow: verifySha256 → extract to canonical → symlink/copy to each agent dir
+  - Symlink uses 'junction' type for Windows compatibility; auto-fallbacks to copy on symlink failure
+  - uninstallSkill() supports single-agent removal (agentSlug param) or full canonical cleanup
+  - copyDirRecursive() is a private helper for deep directory copy when symlinks aren't available
+  - canonicalDir() resolves: local = .skills/<slug>/, global = ~/.purrfectclaw/skills/<slug>/
+---

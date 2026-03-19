@@ -137,7 +137,9 @@ async function curlRequest<T>(
 		const status = Number.parseInt(statusText, 10)
 
 		if (!Number.isFinite(status)) {
-			throw new Error(`Could not parse OpenSea HTTP status from curl output: ${statusText || 'missing'}`)
+			throw new Error(
+				`Could not parse OpenSea HTTP status from curl output: ${statusText || 'missing'}`,
+			)
 		}
 		if (status < 200 || status >= 300) {
 			throw new Error(`OpenSea HTTP ${status}: ${responseBody.slice(0, 500)}`)
@@ -446,7 +448,9 @@ export async function cancelOrder(args: {
 		const message = getErrorMessage(error)
 		const httpError = parseHttpError(message)
 		if (httpError) {
-			throw new Error(`OpenSea order cancellation failed for ${args.orderHash}: ${httpError.apiMessage}`)
+			throw new Error(
+				`OpenSea order cancellation failed for ${args.orderHash}: ${httpError.apiMessage}`,
+			)
 		}
 
 		throw new Error(`OpenSea order cancellation failed for ${args.orderHash}: ${message}`)
@@ -523,7 +527,9 @@ export async function getBestOffer(args: {
 			)
 		}
 
-		throw new Error(`OpenSea offer lookup failed for ${args.collection} #${args.tokenId}: ${message}`)
+		throw new Error(
+			`OpenSea offer lookup failed for ${args.collection} #${args.tokenId}: ${message}`,
+		)
 	}
 }
 
@@ -557,9 +563,7 @@ export async function getListingFulfillmentData(args: {
 			)
 		}
 
-		throw new Error(
-			`OpenSea fulfillment lookup failed for order ${args.orderHash}: ${message}`,
-		)
+		throw new Error(`OpenSea fulfillment lookup failed for order ${args.orderHash}: ${message}`)
 	}
 }
 

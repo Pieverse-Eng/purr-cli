@@ -81,8 +81,11 @@ export function resolveCredentials(): Credentials {
 		)
 	}
 
-	// TypeScript narrowing: missing.length === 0 guarantees all three are truthy
-	return { apiUrl: apiUrl!, apiToken: apiToken!, instanceId: instanceId! }
+	if (!apiUrl || !apiToken || !instanceId) {
+		throw new Error('Missing required credentials')
+	}
+
+	return { apiUrl, apiToken, instanceId }
 }
 
 export async function apiGet<T = unknown>(path: string): Promise<T> {

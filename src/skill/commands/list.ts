@@ -1,5 +1,6 @@
 import pc from 'picocolors'
 import { listSkills } from '../api.js'
+import { readLock } from '../lock.js'
 
 export async function skillList(args: Record<string, string>): Promise<void> {
 	const isRemote = args.remote === 'true'
@@ -10,8 +11,51 @@ export async function skillList(args: Record<string, string>): Promise<void> {
 		return
 	}
 
-	// Installed mode will be implemented in US-007
-	console.log('purr skill list: installed mode not implemented yet')
+	listInstalledSkills(args, isJson)
+}
+
+function listInstalledSkills(args: Record<string, string>, json: boolean): void {
+	const scope = args.global === 'true' ? 'global' : 'local'
+	const lock = readLock(scope)
+
+	if (json) {
+		console.log(JSON.stringify(lock, null, 2))
+		return
+	}
+
+	if (lock.skills.length === 0) {
+		console.log(
+			scope === 'global'
+				? 'No skills installed globally. Use `purr skill install` to get started.'
+				: 'No skills installed in this project. Use `purr skill install` to get started.',
+		)
+		return
+	}
+
+	console.log(
+		pc.bold(
+			`${lock.skills.length} skill${lock.skills.length !== 1 ? 's' : ''} installed (${scope}):\n`,
+		),
+	)
+
+	for (const entry of lock.skills) {
+		console.log(`  ${pc.cyan(pc.bold(entry.slug))}  ${entry.name}`)
+		console.log(`  ${pc.dim('Installed:')} ${entry.installed_at}`)
+		console.log(`  ${pc.dim('Path:')}      ${entry.canonical_path}`)
+
+		const agentSlugs = Object.keys(entry.agent_installs)
+		if (agentSlugs.length > 0) {
+			console.log(`  ${pc.dim('Agents:')}`)
+			for (const agentSlug of agentSlugs) {
+				const info = entry.agent_installs[agentSlug]
+				console.log(
+					`    ${pc.yellow(agentSlug)}  ${pc.dim(info.path)}  (${info.method})`,
+				)
+			}
+		}
+
+		console.log()
+	}
 }
 
 async function listRemoteSkills(args: Record<string, string>, json: boolean): Promise<void> {

@@ -14,6 +14,14 @@
 - Canonical skill paths: local = .skills/<slug>/, global = ~/.purrfectclaw/skills/<slug>/
 - ZIP extraction: use fflate (unzipSync), always validate against zip-slip before writing
 - Symlink with 'junction' type for cross-platform compat; auto-fallback to copy on failure
+- Skill command routing: main.ts switch case with dynamic imports, early return pattern (like wallet)
+- Stub command handlers accept (args, positional?) — positional extracted via rest.filter(a => !a.startsWith('--'))
+- picocolors (imported as `pc`) used for CLI output styling; added as production dependency
+- Boolean flags (--remote, --json, --global) parsed as string 'true' by parseArgs, compare with === 'true'
+- parseArgs returns Record<string, string> (last value wins) — for multi-value flags use comma-separated: --agent claude-code,cursor
+- Install flow: downloadSkill() → installSkill() → upsertLockEntry() — each step can fail independently, wrap in try/catch
+- Interactive prompts: use @clack/prompts (text, select, multiselect, isCancel), dynamically imported to keep non-interactive path lightweight
+- TTY detection: check process.stdin.isTTY before showing interactive prompts; fall back to usage/error in non-TTY
 
 ---
 
@@ -60,4 +68,63 @@
   - uninstallSkill() supports single-agent removal (agentSlug param) or full canonical cleanup
   - copyDirRecursive() is a private helper for deep directory copy when symlinks aren't available
   - canonicalDir() resolves: local = .skills/<slug>/, global = ~/.purrfectclaw/skills/<slug>/
+---
+
+## 2026-03-19 - US-005
+- What was implemented: Skill command routing in main.ts with stub command handlers
+- Files changed: src/main.ts (modified), src/skill/commands/list.ts (new), src/skill/commands/install.ts (new), src/skill/commands/remove.ts (new)
+- **Learnings for future iterations:**
+  - Skill group uses early-return pattern (like wallet) — each sub-command returns directly, no StepOutput
+  - Dynamic imports used for command handlers to keep main.ts bundle lean
+  - Positional args extracted from rest via `rest.filter(a => !a.startsWith('--'))` since parseArgs only handles --flags
+  - install and remove handlers receive (args, positional) to support `purr skill install <slug>` pattern
+  - list handler receives only args (no positional needed)
+---
+
+## 2026-03-19 - US-006
+- What was implemented: List remote skills command in src/skill/commands/list.ts
+- Files changed: src/skill/commands/list.ts (modified), package.json (added picocolors dependency)
+- **Learnings for future iterations:**
+  - `--remote` flag triggers marketplace API call via listSkills()
+  - `--search` and `--category` passed through to API as query params
+  - `--json` outputs raw JSON for programmatic agent consumption
+  - Default output uses picocolors for human-readable styled table (slug in cyan bold, description dim, category yellow)
+  - API errors caught and printed to stderr with process.exit(1)
+  - Installed mode stub preserved for US-007 implementation
+---
+
+## 2026-03-19 - US-007
+- What was implemented: List installed skills command in src/skill/commands/list.ts
+- Files changed: src/skill/commands/list.ts (modified)
+- **Learnings for future iterations:**
+  - Installed mode reads lock file via readLock(scope) — scope determined by --global flag
+  - --json outputs raw lock file JSON for programmatic agent use
+  - Empty state messages are scope-aware (local vs global)
+  - Agent install details shown per skill: slug, path, method (symlink/copy)
+  - listInstalledSkills is synchronous (no async needed — lock file is local fs read)
+---
+
+## 2026-03-19 - US-008
+- What was implemented: Non-interactive install command in src/skill/commands/install.ts
+- Files changed: src/skill/commands/install.ts (rewritten from stub)
+- **Learnings for future iterations:**
+  - Multiple agents supported via comma-separated --agent flag (parseArgs limitation: Record<string, string>)
+  - All agent slugs validated upfront before downloading to fail fast
+  - --force flag skips the "already installed" check via getLockEntry()
+  - Lock entry uses slug as name (marketplace API doesn't return a display name on download)
+  - Primary install_method for lock entry derived from actual agent install results (copy if any agent used copy)
+  - --json mode suppresses progress messages (download/install) for clean programmatic output
+  - SHA256 verification handled inside installSkill() — no need to verify separately in the command
+---
+
+## 2026-03-19 - US-009
+- What was implemented: Interactive install mode in src/skill/commands/install.ts
+- Files changed: src/skill/commands/install.ts (modified), package.json (added @clack/prompts dependency)
+- **Learnings for future iterations:**
+  - @clack/prompts dynamically imported (`await import('@clack/prompts')`) so non-interactive paths don't pay the import cost
+  - isCancel() check required after every @clack prompt — user can Ctrl+C at any point
+  - detectInstalled() from agents.ts used to populate the multi-select with only agents present on the system
+  - TTY check (process.stdin.isTTY) gates interactive mode — non-TTY falls back to error messages with usage instructions
+  - slug variable changed from const to let to support reassignment from interactive prompt
+  - Agent validation only runs on the explicit --agent flag path; interactive multi-select already provides valid agents
 ---

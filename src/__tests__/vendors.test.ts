@@ -2,30 +2,30 @@ import { decodeAbiParameters, decodeFunctionData, parseAbi } from 'viem'
 import { describe, expect, it, vi } from 'vitest'
 import { buildBitgetSwapStepsFromCalldata } from '../vendors/bitget.js'
 import {
-	buildFourMemeBuySteps,
-	buildFourMemeCreateTokenSteps,
-	buildFourMemeLoginChallenge,
-	buildFourMemeSellSteps,
-	FOUR_MEME_TEST_CONSTANTS,
+  buildFourMemeBuySteps,
+  buildFourMemeCreateTokenSteps,
+  buildFourMemeLoginChallenge,
+  buildFourMemeSellSteps,
+  FOUR_MEME_TEST_CONSTANTS,
 } from '../vendors/fourmeme.js'
 import {
-	buildPancakeAddLiquiditySteps,
-	buildPancakeFarmSteps,
-	buildPancakeRemoveLiquiditySteps,
-	buildPancakeSwapSteps,
-	buildPancakeV3FarmSteps,
-	buildSyrupStakeSteps,
-	buildSyrupUnstakeSteps,
-	buildV3CollectSteps,
-	buildV3DecreaseLiquiditySteps,
-	buildV3IncreaseLiquiditySteps,
-	buildV3MintSteps,
+  buildPancakeAddLiquiditySteps,
+  buildPancakeFarmSteps,
+  buildPancakeRemoveLiquiditySteps,
+  buildPancakeSwapSteps,
+  buildPancakeV3FarmSteps,
+  buildSyrupStakeSteps,
+  buildSyrupUnstakeSteps,
+  buildV3CollectSteps,
+  buildV3DecreaseLiquiditySteps,
+  buildV3IncreaseLiquiditySteps,
+  buildV3MintSteps,
 } from '../vendors/pancake.js'
 import { buildAsterDepositSteps } from '../vendors/aster.js'
 import {
-	buildListaDepositSteps,
-	buildListaRedeemSteps,
-	buildListaWithdrawSteps,
+  buildListaDepositSteps,
+  buildListaRedeemSteps,
+  buildListaWithdrawSteps,
 } from '../vendors/lista.js'
 
 const ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E'
@@ -41,950 +41,950 @@ const TOKEN = '0x1111111111111111111111111111111111111111'
 const QUOTE = '0x2222222222222222222222222222222222222222'
 
 const FOUR_MEME_V1_TEST_ABI = parseAbi([
-	'function purchaseToken(uint256 origin, address token, address to, uint256 amount, uint256 maxFunds) payable',
-	'function purchaseTokenAMAP(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
-	'function saleToken(address tokenAddress, uint256 amount)',
+  'function purchaseToken(uint256 origin, address token, address to, uint256 amount, uint256 maxFunds) payable',
+  'function purchaseTokenAMAP(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
+  'function saleToken(address tokenAddress, uint256 amount)',
 ])
 
 const FOUR_MEME_V2_TEST_ABI = parseAbi([
-	'function buyToken(bytes args, uint256 time, bytes signature) payable',
-	'function buyToken(uint256 origin, address token, address to, uint256 amount, uint256 maxFunds) payable',
-	'function buyTokenAMAP(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
-	'function sellToken(uint256 origin, address token, uint256 amount, uint256 minFunds)',
-	'function createToken(bytes createArg, bytes signature) payable',
+  'function buyToken(bytes args, uint256 time, bytes signature) payable',
+  'function buyToken(uint256 origin, address token, address to, uint256 amount, uint256 maxFunds) payable',
+  'function buyTokenAMAP(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
+  'function sellToken(uint256 origin, address token, uint256 amount, uint256 minFunds)',
+  'function createToken(bytes createArg, bytes signature) payable',
 ])
 
 class FakeFourMemeApiClient {
-	public uploadedFiles: string[] = []
-	public loginCalls: Array<{ wallet: string; nonce: string; signature: string }> = []
-	public createCalls: Array<{ accessToken: string; payload: Record<string, unknown> }> = []
+  public uploadedFiles: string[] = []
+  public loginCalls: Array<{ wallet: string; nonce: string; signature: string }> = []
+  public createCalls: Array<{ accessToken: string; payload: Record<string, unknown> }> = []
 
-	constructor(
-		private readonly config: {
-			nonce?: string
-			accessToken?: string
-			imageUrl?: string
-			createArg?: `0x${string}`
-			signature?: `0x${string}`
-			failLogin?: string
-			failCreate?: string
-			raisedToken?: typeof FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
-		} = {},
-	) {}
+  constructor(
+    private readonly config: {
+      nonce?: string
+      accessToken?: string
+      imageUrl?: string
+      createArg?: `0x${string}`
+      signature?: `0x${string}`
+      failLogin?: string
+      failCreate?: string
+      raisedToken?: typeof FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
+    } = {},
+  ) {}
 
-	async generateNonce(): Promise<string> {
-		return this.config.nonce ?? 'nonce-123'
-	}
+  async generateNonce(): Promise<string> {
+    return this.config.nonce ?? 'nonce-123'
+  }
 
-	async loginDex(args: { wallet: string; nonce: string; signature: string }): Promise<string> {
-		this.loginCalls.push(args)
-		if (this.config.failLogin) throw new Error(this.config.failLogin)
-		return this.config.accessToken ?? 'access-token'
-	}
+  async loginDex(args: { wallet: string; nonce: string; signature: string }): Promise<string> {
+    this.loginCalls.push(args)
+    if (this.config.failLogin) throw new Error(this.config.failLogin)
+    return this.config.accessToken ?? 'access-token'
+  }
 
-	async uploadTokenImage(args: { filePath: string }): Promise<string> {
-		this.uploadedFiles.push(args.filePath)
-		return this.config.imageUrl ?? 'https://static.four.meme/market/test-image.png'
-	}
+  async uploadTokenImage(args: { filePath: string }): Promise<string> {
+    this.uploadedFiles.push(args.filePath)
+    return this.config.imageUrl ?? 'https://static.four.meme/market/test-image.png'
+  }
 
-	async createToken(args: {
-		payload: Record<string, unknown>
-		accessToken: string
-	}): Promise<{ createArg: `0x${string}`; signature: `0x${string}` }> {
-		this.createCalls.push(args)
-		if (this.config.failCreate) throw new Error(this.config.failCreate)
-		return {
-			createArg: this.config.createArg ?? '0x1234',
-			signature: this.config.signature ?? '0xabcd',
-		}
-	}
+  async createToken(args: {
+    payload: Record<string, unknown>
+    accessToken: string
+  }): Promise<{ createArg: `0x${string}`; signature: `0x${string}` }> {
+    this.createCalls.push(args)
+    if (this.config.failCreate) throw new Error(this.config.failCreate)
+    return {
+      createArg: this.config.createArg ?? '0x1234',
+      signature: this.config.signature ?? '0xabcd',
+    }
+  }
 
-	async getRaisedTokenConfig() {
-		return this.config.raisedToken ?? FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
-	}
+  async getRaisedTokenConfig() {
+    return this.config.raisedToken ?? FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
+  }
 }
 
 class FakeFourMemeClient {
-	constructor(
-		private readonly config: {
-			version: 1 | 2
-			quote?: `0x${string}`
-			template?: bigint
-			feeSetting?: bigint
-			buyQuote?: [bigint, bigint, bigint, bigint, bigint, bigint]
-			sellQuote?: [bigint, bigint]
-			tokenDecimals?: number
-			quoteDecimals?: number
-		},
-	) {}
+  constructor(
+    private readonly config: {
+      version: 1 | 2
+      quote?: `0x${string}`
+      template?: bigint
+      feeSetting?: bigint
+      buyQuote?: [bigint, bigint, bigint, bigint, bigint, bigint]
+      sellQuote?: [bigint, bigint]
+      tokenDecimals?: number
+      quoteDecimals?: number
+    },
+  ) {}
 
-	async readContract(args: {
-		address: `0x${string}`
-		functionName: string
-		args?: readonly unknown[]
-	}): Promise<unknown> {
-		const quote = this.config.quote ?? (NATIVE as `0x${string}`)
-		switch (args.functionName) {
-			case 'decimals':
-				if (args.address.toLowerCase() === TOKEN.toLowerCase()) {
-					return this.config.tokenDecimals ?? 18
-				}
-				if (args.address.toLowerCase() === quote.toLowerCase()) {
-					return this.config.quoteDecimals ?? 18
-				}
-				return 18
-			case 'getTokenInfo':
-				expect(args.address.toLowerCase()).toBe(HELPER.toLowerCase())
-				return [
-					BigInt(this.config.version),
-					this.config.version === 1 ? TM1 : TM2,
-					quote,
-					0n,
-					0n,
-					0n,
-					0n,
-					0n,
-					0n,
-					0n,
-					0n,
-					false,
-				]
-			case '_tokenInfos':
-				expect(args.address.toLowerCase()).toBe(TM2.toLowerCase())
-				return [TOKEN, quote, this.config.template ?? 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]
-			case '_tokenInfoEx1s':
-				expect(args.address.toLowerCase()).toBe(TM2.toLowerCase())
-				return [0n, 0n, this.config.feeSetting ?? 0n, 0n, 0n]
-			case 'tryBuy': {
-				const [
-					estimatedAmount,
-					estimatedCost,
-					estimatedFee,
-					amountMsgValue,
-					amountApproval,
-					amountFunds,
-				] = this.config.buyQuote ?? [1000n, 900n, 100n, 1000n, 0n, 1000n]
-				return [
-					this.config.version === 1 ? TM1 : TM2,
-					quote,
-					estimatedAmount,
-					estimatedCost,
-					estimatedFee,
-					amountMsgValue,
-					amountApproval,
-					amountFunds,
-				]
-			}
-			case 'trySell': {
-				const [funds, fee] = this.config.sellQuote ?? [1000n, 100n]
-				return [this.config.version === 1 ? TM1 : TM2, quote, funds, fee]
-			}
-			default:
-				throw new Error(`Unexpected readContract call: ${args.functionName}`)
-		}
-	}
+  async readContract(args: {
+    address: `0x${string}`
+    functionName: string
+    args?: readonly unknown[]
+  }): Promise<unknown> {
+    const quote = this.config.quote ?? (NATIVE as `0x${string}`)
+    switch (args.functionName) {
+      case 'decimals':
+        if (args.address.toLowerCase() === TOKEN.toLowerCase()) {
+          return this.config.tokenDecimals ?? 18
+        }
+        if (args.address.toLowerCase() === quote.toLowerCase()) {
+          return this.config.quoteDecimals ?? 18
+        }
+        return 18
+      case 'getTokenInfo':
+        expect(args.address.toLowerCase()).toBe(HELPER.toLowerCase())
+        return [
+          BigInt(this.config.version),
+          this.config.version === 1 ? TM1 : TM2,
+          quote,
+          0n,
+          0n,
+          0n,
+          0n,
+          0n,
+          0n,
+          0n,
+          0n,
+          false,
+        ]
+      case '_tokenInfos':
+        expect(args.address.toLowerCase()).toBe(TM2.toLowerCase())
+        return [TOKEN, quote, this.config.template ?? 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]
+      case '_tokenInfoEx1s':
+        expect(args.address.toLowerCase()).toBe(TM2.toLowerCase())
+        return [0n, 0n, this.config.feeSetting ?? 0n, 0n, 0n]
+      case 'tryBuy': {
+        const [
+          estimatedAmount,
+          estimatedCost,
+          estimatedFee,
+          amountMsgValue,
+          amountApproval,
+          amountFunds,
+        ] = this.config.buyQuote ?? [1000n, 900n, 100n, 1000n, 0n, 1000n]
+        return [
+          this.config.version === 1 ? TM1 : TM2,
+          quote,
+          estimatedAmount,
+          estimatedCost,
+          estimatedFee,
+          amountMsgValue,
+          amountApproval,
+          amountFunds,
+        ]
+      }
+      case 'trySell': {
+        const [funds, fee] = this.config.sellQuote ?? [1000n, 100n]
+        return [this.config.version === 1 ? TM1 : TM2, quote, funds, fee]
+      }
+      default:
+        throw new Error(`Unexpected readContract call: ${args.functionName}`)
+    }
+  }
 }
 
 describe('buildBitgetSwapStepsFromCalldata', () => {
-	it('handles txs[] format', () => {
-		const calldata = JSON.stringify({
-			txs: [
-				{ to: ROUTER, data: '0xABC', value: '0x0' },
-				{ to: WALLET, data: '0xDEF', value: '0x0' },
-			],
-		})
-		const result = buildBitgetSwapStepsFromCalldata({
-			calldata,
-			fromToken: USDT,
-			amountWei: '1000000',
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].label).toContain('approval')
-		expect(result.steps[1].label).toContain('swap')
-	})
+  it('handles txs[] format', () => {
+    const calldata = JSON.stringify({
+      txs: [
+        { to: ROUTER, data: '0xABC', value: '0x0' },
+        { to: WALLET, data: '0xDEF', value: '0x0' },
+      ],
+    })
+    const result = buildBitgetSwapStepsFromCalldata({
+      calldata,
+      fromToken: USDT,
+      amountWei: '1000000',
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].label).toContain('approval')
+    expect(result.steps[1].label).toContain('swap')
+  })
 
-	it('handles flat format for native token', () => {
-		const calldata = JSON.stringify({
-			contract: ROUTER,
-			calldata: '0xSwapData',
-			computeUnits: 200000,
-		})
-		const result = buildBitgetSwapStepsFromCalldata({
-			calldata,
-			fromToken: NATIVE,
-			amountWei: '1000000000000000000',
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].value).toBe(`0x${(10n ** 18n).toString(16)}`)
-		expect(result.steps[0].gasLimit).toBe(Math.ceil(200000 * 1.3).toString())
-	})
+  it('handles flat format for native token', () => {
+    const calldata = JSON.stringify({
+      contract: ROUTER,
+      calldata: '0xSwapData',
+      computeUnits: 200000,
+    })
+    const result = buildBitgetSwapStepsFromCalldata({
+      calldata,
+      fromToken: NATIVE,
+      amountWei: '1000000000000000000',
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].value).toBe(`0x${(10n ** 18n).toString(16)}`)
+    expect(result.steps[0].gasLimit).toBe(Math.ceil(200000 * 1.3).toString())
+  })
 
-	it('handles flat format for ERC-20 with conditional approval', () => {
-		const calldata = JSON.stringify({
-			contract: ROUTER,
-			calldata: '0xSwapData',
-		})
-		const result = buildBitgetSwapStepsFromCalldata({
-			calldata,
-			fromToken: USDT,
-			amountWei: '1000000',
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.amount).toBe('1000000')
-		expect(result.steps[1].label).toBe('Bitget swap')
-	})
+  it('handles flat format for ERC-20 with conditional approval', () => {
+    const calldata = JSON.stringify({
+      contract: ROUTER,
+      calldata: '0xSwapData',
+    })
+    const result = buildBitgetSwapStepsFromCalldata({
+      calldata,
+      fromToken: USDT,
+      amountWei: '1000000',
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.amount).toBe('1000000')
+    expect(result.steps[1].label).toBe('Bitget swap')
+  })
 
-	it('throws on empty response', () => {
-		expect(() =>
-			buildBitgetSwapStepsFromCalldata({
-				calldata: JSON.stringify({}),
-				fromToken: USDT,
-				amountWei: '1000',
-				chainId: 56,
-			}),
-		).toThrow('no transaction data')
-	})
+  it('throws on empty response', () => {
+    expect(() =>
+      buildBitgetSwapStepsFromCalldata({
+        calldata: JSON.stringify({}),
+        fromToken: USDT,
+        amountWei: '1000',
+        chainId: 56,
+      }),
+    ).toThrow('no transaction data')
+  })
 
-	it('throws on invalid JSON', () => {
-		expect(() =>
-			buildBitgetSwapStepsFromCalldata({
-				calldata: 'not json',
-				fromToken: USDT,
-				amountWei: '1000',
-				chainId: 56,
-			}),
-		).toThrow('not valid JSON')
-	})
+  it('throws on invalid JSON', () => {
+    expect(() =>
+      buildBitgetSwapStepsFromCalldata({
+        calldata: 'not json',
+        fromToken: USDT,
+        amountWei: '1000',
+        chainId: 56,
+      }),
+    ).toThrow('not valid JSON')
+  })
 
-	it('throws on non-object JSON', () => {
-		expect(() =>
-			buildBitgetSwapStepsFromCalldata({
-				calldata: '"string"',
-				fromToken: USDT,
-				amountWei: '1000',
-				chainId: 56,
-			}),
-		).toThrow('expected a JSON object')
-	})
+  it('throws on non-object JSON', () => {
+    expect(() =>
+      buildBitgetSwapStepsFromCalldata({
+        calldata: '"string"',
+        fromToken: USDT,
+        amountWei: '1000',
+        chainId: 56,
+      }),
+    ).toThrow('expected a JSON object')
+  })
 
-	it('throws on invalid amountWei', () => {
-		expect(() =>
-			buildBitgetSwapStepsFromCalldata({
-				calldata: JSON.stringify({ contract: ROUTER, calldata: '0x' }),
-				fromToken: NATIVE,
-				amountWei: 'abc',
-				chainId: 56,
-			}),
-		).toThrow('Invalid amount-wei')
-	})
+  it('throws on invalid amountWei', () => {
+    expect(() =>
+      buildBitgetSwapStepsFromCalldata({
+        calldata: JSON.stringify({ contract: ROUTER, calldata: '0x' }),
+        fromToken: NATIVE,
+        amountWei: 'abc',
+        chainId: 56,
+      }),
+    ).toThrow('Invalid amount-wei')
+  })
 })
 
 describe('buildPancakeSwapSteps', () => {
-	it('encodes swapExactETHForTokens for native→token', () => {
-		const result = buildPancakeSwapSteps({
-			path: [NATIVE, USDT],
-			amountInWei: '1000000000000000000',
-			amountOutMinWei: '500000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		// No approval needed for native
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].value).not.toBe('0x0')
-		expect(result.steps[0].label).toContain('PancakeSwap')
-	})
+  it('encodes swapExactETHForTokens for native→token', () => {
+    const result = buildPancakeSwapSteps({
+      path: [NATIVE, USDT],
+      amountInWei: '1000000000000000000',
+      amountOutMinWei: '500000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    // No approval needed for native
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].value).not.toBe('0x0')
+    expect(result.steps[0].label).toContain('PancakeSwap')
+  })
 
-	it('encodes swapExactTokensForETH for token→native with approval', () => {
-		const result = buildPancakeSwapSteps({
-			path: [USDT, NATIVE],
-			amountInWei: '1000000',
-			amountOutMinWei: '500000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[1].value).toBe('0x0')
-	})
+  it('encodes swapExactTokensForETH for token→native with approval', () => {
+    const result = buildPancakeSwapSteps({
+      path: [USDT, NATIVE],
+      amountInWei: '1000000',
+      amountOutMinWei: '500000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[1].value).toBe('0x0')
+  })
 
-	it('encodes swapExactTokensForTokens for token→token with approval', () => {
-		const result = buildPancakeSwapSteps({
-			path: [USDT, WBNB],
-			amountInWei: '1000000',
-			amountOutMinWei: '500000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-	})
+  it('encodes swapExactTokensForTokens for token→token with approval', () => {
+    const result = buildPancakeSwapSteps({
+      path: [USDT, WBNB],
+      amountInWei: '1000000',
+      amountOutMinWei: '500000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+  })
 
-	it('throws on path with fewer than 2 tokens', () => {
-		expect(() =>
-			buildPancakeSwapSteps({
-				path: [USDT],
-				amountInWei: '1000000',
-				amountOutMinWei: '500000',
-				wallet: WALLET,
-				deadline: 1710000000,
-				chainId: 56,
-			}),
-		).toThrow('at least 2 tokens')
-	})
+  it('throws on path with fewer than 2 tokens', () => {
+    expect(() =>
+      buildPancakeSwapSteps({
+        path: [USDT],
+        amountInWei: '1000000',
+        amountOutMinWei: '500000',
+        wallet: WALLET,
+        deadline: 1710000000,
+        chainId: 56,
+      }),
+    ).toThrow('at least 2 tokens')
+  })
 
-	it('trims whitespace from path entries', () => {
-		const result = buildPancakeSwapSteps({
-			path: [` ${NATIVE} `, ` ${USDT} `],
-			amountInWei: '1000000000000000000',
-			amountOutMinWei: '500000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		// Native→token: should be 1 step (no approval for native)
-		expect(result.steps).toHaveLength(1)
-	})
+  it('trims whitespace from path entries', () => {
+    const result = buildPancakeSwapSteps({
+      path: [` ${NATIVE} `, ` ${USDT} `],
+      amountInWei: '1000000000000000000',
+      amountOutMinWei: '500000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    // Native→token: should be 1 step (no approval for native)
+    expect(result.steps).toHaveLength(1)
+  })
 })
 
 describe('Lista vault steps', () => {
-	it('deposit: approval + deposit step', () => {
-		const result = buildListaDepositSteps({
-			vault: VAULT,
-			amountWei: '10000000000000000000',
-			token: USDT,
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.spender).toBe(VAULT)
-		expect(result.steps[1].label).toContain('deposit')
-	})
+  it('deposit: approval + deposit step', () => {
+    const result = buildListaDepositSteps({
+      vault: VAULT,
+      amountWei: '10000000000000000000',
+      token: USDT,
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.spender).toBe(VAULT)
+    expect(result.steps[1].label).toContain('deposit')
+  })
 
-	it('redeem: single step', () => {
-		const result = buildListaRedeemSteps({
-			vault: VAULT,
-			sharesWei: '5000000000000000000',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].label).toContain('redeem')
-	})
+  it('redeem: single step', () => {
+    const result = buildListaRedeemSteps({
+      vault: VAULT,
+      sharesWei: '5000000000000000000',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].label).toContain('redeem')
+  })
 
-	it('withdraw: single step', () => {
-		const result = buildListaWithdrawSteps({
-			vault: VAULT,
-			amountWei: '3000000000000000000',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].label).toContain('withdraw')
-	})
+  it('withdraw: single step', () => {
+    const result = buildListaWithdrawSteps({
+      vault: VAULT,
+      amountWei: '3000000000000000000',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].label).toContain('withdraw')
+  })
 
-	it('throws on invalid amountWei', () => {
-		expect(() =>
-			buildListaDepositSteps({
-				vault: VAULT,
-				amountWei: '-1',
-				token: USDT,
-				wallet: WALLET,
-				chainId: 56,
-			}),
-		).toThrow('greater than 0')
-	})
+  it('throws on invalid amountWei', () => {
+    expect(() =>
+      buildListaDepositSteps({
+        vault: VAULT,
+        amountWei: '-1',
+        token: USDT,
+        wallet: WALLET,
+        chainId: 56,
+      }),
+    ).toThrow('greater than 0')
+  })
 })
 
 describe('four.meme steps', () => {
-	it('builds V1 amount-based native buy with slippage-adjusted value', async () => {
-		const client = new FakeFourMemeClient({
-			version: 1,
-			buyQuote: [1000n, 900n, 100n, 1000n, 0n, 0n],
-		})
+  it('builds V1 amount-based native buy with slippage-adjusted value', async () => {
+    const client = new FakeFourMemeClient({
+      version: 1,
+      buyQuote: [1000n, 900n, 100n, 1000n, 0n, 0n],
+    })
 
-		const result = await buildFourMemeBuySteps(
-			{ token: TOKEN, wallet: WALLET, amount: '1', slippage: 0.03 },
-			client,
-		)
+    const result = await buildFourMemeBuySteps(
+      { token: TOKEN, wallet: WALLET, amount: '1', slippage: 0.03 },
+      client,
+    )
 
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].chainId).toBe(56)
-		expect(result.steps[0].value).toBe('0x406')
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].chainId).toBe(56)
+    expect(result.steps[0].value).toBe('0x406')
 
-		const decoded = decodeFunctionData({
-			abi: FOUR_MEME_V1_TEST_ABI,
-			data: result.steps[0].data as `0x${string}`,
-		})
-		expect(decoded.functionName).toBe('purchaseToken')
-		expect(decoded.args[4]).toBe(1030n)
-	})
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_V1_TEST_ABI,
+      data: result.steps[0].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('purchaseToken')
+    expect(decoded.args[4]).toBe(1030n)
+  })
 
-	it('builds V1 funds-based buy via purchaseTokenAMAP', async () => {
-		const client = new FakeFourMemeClient({
-			version: 1,
-			buyQuote: [1200n, 1100n, 100n, 500000000000000000n, 0n, 500000000000000000n],
-		})
+  it('builds V1 funds-based buy via purchaseTokenAMAP', async () => {
+    const client = new FakeFourMemeClient({
+      version: 1,
+      buyQuote: [1200n, 1100n, 100n, 500000000000000000n, 0n, 500000000000000000n],
+    })
 
-		const result = await buildFourMemeBuySteps(
-			{ token: TOKEN, wallet: WALLET, funds: '0.5', slippage: 0.1 },
-			client,
-		)
+    const result = await buildFourMemeBuySteps(
+      { token: TOKEN, wallet: WALLET, funds: '0.5', slippage: 0.1 },
+      client,
+    )
 
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].value).toBe('0x6f05b59d3b20000')
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].value).toBe('0x6f05b59d3b20000')
 
-		const decoded = decodeFunctionData({
-			abi: FOUR_MEME_V1_TEST_ABI,
-			data: result.steps[0].data as `0x${string}`,
-		})
-		expect(decoded.functionName).toBe('purchaseTokenAMAP')
-		expect(decoded.args[3]).toBe(500000000000000000n)
-		expect(decoded.args[4]).toBe(1080n)
-	})
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_V1_TEST_ABI,
+      data: result.steps[0].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('purchaseTokenAMAP')
+    expect(decoded.args[3]).toBe(500000000000000000n)
+    expect(decoded.args[4]).toBe(1080n)
+  })
 
-	it('builds V2 standard buy with quote approval', async () => {
-		const client = new FakeFourMemeClient({
-			version: 2,
-			quote: QUOTE as `0x${string}`,
-			buyQuote: [2500n, 2000n, 200n, 0n, 2200n, 0n],
-			quoteDecimals: 6,
-		})
+  it('builds V2 standard buy with quote approval', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      quote: QUOTE as `0x${string}`,
+      buyQuote: [2500n, 2000n, 200n, 0n, 2200n, 0n],
+      quoteDecimals: 6,
+    })
 
-		const result = await buildFourMemeBuySteps(
-			{ token: TOKEN, wallet: WALLET, amount: '1', slippage: 0.05 },
-			client,
-		)
+    const result = await buildFourMemeBuySteps(
+      { token: TOKEN, wallet: WALLET, amount: '1', slippage: 0.05 },
+      client,
+    )
 
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.spender).toBe(TM2)
-		expect(result.steps[0].conditional?.amount).toBe('2200')
-		expect(result.steps[1].value).toBe('0x0')
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.spender).toBe(TM2)
+    expect(result.steps[0].conditional?.amount).toBe('2200')
+    expect(result.steps[1].value).toBe('0x0')
 
-		const decoded = decodeFunctionData({
-			abi: FOUR_MEME_V2_TEST_ABI,
-			data: result.steps[1].data as `0x${string}`,
-		})
-		expect(decoded.functionName).toBe('buyToken')
-		expect(decoded.args[4]).toBe(2310n)
-	})
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_V2_TEST_ABI,
+      data: result.steps[1].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('buyToken')
+    expect(decoded.args[4]).toBe(2310n)
+  })
 
-	it('builds X Mode buy with encoded args', async () => {
-		const client = new FakeFourMemeClient({
-			version: 2,
-			template: 0x10000n,
-			buyQuote: [1500n, 1000n, 100n, 1100n, 0n, 0n],
-		})
+  it('builds X Mode buy with encoded args', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      template: 0x10000n,
+      buyQuote: [1500n, 1000n, 100n, 1100n, 0n, 0n],
+    })
 
-		const result = await buildFourMemeBuySteps(
-			{ token: TOKEN, wallet: WALLET, amount: '1', slippage: 0.02 },
-			client,
-		)
+    const result = await buildFourMemeBuySteps(
+      { token: TOKEN, wallet: WALLET, amount: '1', slippage: 0.02 },
+      client,
+    )
 
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].label).toContain('X Mode')
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].label).toContain('X Mode')
 
-		const decoded = decodeFunctionData({
-			abi: FOUR_MEME_V2_TEST_ABI,
-			data: result.steps[0].data as `0x${string}`,
-		})
-		expect(decoded.functionName).toBe('buyToken')
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_V2_TEST_ABI,
+      data: result.steps[0].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('buyToken')
 
-		const encodedArgs = decoded.args[0] as `0x${string}`
-		const params = decodeAbiParameters(
-			[
-				{ type: 'uint256', name: 'origin' },
-				{ type: 'address', name: 'token' },
-				{ type: 'address', name: 'to' },
-				{ type: 'uint256', name: 'amount' },
-				{ type: 'uint256', name: 'maxFunds' },
-				{ type: 'uint256', name: 'funds' },
-				{ type: 'uint256', name: 'minAmount' },
-			],
-			encodedArgs,
-		)
-		expect(params[4]).toBe(1122n)
-	})
+    const encodedArgs = decoded.args[0] as `0x${string}`
+    const params = decodeAbiParameters(
+      [
+        { type: 'uint256', name: 'origin' },
+        { type: 'address', name: 'token' },
+        { type: 'address', name: 'to' },
+        { type: 'uint256', name: 'amount' },
+        { type: 'uint256', name: 'maxFunds' },
+        { type: 'uint256', name: 'funds' },
+        { type: 'uint256', name: 'minAmount' },
+      ],
+      encodedArgs,
+    )
+    expect(params[4]).toBe(1122n)
+  })
 
-	it('builds sell steps with approval and minFunds bound', async () => {
-		const client = new FakeFourMemeClient({
-			version: 2,
-			sellQuote: [1000n, 100n],
-		})
+  it('builds sell steps with approval and minFunds bound', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      sellQuote: [1000n, 100n],
+    })
 
-		const result = await buildFourMemeSellSteps(
-			{ token: TOKEN, wallet: WALLET, amount: '2', slippage: 0.1 },
-			client,
-		)
+    const result = await buildFourMemeSellSteps(
+      { token: TOKEN, wallet: WALLET, amount: '2', slippage: 0.1 },
+      client,
+    )
 
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.amount).toBe('2000000000000000000')
-		expect(result.steps[1].value).toBe('0x0')
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.amount).toBe('2000000000000000000')
+    expect(result.steps[1].value).toBe('0x0')
 
-		const decoded = decodeFunctionData({
-			abi: FOUR_MEME_V2_TEST_ABI,
-			data: result.steps[1].data as `0x${string}`,
-		})
-		expect(decoded.functionName).toBe('sellToken')
-		expect(decoded.args[3]).toBe(900n)
-	})
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_V2_TEST_ABI,
+      data: result.steps[1].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('sellToken')
+    expect(decoded.args[3]).toBe(900n)
+  })
 
-	it('rejects both amount and funds on buy', async () => {
-		const client = new FakeFourMemeClient({ version: 2 })
-		await expect(
-			buildFourMemeBuySteps({ token: TOKEN, wallet: WALLET, amount: '1', funds: '1' }, client),
-		).rejects.toThrow('exactly one of --amount or --funds')
-	})
+  it('rejects both amount and funds on buy', async () => {
+    const client = new FakeFourMemeClient({ version: 2 })
+    await expect(
+      buildFourMemeBuySteps({ token: TOKEN, wallet: WALLET, amount: '1', funds: '1' }, client),
+    ).rejects.toThrow('exactly one of --amount or --funds')
+  })
 
-	it('rejects buy without amount or funds', async () => {
-		const client = new FakeFourMemeClient({ version: 2 })
-		await expect(buildFourMemeBuySteps({ token: TOKEN, wallet: WALLET }, client)).rejects.toThrow(
-			'exactly one of --amount or --funds',
-		)
-	})
+  it('rejects buy without amount or funds', async () => {
+    const client = new FakeFourMemeClient({ version: 2 })
+    await expect(buildFourMemeBuySteps({ token: TOKEN, wallet: WALLET }, client)).rejects.toThrow(
+      'exactly one of --amount or --funds',
+    )
+  })
 
-	it('rejects invalid token address', async () => {
-		const client = new FakeFourMemeClient({ version: 2 })
-		await expect(
-			buildFourMemeBuySteps({ token: 'not-an-address', wallet: WALLET, amount: '1' }, client),
-		).rejects.toThrow('Invalid token')
-	})
+  it('rejects invalid token address', async () => {
+    const client = new FakeFourMemeClient({ version: 2 })
+    await expect(
+      buildFourMemeBuySteps({ token: 'not-an-address', wallet: WALLET, amount: '1' }, client),
+    ).rejects.toThrow('Invalid token')
+  })
 
-	it('rejects unsupported slippage', async () => {
-		const client = new FakeFourMemeClient({ version: 2 })
-		await expect(
-			buildFourMemeSellSteps({ token: TOKEN, wallet: WALLET, amount: '1', slippage: 2 }, client),
-		).rejects.toThrow('--slippage must be between 0 and 1')
-	})
+  it('rejects unsupported slippage', async () => {
+    const client = new FakeFourMemeClient({ version: 2 })
+    await expect(
+      buildFourMemeSellSteps({ token: TOKEN, wallet: WALLET, amount: '1', slippage: 2 }, client),
+    ).rejects.toThrow('--slippage must be between 0 and 1')
+  })
 
-	it('builds a login challenge from the nonce API', async () => {
-		const api = new FakeFourMemeApiClient({ nonce: 'nonce-xyz' })
-		const result = await buildFourMemeLoginChallenge({ wallet: WALLET }, api)
-		expect(result).toEqual({
-			wallet: WALLET,
-			nonce: 'nonce-xyz',
-			message: 'You are sign in Meme nonce-xyz',
-		})
-	})
+  it('builds a login challenge from the nonce API', async () => {
+    const api = new FakeFourMemeApiClient({ nonce: 'nonce-xyz' })
+    const result = await buildFourMemeLoginChallenge({ wallet: WALLET }, api)
+    expect(result).toEqual({
+      wallet: WALLET,
+      nonce: 'nonce-xyz',
+      message: 'You are sign in Meme nonce-xyz',
+    })
+  })
 
-	it('builds create-token step with image url and default fee + presale value', async () => {
-		const api = new FakeFourMemeApiClient({
-			createArg: '0xdeadbeef',
-			signature: '0xcafe',
-			raisedToken: {
-				...FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
-				buyFee: '0.5',
-			},
-		})
+  it('builds create-token step with image url and default fee + presale value', async () => {
+    const api = new FakeFourMemeApiClient({
+      createArg: '0xdeadbeef',
+      signature: '0xcafe',
+      raisedToken: {
+        ...FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
+        buyFee: '0.5',
+      },
+    })
 
-		const result = await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-1',
-				loginSignature: '0xsigned',
-				name: 'Release',
-				symbol: 'RELS',
-				description: 'Release desc',
-				label: 'AI',
-				imageUrl: 'https://static.four.meme/market/test-logo.png',
-				website: 'https://example.com',
-				twitter: 'https://x.com/example',
-				telegram: 'https://t.me/example',
-				preSale: '0.1',
-				xMode: true,
-				antiSniper: true,
-			},
-			api,
-		)
+    const result = await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-1',
+        loginSignature: '0xsigned',
+        name: 'Release',
+        symbol: 'RELS',
+        description: 'Release desc',
+        label: 'AI',
+        imageUrl: 'https://static.four.meme/market/test-logo.png',
+        website: 'https://example.com',
+        twitter: 'https://x.com/example',
+        telegram: 'https://t.me/example',
+        preSale: '0.1',
+        xMode: true,
+        antiSniper: true,
+      },
+      api,
+    )
 
-		expect(api.uploadedFiles).toEqual([])
-		expect(api.loginCalls[0]).toEqual({
-			wallet: WALLET,
-			nonce: 'nonce-1',
-			signature: '0xsigned',
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(TM2)
-		expect(result.steps[0].value).toBe('0x186cc6acd4b0000')
-		expect(result.steps[0].label).toContain('AI')
-		expect(result.steps[0].label).toContain('X Mode')
-		expect(result.steps[0].label).toContain('AntiSniper')
+    expect(api.uploadedFiles).toEqual([])
+    expect(api.loginCalls[0]).toEqual({
+      wallet: WALLET,
+      nonce: 'nonce-1',
+      signature: '0xsigned',
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(TM2)
+    expect(result.steps[0].value).toBe('0x186cc6acd4b0000')
+    expect(result.steps[0].label).toContain('AI')
+    expect(result.steps[0].label).toContain('X Mode')
+    expect(result.steps[0].label).toContain('AntiSniper')
 
-		const decoded = decodeFunctionData({
-			abi: FOUR_MEME_V2_TEST_ABI,
-			data: result.steps[0].data as `0x${string}`,
-		})
-		expect(decoded.functionName).toBe('createToken')
-		expect(decoded.args[0]).toBe('0xdeadbeef')
-		expect(decoded.args[1]).toBe('0xcafe')
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_V2_TEST_ABI,
+      data: result.steps[0].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('createToken')
+    expect(decoded.args[0]).toBe('0xdeadbeef')
+    expect(decoded.args[1]).toBe('0xcafe')
 
-		expect(api.createCalls[0].accessToken).toBe('access-token')
-		expect(api.createCalls[0].payload).toMatchObject({
-			name: 'Release',
-			shortName: 'RELS',
-			symbol: 'BNB',
-			imgUrl: 'https://static.four.meme/market/test-logo.png',
-			label: 'AI',
-			onlyMPC: true,
-			feePlan: true,
-			preSale: '0.1',
-			raisedAmount: '0.1',
-		})
-	})
+    expect(api.createCalls[0].accessToken).toBe('access-token')
+    expect(api.createCalls[0].payload).toMatchObject({
+      name: 'Release',
+      shortName: 'RELS',
+      symbol: 'BNB',
+      imgUrl: 'https://static.four.meme/market/test-logo.png',
+      label: 'AI',
+      onlyMPC: true,
+      feePlan: true,
+      preSale: '0.1',
+      raisedAmount: '0.1',
+    })
+  })
 
-	it('sets raisedAmount equal to preSale (zero when omitted)', async () => {
-		const api = new FakeFourMemeApiClient()
-		await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-ra',
-				loginSignature: '0xsigned',
-				name: 'NoPresale',
-				symbol: 'NPS',
-				description: 'no presale',
-				label: 'Meme',
-				imageUrl: 'https://static.four.meme/market/test-logo.png',
-			},
-			api,
-		)
+  it('sets raisedAmount equal to preSale (zero when omitted)', async () => {
+    const api = new FakeFourMemeApiClient()
+    await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-ra',
+        loginSignature: '0xsigned',
+        name: 'NoPresale',
+        symbol: 'NPS',
+        description: 'no presale',
+        label: 'Meme',
+        imageUrl: 'https://static.four.meme/market/test-logo.png',
+      },
+      api,
+    )
 
-		expect(api.createCalls[0].payload).toMatchObject({
-			preSale: '0',
-			raisedAmount: '0',
-		})
-	})
+    expect(api.createCalls[0].payload).toMatchObject({
+      preSale: '0',
+      raisedAmount: '0',
+    })
+  })
 
-	it('sets raisedAmount to match explicit preSale value', async () => {
-		const api = new FakeFourMemeApiClient()
-		await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-rb',
-				loginSignature: '0xsigned',
-				name: 'WithPresale',
-				symbol: 'WPS',
-				description: 'with presale',
-				label: 'AI',
-				imageUrl: 'https://static.four.meme/market/test-logo.png',
-				preSale: '0.5',
-			},
-			api,
-		)
+  it('sets raisedAmount to match explicit preSale value', async () => {
+    const api = new FakeFourMemeApiClient()
+    await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-rb',
+        loginSignature: '0xsigned',
+        name: 'WithPresale',
+        symbol: 'WPS',
+        description: 'with presale',
+        label: 'AI',
+        imageUrl: 'https://static.four.meme/market/test-logo.png',
+        preSale: '0.5',
+      },
+      api,
+    )
 
-		expect(api.createCalls[0].payload).toMatchObject({
-			preSale: '0.5',
-			raisedAmount: '0.5',
-		})
-	})
+    expect(api.createCalls[0].payload).toMatchObject({
+      preSale: '0.5',
+      raisedAmount: '0.5',
+    })
+  })
 
-	it('uses explicit creationFee override for create-token value', async () => {
-		const api = new FakeFourMemeApiClient()
-		const result = await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-fee',
-				loginSignature: '0xsigned',
-				name: 'Fee',
-				symbol: 'FEE',
-				description: 'override fee',
-				label: 'AI',
-				imageUrl: 'https://static.four.meme/market/test-logo.png',
-				preSale: '0.1',
-				creationFee: '0.02',
-			},
-			api,
-		)
+  it('uses explicit creationFee override for create-token value', async () => {
+    const api = new FakeFourMemeApiClient()
+    const result = await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-fee',
+        loginSignature: '0xsigned',
+        name: 'Fee',
+        symbol: 'FEE',
+        description: 'override fee',
+        label: 'AI',
+        imageUrl: 'https://static.four.meme/market/test-logo.png',
+        preSale: '0.1',
+        creationFee: '0.02',
+      },
+      api,
+    )
 
-		expect(result.steps[0].value).toBe('0x1aa535d3d0c0000')
-	})
+    expect(result.steps[0].value).toBe('0x1aa535d3d0c0000')
+  })
 
-	it('uploads image files before create-token', async () => {
-		const api = new FakeFourMemeApiClient({
-			imageUrl: 'https://static.four.meme/market/uploaded.png',
-		})
+  it('uploads image files before create-token', async () => {
+    const api = new FakeFourMemeApiClient({
+      imageUrl: 'https://static.four.meme/market/uploaded.png',
+    })
 
-		await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-2',
-				loginSignature: '0xsigned',
-				name: 'Upload',
-				symbol: 'UP',
-				description: 'Uses upload',
-				label: 'Meme',
-				imageFile: './fixtures/logo.png',
-			},
-			api,
-		)
+    await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-2',
+        loginSignature: '0xsigned',
+        name: 'Upload',
+        symbol: 'UP',
+        description: 'Uses upload',
+        label: 'Meme',
+        imageFile: './fixtures/logo.png',
+      },
+      api,
+    )
 
-		expect(api.uploadedFiles).toEqual(['./fixtures/logo.png'])
-		expect(api.createCalls[0].payload.imgUrl).toBe('https://static.four.meme/market/uploaded.png')
-	})
+    expect(api.uploadedFiles).toEqual(['./fixtures/logo.png'])
+    expect(api.createCalls[0].payload.imgUrl).toBe('https://static.four.meme/market/uploaded.png')
+  })
 
-	it('encodes tax-token config when supplied', async () => {
-		const api = new FakeFourMemeApiClient()
+  it('encodes tax-token config when supplied', async () => {
+    const api = new FakeFourMemeApiClient()
 
-		await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-3',
-				loginSignature: '0xsigned',
-				name: 'Tax',
-				symbol: 'TAX',
-				description: 'Tax token',
-				label: 'Defi',
-				imageUrl: 'https://static.four.meme/market/test-tax.png',
-				taxFeeRate: 5,
-				taxBurnRate: 20,
-				taxDivideRate: 30,
-				taxLiquidityRate: 40,
-				taxRecipientRate: 10,
-				taxRecipientAddress: QUOTE,
-				taxMinSharing: '100000',
-			},
-			api,
-		)
+    await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-3',
+        loginSignature: '0xsigned',
+        name: 'Tax',
+        symbol: 'TAX',
+        description: 'Tax token',
+        label: 'Defi',
+        imageUrl: 'https://static.four.meme/market/test-tax.png',
+        taxFeeRate: 5,
+        taxBurnRate: 20,
+        taxDivideRate: 30,
+        taxLiquidityRate: 40,
+        taxRecipientRate: 10,
+        taxRecipientAddress: QUOTE,
+        taxMinSharing: '100000',
+      },
+      api,
+    )
 
-		expect(api.createCalls[0].payload).toMatchObject({
-			label: 'Defi',
-			tokenTaxInfo: {
-				feeRate: 5,
-				burnRate: 20,
-				divideRate: 30,
-				liquidityRate: 40,
-				recipientRate: 10,
-				recipientAddress: QUOTE,
-				minSharing: '100000',
-			},
-		})
-	})
+    expect(api.createCalls[0].payload).toMatchObject({
+      label: 'Defi',
+      tokenTaxInfo: {
+        feeRate: 5,
+        burnRate: 20,
+        divideRate: 30,
+        liquidityRate: 40,
+        recipientRate: 10,
+        recipientAddress: QUOTE,
+        minSharing: '100000',
+      },
+    })
+  })
 
-	it('rejects unsupported token labels', async () => {
-		const api = new FakeFourMemeApiClient()
-		await expect(
-			buildFourMemeCreateTokenSteps(
-				{
-					wallet: WALLET,
-					loginNonce: 'nonce-4',
-					loginSignature: '0xsigned',
-					name: 'BadLabel',
-					symbol: 'BAD',
-					description: 'bad label',
-					label: 'NFT',
-					imageUrl: 'https://static.four.meme/market/test-bad.png',
-				},
-				api,
-			),
-		).rejects.toThrow('Unsupported label')
-		expect(api.loginCalls).toEqual([])
-	})
+  it('rejects unsupported token labels', async () => {
+    const api = new FakeFourMemeApiClient()
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-4',
+          loginSignature: '0xsigned',
+          name: 'BadLabel',
+          symbol: 'BAD',
+          description: 'bad label',
+          label: 'NFT',
+          imageUrl: 'https://static.four.meme/market/test-bad.png',
+        },
+        api,
+      ),
+    ).rejects.toThrow('Unsupported label')
+    expect(api.loginCalls).toEqual([])
+  })
 
-	it('rejects invalid tax configuration', async () => {
-		const api = new FakeFourMemeApiClient()
-		await expect(
-			buildFourMemeCreateTokenSteps(
-				{
-					wallet: WALLET,
-					loginNonce: 'nonce-5',
-					loginSignature: '0xsigned',
-					name: 'BadTax',
-					symbol: 'BTX',
-					description: 'bad tax',
-					label: 'AI',
-					imageUrl: 'https://static.four.meme/market/test-tax.png',
-					taxFeeRate: 5,
-					taxBurnRate: 20,
-					taxDivideRate: 30,
-					taxLiquidityRate: 40,
-					taxRecipientRate: 20,
-					taxRecipientAddress: QUOTE,
-					taxMinSharing: '100000',
-				},
-				api,
-			),
-		).rejects.toThrow('tax allocation rates must sum to 100')
-	})
+  it('rejects invalid tax configuration', async () => {
+    const api = new FakeFourMemeApiClient()
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-5',
+          loginSignature: '0xsigned',
+          name: 'BadTax',
+          symbol: 'BTX',
+          description: 'bad tax',
+          label: 'AI',
+          imageUrl: 'https://static.four.meme/market/test-tax.png',
+          taxFeeRate: 5,
+          taxBurnRate: 20,
+          taxDivideRate: 30,
+          taxLiquidityRate: 40,
+          taxRecipientRate: 20,
+          taxRecipientAddress: QUOTE,
+          taxMinSharing: '100000',
+        },
+        api,
+      ),
+    ).rejects.toThrow('tax allocation rates must sum to 100')
+  })
 
-	it('rejects inconsistent recipient settings', async () => {
-		const api = new FakeFourMemeApiClient()
-		await expect(
-			buildFourMemeCreateTokenSteps(
-				{
-					wallet: WALLET,
-					loginNonce: 'nonce-6',
-					loginSignature: '0xsigned',
-					name: 'Recipient',
-					symbol: 'RCP',
-					description: 'recipient mismatch',
-					label: 'AI',
-					imageUrl: 'https://static.four.meme/market/test-tax.png',
-					taxFeeRate: 5,
-					taxBurnRate: 20,
-					taxDivideRate: 30,
-					taxLiquidityRate: 50,
-					taxRecipientRate: 0,
-					taxRecipientAddress: QUOTE,
-					taxMinSharing: '100000',
-				},
-				api,
-			),
-		).rejects.toThrow('taxRecipientAddress must be empty when taxRecipientRate is 0')
-	})
+  it('rejects inconsistent recipient settings', async () => {
+    const api = new FakeFourMemeApiClient()
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-6',
+          loginSignature: '0xsigned',
+          name: 'Recipient',
+          symbol: 'RCP',
+          description: 'recipient mismatch',
+          label: 'AI',
+          imageUrl: 'https://static.four.meme/market/test-tax.png',
+          taxFeeRate: 5,
+          taxBurnRate: 20,
+          taxDivideRate: 30,
+          taxLiquidityRate: 50,
+          taxRecipientRate: 0,
+          taxRecipientAddress: QUOTE,
+          taxMinSharing: '100000',
+        },
+        api,
+      ),
+    ).rejects.toThrow('taxRecipientAddress must be empty when taxRecipientRate is 0')
+  })
 
-	it('rejects malformed minSharing values', async () => {
-		const api = new FakeFourMemeApiClient()
-		await expect(
-			buildFourMemeCreateTokenSteps(
-				{
-					wallet: WALLET,
-					loginNonce: 'nonce-7',
-					loginSignature: '0xsigned',
-					name: 'MinShare',
-					symbol: 'MIN',
-					description: 'bad min sharing',
-					label: 'AI',
-					imageUrl: 'https://static.four.meme/market/test-tax.png',
-					taxFeeRate: 5,
-					taxBurnRate: 20,
-					taxDivideRate: 30,
-					taxLiquidityRate: 40,
-					taxRecipientRate: 10,
-					taxRecipientAddress: QUOTE,
-					taxMinSharing: '123456',
-				},
-				api,
-			),
-		).rejects.toThrow('taxMinSharing must be a base-10 integer matching d × 10^n with n >= 5')
-	})
+  it('rejects malformed minSharing values', async () => {
+    const api = new FakeFourMemeApiClient()
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-7',
+          loginSignature: '0xsigned',
+          name: 'MinShare',
+          symbol: 'MIN',
+          description: 'bad min sharing',
+          label: 'AI',
+          imageUrl: 'https://static.four.meme/market/test-tax.png',
+          taxFeeRate: 5,
+          taxBurnRate: 20,
+          taxDivideRate: 30,
+          taxLiquidityRate: 40,
+          taxRecipientRate: 10,
+          taxRecipientAddress: QUOTE,
+          taxMinSharing: '123456',
+        },
+        api,
+      ),
+    ).rejects.toThrow('taxMinSharing must be a base-10 integer matching d × 10^n with n >= 5')
+  })
 
-	it('throws when no image is provided', async () => {
-		const api = new FakeFourMemeApiClient()
-		await expect(
-			buildFourMemeCreateTokenSteps(
-				{
-					wallet: WALLET,
-					loginNonce: 'nonce-noimg',
-					loginSignature: '0xsigned',
-					name: 'NoImage',
-					symbol: 'NIM',
-					description: 'no image token',
-					label: 'Meme',
-				},
-				api,
-			),
-		).rejects.toThrow('An image is required: provide --image-url or --image-file')
-	})
+  it('throws when no image is provided', async () => {
+    const api = new FakeFourMemeApiClient()
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-noimg',
+          loginSignature: '0xsigned',
+          name: 'NoImage',
+          symbol: 'NIM',
+          description: 'no image token',
+          label: 'Meme',
+        },
+        api,
+      ),
+    ).rejects.toThrow('An image is required: provide --image-url or --image-file')
+  })
 
-	it('downloads and re-uploads external (non-CDN) image URLs', async () => {
-		const fakeImageBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]) // PNG magic
-		const mockFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-			new Response(fakeImageBytes, {
-				status: 200,
-				headers: { 'content-type': 'image/png' },
-			}),
-		)
+  it('downloads and re-uploads external (non-CDN) image URLs', async () => {
+    const fakeImageBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]) // PNG magic
+    const mockFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(fakeImageBytes, {
+        status: 200,
+        headers: { 'content-type': 'image/png' },
+      }),
+    )
 
-		const api = new FakeFourMemeApiClient()
-		await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-ext',
-				loginSignature: '0xsigned',
-				name: 'External',
-				symbol: 'EXT',
-				description: 'external image token',
-				label: 'Meme',
-				imageUrl: 'https://cdn.example.com/cat.png',
-			},
-			api,
-		)
+    const api = new FakeFourMemeApiClient()
+    await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-ext',
+        loginSignature: '0xsigned',
+        name: 'External',
+        symbol: 'EXT',
+        description: 'external image token',
+        label: 'Meme',
+        imageUrl: 'https://cdn.example.com/cat.png',
+      },
+      api,
+    )
 
-		// fetch was called to download the external image
-		expect(mockFetch).toHaveBeenCalledWith('https://cdn.example.com/cat.png')
-		// downloaded file was uploaded via the API client
-		expect(api.uploadedFiles).toHaveLength(1)
-		expect(api.uploadedFiles[0]).toMatch(/fourmeme-upload-.*\.png$/)
-		// the payload uses the uploaded CDN URL (from the fake API client)
-		expect(api.createCalls[0].payload.imgUrl).toBe('https://static.four.meme/market/test-image.png')
+    // fetch was called to download the external image
+    expect(mockFetch).toHaveBeenCalledWith('https://cdn.example.com/cat.png')
+    // downloaded file was uploaded via the API client
+    expect(api.uploadedFiles).toHaveLength(1)
+    expect(api.uploadedFiles[0]).toMatch(/fourmeme-upload-.*\.png$/)
+    // the payload uses the uploaded CDN URL (from the fake API client)
+    expect(api.createCalls[0].payload.imgUrl).toBe('https://static.four.meme/market/test-image.png')
 
-		mockFetch.mockRestore()
-	})
+    mockFetch.mockRestore()
+  })
 
-	it('passes four.meme CDN URLs through without downloading', async () => {
-		const mockFetch = vi.spyOn(globalThis, 'fetch')
-		const api = new FakeFourMemeApiClient()
+  it('passes four.meme CDN URLs through without downloading', async () => {
+    const mockFetch = vi.spyOn(globalThis, 'fetch')
+    const api = new FakeFourMemeApiClient()
 
-		await buildFourMemeCreateTokenSteps(
-			{
-				wallet: WALLET,
-				loginNonce: 'nonce-cdn',
-				loginSignature: '0xsigned',
-				name: 'CDN',
-				symbol: 'CDN',
-				description: 'cdn image token',
-				label: 'Meme',
-				imageUrl: 'https://static.four.meme/market/existing-logo.png',
-			},
-			api,
-		)
+    await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-cdn',
+        loginSignature: '0xsigned',
+        name: 'CDN',
+        symbol: 'CDN',
+        description: 'cdn image token',
+        label: 'Meme',
+        imageUrl: 'https://static.four.meme/market/existing-logo.png',
+      },
+      api,
+    )
 
-		// fetch should NOT have been called for the image
-		expect(mockFetch).not.toHaveBeenCalled()
-		// no upload
-		expect(api.uploadedFiles).toEqual([])
-		// CDN URL passed through directly
-		expect(api.createCalls[0].payload.imgUrl).toBe(
-			'https://static.four.meme/market/existing-logo.png',
-		)
+    // fetch should NOT have been called for the image
+    expect(mockFetch).not.toHaveBeenCalled()
+    // no upload
+    expect(api.uploadedFiles).toEqual([])
+    // CDN URL passed through directly
+    expect(api.createCalls[0].payload.imgUrl).toBe(
+      'https://static.four.meme/market/existing-logo.png',
+    )
 
-		mockFetch.mockRestore()
-	})
+    mockFetch.mockRestore()
+  })
 
-	it('rejects invalid image source combinations', async () => {
-		const api = new FakeFourMemeApiClient()
-		await expect(
-			buildFourMemeCreateTokenSteps(
-				{
-					wallet: WALLET,
-					loginNonce: 'nonce-8',
-					loginSignature: '0xsigned',
-					name: 'Images',
-					symbol: 'IMG',
-					description: 'two images',
-					label: 'AI',
-					imageUrl: 'https://static.four.meme/market/test-logo.png',
-					imageFile: './logo.png',
-				},
-				api,
-			),
-		).rejects.toThrow('Provide only one of --image-url or --image-file')
-	})
+  it('rejects invalid image source combinations', async () => {
+    const api = new FakeFourMemeApiClient()
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-8',
+          loginSignature: '0xsigned',
+          name: 'Images',
+          symbol: 'IMG',
+          description: 'two images',
+          label: 'AI',
+          imageUrl: 'https://static.four.meme/market/test-logo.png',
+          imageFile: './logo.png',
+        },
+        api,
+      ),
+    ).rejects.toThrow('Provide only one of --image-url or --image-file')
+  })
 
-	it('surfaces API errors during create-token', async () => {
-		const api = new FakeFourMemeApiClient({ failCreate: 'upstream boom' })
-		await expect(
-			buildFourMemeCreateTokenSteps(
-				{
-					wallet: WALLET,
-					loginNonce: 'nonce-9',
-					loginSignature: '0xsigned',
-					name: 'Fail',
-					symbol: 'FAIL',
-					description: 'api failure',
-					label: 'AI',
-					imageUrl: 'https://static.four.meme/market/test-logo.png',
-				},
-				api,
-			),
-		).rejects.toThrow('upstream boom')
-	})
+  it('surfaces API errors during create-token', async () => {
+    const api = new FakeFourMemeApiClient({ failCreate: 'upstream boom' })
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-9',
+          loginSignature: '0xsigned',
+          name: 'Fail',
+          symbol: 'FAIL',
+          description: 'api failure',
+          label: 'AI',
+          imageUrl: 'https://static.four.meme/market/test-logo.png',
+        },
+        api,
+      ),
+    ).rejects.toThrow('upstream boom')
+  })
 })
 
 const MASTER_CHEF = '0xa5f8C5Dbd5F286960b9d90548680aE5ebFf07652'
@@ -992,140 +992,140 @@ const LP_TOKEN = '0x0eD7e52944161450477ee417DE9Cd3a859b14fD0'
 const USDC = '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d'
 
 describe('buildPancakeAddLiquiditySteps', () => {
-	it('native + ERC-20: 1 approval + addLiquidityETH', () => {
-		const result = buildPancakeAddLiquiditySteps({
-			tokenA: NATIVE,
-			tokenB: USDT,
-			amountAWei: '1000000000000000000',
-			amountBWei: '500000000000000000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.token).toBe(USDT)
-		expect(result.steps[1].value).not.toBe('0x0')
-		expect(result.steps[1].label).toContain('addLiquidityETH')
-	})
+  it('native + ERC-20: 1 approval + addLiquidityETH', () => {
+    const result = buildPancakeAddLiquiditySteps({
+      tokenA: NATIVE,
+      tokenB: USDT,
+      amountAWei: '1000000000000000000',
+      amountBWei: '500000000000000000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.token).toBe(USDT)
+    expect(result.steps[1].value).not.toBe('0x0')
+    expect(result.steps[1].label).toContain('addLiquidityETH')
+  })
 
-	it('two ERC-20: 2 approvals + addLiquidity', () => {
-		const result = buildPancakeAddLiquiditySteps({
-			tokenA: USDT,
-			tokenB: USDC,
-			amountAWei: '1000000000000000000',
-			amountBWei: '500000000000000000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(3)
-		expect(result.steps[0].conditional?.token).toBe(USDT)
-		expect(result.steps[1].conditional?.token).toBe(USDC)
-		expect(result.steps[2].label).toContain('addLiquidity')
-		expect(result.steps[2].value).toBe('0x0')
-	})
+  it('two ERC-20: 2 approvals + addLiquidity', () => {
+    const result = buildPancakeAddLiquiditySteps({
+      tokenA: USDT,
+      tokenB: USDC,
+      amountAWei: '1000000000000000000',
+      amountBWei: '500000000000000000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(3)
+    expect(result.steps[0].conditional?.token).toBe(USDT)
+    expect(result.steps[1].conditional?.token).toBe(USDC)
+    expect(result.steps[2].label).toContain('addLiquidity')
+    expect(result.steps[2].value).toBe('0x0')
+  })
 
-	it('throws when both tokens are native', () => {
-		expect(() =>
-			buildPancakeAddLiquiditySteps({
-				tokenA: NATIVE,
-				tokenB: NATIVE,
-				amountAWei: '1000',
-				amountBWei: '1000',
-				wallet: WALLET,
-				deadline: 1710000000,
-				chainId: 56,
-			}),
-		).toThrow('both be native')
-	})
+  it('throws when both tokens are native', () => {
+    expect(() =>
+      buildPancakeAddLiquiditySteps({
+        tokenA: NATIVE,
+        tokenB: NATIVE,
+        amountAWei: '1000',
+        amountBWei: '1000',
+        wallet: WALLET,
+        deadline: 1710000000,
+        chainId: 56,
+      }),
+    ).toThrow('both be native')
+  })
 })
 
 describe('buildPancakeRemoveLiquiditySteps', () => {
-	it('pair with WBNB: approval + removeLiquidityETH', () => {
-		const result = buildPancakeRemoveLiquiditySteps({
-			pairAddress: LP_TOKEN,
-			token0: WBNB,
-			token1: USDT,
-			lpAmountWei: '5000000000000000000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.token).toBe(LP_TOKEN)
-		expect(result.steps[1].label).toContain('removeLiquidityETH')
-	})
+  it('pair with WBNB: approval + removeLiquidityETH', () => {
+    const result = buildPancakeRemoveLiquiditySteps({
+      pairAddress: LP_TOKEN,
+      token0: WBNB,
+      token1: USDT,
+      lpAmountWei: '5000000000000000000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.token).toBe(LP_TOKEN)
+    expect(result.steps[1].label).toContain('removeLiquidityETH')
+  })
 
-	it('pair without WBNB: approval + removeLiquidity', () => {
-		const result = buildPancakeRemoveLiquiditySteps({
-			pairAddress: LP_TOKEN,
-			token0: USDT,
-			token1: USDC,
-			lpAmountWei: '5000000000000000000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[1].label).toContain('removeLiquidity')
-		expect(result.steps[1].label).not.toContain('ETH')
-	})
+  it('pair without WBNB: approval + removeLiquidity', () => {
+    const result = buildPancakeRemoveLiquiditySteps({
+      pairAddress: LP_TOKEN,
+      token0: USDT,
+      token1: USDC,
+      lpAmountWei: '5000000000000000000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[1].label).toContain('removeLiquidity')
+    expect(result.steps[1].label).not.toContain('ETH')
+  })
 })
 
 describe('buildPancakeFarmSteps', () => {
-	it('stake: approval + deposit', () => {
-		const result = buildPancakeFarmSteps({
-			action: 'stake',
-			pid: 2,
-			amountWei: '1000000000000000000',
-			lpToken: LP_TOKEN,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.spender).toBe(MASTER_CHEF)
-		expect(result.steps[1].to).toBe(MASTER_CHEF)
-		expect(result.steps[1].label).toContain('stake')
-	})
+  it('stake: approval + deposit', () => {
+    const result = buildPancakeFarmSteps({
+      action: 'stake',
+      pid: 2,
+      amountWei: '1000000000000000000',
+      lpToken: LP_TOKEN,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.spender).toBe(MASTER_CHEF)
+    expect(result.steps[1].to).toBe(MASTER_CHEF)
+    expect(result.steps[1].label).toContain('stake')
+  })
 
-	it('unstake: withdraw only (no approval)', () => {
-		const result = buildPancakeFarmSteps({
-			action: 'unstake',
-			pid: 2,
-			amountWei: '1000000000000000000',
-			lpToken: LP_TOKEN,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(MASTER_CHEF)
-		expect(result.steps[0].label).toContain('unstake')
-	})
+  it('unstake: withdraw only (no approval)', () => {
+    const result = buildPancakeFarmSteps({
+      action: 'unstake',
+      pid: 2,
+      amountWei: '1000000000000000000',
+      lpToken: LP_TOKEN,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(MASTER_CHEF)
+    expect(result.steps[0].label).toContain('unstake')
+  })
 
-	it('harvest: deposit(pid, 0) — no approval', () => {
-		const result = buildPancakeFarmSteps({
-			action: 'harvest',
-			pid: 2,
-			amountWei: '0',
-			lpToken: LP_TOKEN,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(MASTER_CHEF)
-		expect(result.steps[0].label).toContain('harvest')
-	})
+  it('harvest: deposit(pid, 0) — no approval', () => {
+    const result = buildPancakeFarmSteps({
+      action: 'harvest',
+      pid: 2,
+      amountWei: '0',
+      lpToken: LP_TOKEN,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(MASTER_CHEF)
+    expect(result.steps[0].label).toContain('harvest')
+  })
 
-	it('stake with zero amount: no approval', () => {
-		const result = buildPancakeFarmSteps({
-			action: 'stake',
-			pid: 2,
-			amountWei: '0',
-			lpToken: LP_TOKEN,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-	})
+  it('stake with zero amount: no approval', () => {
+    const result = buildPancakeFarmSteps({
+      action: 'stake',
+      pid: 2,
+      amountWei: '0',
+      lpToken: LP_TOKEN,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+  })
 })
 
 const POSITION_MANAGER = '0x46A15B0b27311cedF172AB29E4f4766fbE7F4364'
@@ -1134,178 +1134,178 @@ const CAKE = '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82'
 const POOL_ADDRESS = '0x1234567890123456789012345678901234567891'
 
 describe('buildPancakeV3FarmSteps', () => {
-	it('stake: generates safeTransferFrom to MasterChef V3', () => {
-		const result = buildPancakeV3FarmSteps({
-			action: 'stake',
-			tokenId: '12345',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(POSITION_MANAGER)
-		expect(result.steps[0].label).toContain('V3 farm stake')
-		expect(result.steps[0].value).toBe('0x0')
-	})
+  it('stake: generates safeTransferFrom to MasterChef V3', () => {
+    const result = buildPancakeV3FarmSteps({
+      action: 'stake',
+      tokenId: '12345',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(POSITION_MANAGER)
+    expect(result.steps[0].label).toContain('V3 farm stake')
+    expect(result.steps[0].value).toBe('0x0')
+  })
 
-	it('unstake: generates withdraw on MasterChef V3', () => {
-		const result = buildPancakeV3FarmSteps({
-			action: 'unstake',
-			tokenId: '12345',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(MASTER_CHEF_V3)
-		expect(result.steps[0].label).toContain('V3 farm unstake')
-	})
+  it('unstake: generates withdraw on MasterChef V3', () => {
+    const result = buildPancakeV3FarmSteps({
+      action: 'unstake',
+      tokenId: '12345',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(MASTER_CHEF_V3)
+    expect(result.steps[0].label).toContain('V3 farm unstake')
+  })
 
-	it('harvest: generates harvest on MasterChef V3', () => {
-		const result = buildPancakeV3FarmSteps({
-			action: 'harvest',
-			tokenId: '12345',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(MASTER_CHEF_V3)
-		expect(result.steps[0].label).toContain('V3 farm harvest')
-	})
+  it('harvest: generates harvest on MasterChef V3', () => {
+    const result = buildPancakeV3FarmSteps({
+      action: 'harvest',
+      tokenId: '12345',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(MASTER_CHEF_V3)
+    expect(result.steps[0].label).toContain('V3 farm harvest')
+  })
 })
 
 describe('buildSyrupStakeSteps', () => {
-	it('generates approve + deposit', () => {
-		const result = buildSyrupStakeSteps({
-			poolAddress: POOL_ADDRESS,
-			amountWei: '1000000000000000000',
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.token).toBe(CAKE)
-		expect(result.steps[0].conditional?.spender).toBe(POOL_ADDRESS)
-		expect(result.steps[1].to).toBe(POOL_ADDRESS)
-		expect(result.steps[1].label).toContain('Syrup Pool deposit')
-	})
+  it('generates approve + deposit', () => {
+    const result = buildSyrupStakeSteps({
+      poolAddress: POOL_ADDRESS,
+      amountWei: '1000000000000000000',
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.token).toBe(CAKE)
+    expect(result.steps[0].conditional?.spender).toBe(POOL_ADDRESS)
+    expect(result.steps[1].to).toBe(POOL_ADDRESS)
+    expect(result.steps[1].label).toContain('Syrup Pool deposit')
+  })
 })
 
 describe('buildSyrupUnstakeSteps', () => {
-	it('generates withdraw only', () => {
-		const result = buildSyrupUnstakeSteps({
-			poolAddress: POOL_ADDRESS,
-			amountWei: '1000000000000000000',
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(POOL_ADDRESS)
-		expect(result.steps[0].label).toContain('Syrup Pool withdraw')
-	})
+  it('generates withdraw only', () => {
+    const result = buildSyrupUnstakeSteps({
+      poolAddress: POOL_ADDRESS,
+      amountWei: '1000000000000000000',
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(POOL_ADDRESS)
+    expect(result.steps[0].label).toContain('Syrup Pool withdraw')
+  })
 })
 
 describe('buildV3MintSteps', () => {
-	it('ERC-20 pair: 2 approvals + mint', () => {
-		const result = buildV3MintSteps({
-			token0: USDT,
-			token1: USDC,
-			fee: 2500,
-			tickLower: -100,
-			tickUpper: 100,
-			amount0Wei: '1000000000000000000',
-			amount1Wei: '2000000000000000000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(3)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.token).toBe(USDT)
-		expect(result.steps[1].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[1].conditional?.token).toBe(USDC)
-		expect(result.steps[2].to).toBe(POSITION_MANAGER)
-		expect(result.steps[2].label).toContain('V3 mint')
-		expect(result.steps[2].value).toBe('0x0')
-	})
+  it('ERC-20 pair: 2 approvals + mint', () => {
+    const result = buildV3MintSteps({
+      token0: USDT,
+      token1: USDC,
+      fee: 2500,
+      tickLower: -100,
+      tickUpper: 100,
+      amount0Wei: '1000000000000000000',
+      amount1Wei: '2000000000000000000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(3)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.token).toBe(USDT)
+    expect(result.steps[1].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[1].conditional?.token).toBe(USDC)
+    expect(result.steps[2].to).toBe(POSITION_MANAGER)
+    expect(result.steps[2].label).toContain('V3 mint')
+    expect(result.steps[2].value).toBe('0x0')
+  })
 
-	it('native BNB pair: 1 approval + multicall with refundETH', () => {
-		const result = buildV3MintSteps({
-			token0: NATIVE,
-			token1: USDT,
-			fee: 2500,
-			tickLower: -100,
-			tickUpper: 100,
-			amount0Wei: '1000000000000000000',
-			amount1Wei: '2000000000000000000',
-			wallet: WALLET,
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(2)
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.token).toBe(USDT)
-		expect(result.steps[1].to).toBe(POSITION_MANAGER)
-		expect(result.steps[1].label).toContain('multicall')
-		expect(result.steps[1].value).not.toBe('0x0')
-	})
+  it('native BNB pair: 1 approval + multicall with refundETH', () => {
+    const result = buildV3MintSteps({
+      token0: NATIVE,
+      token1: USDT,
+      fee: 2500,
+      tickLower: -100,
+      tickUpper: 100,
+      amount0Wei: '1000000000000000000',
+      amount1Wei: '2000000000000000000',
+      wallet: WALLET,
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.token).toBe(USDT)
+    expect(result.steps[1].to).toBe(POSITION_MANAGER)
+    expect(result.steps[1].label).toContain('multicall')
+    expect(result.steps[1].value).not.toBe('0x0')
+  })
 
-	it('throws when both tokens are native', () => {
-		expect(() =>
-			buildV3MintSteps({
-				token0: NATIVE,
-				token1: WBNB,
-				fee: 2500,
-				tickLower: -100,
-				tickUpper: 100,
-				amount0Wei: '1000',
-				amount1Wei: '2000',
-				wallet: WALLET,
-				deadline: 1710000000,
-				chainId: 56,
-			}),
-		).toThrow('both be native')
-	})
+  it('throws when both tokens are native', () => {
+    expect(() =>
+      buildV3MintSteps({
+        token0: NATIVE,
+        token1: WBNB,
+        fee: 2500,
+        tickLower: -100,
+        tickUpper: 100,
+        amount0Wei: '1000',
+        amount1Wei: '2000',
+        wallet: WALLET,
+        deadline: 1710000000,
+        chainId: 56,
+      }),
+    ).toThrow('both be native')
+  })
 })
 
 describe('buildV3IncreaseLiquiditySteps', () => {
-	it('generates increaseLiquidity step', () => {
-		const result = buildV3IncreaseLiquiditySteps({
-			tokenId: '12345',
-			amount0Wei: '1000000000000000000',
-			amount1Wei: '2000000000000000000',
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(POSITION_MANAGER)
-		expect(result.steps[0].label).toContain('increaseLiquidity')
-	})
+  it('generates increaseLiquidity step', () => {
+    const result = buildV3IncreaseLiquiditySteps({
+      tokenId: '12345',
+      amount0Wei: '1000000000000000000',
+      amount1Wei: '2000000000000000000',
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(POSITION_MANAGER)
+    expect(result.steps[0].label).toContain('increaseLiquidity')
+  })
 })
 
 describe('buildV3DecreaseLiquiditySteps', () => {
-	it('generates decreaseLiquidity step', () => {
-		const result = buildV3DecreaseLiquiditySteps({
-			tokenId: '12345',
-			liquidity: '5000000000000000000',
-			amount0MinWei: '0',
-			amount1MinWei: '0',
-			deadline: 1710000000,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(POSITION_MANAGER)
-		expect(result.steps[0].label).toContain('decreaseLiquidity')
-	})
+  it('generates decreaseLiquidity step', () => {
+    const result = buildV3DecreaseLiquiditySteps({
+      tokenId: '12345',
+      liquidity: '5000000000000000000',
+      amount0MinWei: '0',
+      amount1MinWei: '0',
+      deadline: 1710000000,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(POSITION_MANAGER)
+    expect(result.steps[0].label).toContain('decreaseLiquidity')
+  })
 })
 
 describe('buildV3CollectSteps', () => {
-	it('generates collect step with maxUint128', () => {
-		const result = buildV3CollectSteps({
-			tokenId: '12345',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(POSITION_MANAGER)
-		expect(result.steps[0].label).toContain('collect')
-	})
+  it('generates collect step with maxUint128', () => {
+    const result = buildV3CollectSteps({
+      tokenId: '12345',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(POSITION_MANAGER)
+    expect(result.steps[0].label).toContain('collect')
+  })
 })
 
 // ============================================================================
@@ -1317,125 +1317,125 @@ const ASTER_TREASURY_BSC = '0x128463A60784c4D3f46c23Af3f65Ed859Ba87974'
 const ASTER_TREASURY_ARB = '0x9E36CB86a159d479cEd94Fa05036f235Ac40E1d5'
 
 describe('buildAsterDepositSteps', () => {
-	it('native deposit: single depositNative step with value', () => {
-		const result = buildAsterDepositSteps({
-			token: NATIVE,
-			amountWei: '1000000000000000000',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(ASTER_TREASURY_BSC)
-		expect(result.steps[0].value).not.toBe('0x0')
-		expect(result.steps[0].value).toBe('0xde0b6b3a7640000')
-		expect(result.steps[0].label).toContain('native')
-		expect(result.steps[0].chainId).toBe(56)
-	})
+  it('native deposit: single depositNative step with value', () => {
+    const result = buildAsterDepositSteps({
+      token: NATIVE,
+      amountWei: '1000000000000000000',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(ASTER_TREASURY_BSC)
+    expect(result.steps[0].value).not.toBe('0x0')
+    expect(result.steps[0].value).toBe('0xde0b6b3a7640000')
+    expect(result.steps[0].label).toContain('native')
+    expect(result.steps[0].chainId).toBe(56)
+  })
 
-	it('ERC-20 deposit: conditional approval + deposit step', () => {
-		const result = buildAsterDepositSteps({
-			token: USDT,
-			amountWei: '10000000000000000000',
-			wallet: WALLET,
-			chainId: 1,
-		})
-		expect(result.steps).toHaveLength(2)
-		// Approval step
-		expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-		expect(result.steps[0].conditional?.spender).toBe(ASTER_TREASURY_ETH)
-		expect(result.steps[0].conditional?.token).toBe(USDT)
-		expect(result.steps[0].to).toBe(USDT)
-		// Deposit step
-		expect(result.steps[1].to).toBe(ASTER_TREASURY_ETH)
-		expect(result.steps[1].value).toBe('0x0')
-		expect(result.steps[1].label).toContain('ERC-20')
-		expect(result.steps[1].chainId).toBe(1)
-	})
+  it('ERC-20 deposit: conditional approval + deposit step', () => {
+    const result = buildAsterDepositSteps({
+      token: USDT,
+      amountWei: '10000000000000000000',
+      wallet: WALLET,
+      chainId: 1,
+    })
+    expect(result.steps).toHaveLength(2)
+    // Approval step
+    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+    expect(result.steps[0].conditional?.spender).toBe(ASTER_TREASURY_ETH)
+    expect(result.steps[0].conditional?.token).toBe(USDT)
+    expect(result.steps[0].to).toBe(USDT)
+    // Deposit step
+    expect(result.steps[1].to).toBe(ASTER_TREASURY_ETH)
+    expect(result.steps[1].value).toBe('0x0')
+    expect(result.steps[1].label).toContain('ERC-20')
+    expect(result.steps[1].chainId).toBe(1)
+  })
 
-	it('uses correct treasury address for Arbitrum', () => {
-		const result = buildAsterDepositSteps({
-			token: NATIVE,
-			amountWei: '500000000000000000',
-			wallet: WALLET,
-			chainId: 42161,
-		})
-		expect(result.steps).toHaveLength(1)
-		expect(result.steps[0].to).toBe(ASTER_TREASURY_ARB)
-		expect(result.steps[0].chainId).toBe(42161)
-	})
+  it('uses correct treasury address for Arbitrum', () => {
+    const result = buildAsterDepositSteps({
+      token: NATIVE,
+      amountWei: '500000000000000000',
+      wallet: WALLET,
+      chainId: 42161,
+    })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(ASTER_TREASURY_ARB)
+    expect(result.steps[0].chainId).toBe(42161)
+  })
 
-	it('throws on unsupported chainId', () => {
-		expect(() =>
-			buildAsterDepositSteps({
-				token: NATIVE,
-				amountWei: '1000000000000000000',
-				wallet: WALLET,
-				chainId: 137,
-			}),
-		).toThrow('Unsupported chain for Aster deposit: 137')
-	})
+  it('throws on unsupported chainId', () => {
+    expect(() =>
+      buildAsterDepositSteps({
+        token: NATIVE,
+        amountWei: '1000000000000000000',
+        wallet: WALLET,
+        chainId: 137,
+      }),
+    ).toThrow('Unsupported chain for Aster deposit: 137')
+  })
 
-	it('throws on zero amount', () => {
-		expect(() =>
-			buildAsterDepositSteps({
-				token: NATIVE,
-				amountWei: '0',
-				wallet: WALLET,
-				chainId: 56,
-			}),
-		).toThrow('greater than 0')
-	})
+  it('throws on zero amount', () => {
+    expect(() =>
+      buildAsterDepositSteps({
+        token: NATIVE,
+        amountWei: '0',
+        wallet: WALLET,
+        chainId: 56,
+      }),
+    ).toThrow('greater than 0')
+  })
 
-	it('throws on invalid wallet address', () => {
-		expect(() =>
-			buildAsterDepositSteps({
-				token: NATIVE,
-				amountWei: '1000000000000000000',
-				wallet: 'not-an-address',
-				chainId: 56,
-			}),
-		).toThrow('Invalid wallet')
-	})
+  it('throws on invalid wallet address', () => {
+    expect(() =>
+      buildAsterDepositSteps({
+        token: NATIVE,
+        amountWei: '1000000000000000000',
+        wallet: 'not-an-address',
+        chainId: 56,
+      }),
+    ).toThrow('Invalid wallet')
+  })
 
-	it('uses custom broker ID when provided', () => {
-		const result = buildAsterDepositSteps({
-			token: NATIVE,
-			amountWei: '1000000000000000000',
-			wallet: WALLET,
-			chainId: 56,
-			broker: '42',
-		})
-		expect(result.steps).toHaveLength(1)
-		// The broker is encoded in calldata — just verify it doesn't throw
-		expect(result.steps[0].data).toBeTruthy()
-	})
+  it('uses custom broker ID when provided', () => {
+    const result = buildAsterDepositSteps({
+      token: NATIVE,
+      amountWei: '1000000000000000000',
+      wallet: WALLET,
+      chainId: 56,
+      broker: '42',
+    })
+    expect(result.steps).toHaveLength(1)
+    // The broker is encoded in calldata — just verify it doesn't throw
+    expect(result.steps[0].data).toBeTruthy()
+  })
 
-	it('defaults broker to 1 when omitted', () => {
-		const withDefault = buildAsterDepositSteps({
-			token: NATIVE,
-			amountWei: '1000000000000000000',
-			wallet: WALLET,
-			chainId: 56,
-		})
-		const withExplicit = buildAsterDepositSteps({
-			token: NATIVE,
-			amountWei: '1000000000000000000',
-			wallet: WALLET,
-			chainId: 56,
-			broker: '1',
-		})
-		expect(withDefault.steps[0].data).toBe(withExplicit.steps[0].data)
-	})
+  it('defaults broker to 1 when omitted', () => {
+    const withDefault = buildAsterDepositSteps({
+      token: NATIVE,
+      amountWei: '1000000000000000000',
+      wallet: WALLET,
+      chainId: 56,
+    })
+    const withExplicit = buildAsterDepositSteps({
+      token: NATIVE,
+      amountWei: '1000000000000000000',
+      wallet: WALLET,
+      chainId: 56,
+      broker: '1',
+    })
+    expect(withDefault.steps[0].data).toBe(withExplicit.steps[0].data)
+  })
 
-	it('throws on invalid broker ID', () => {
-		expect(() =>
-			buildAsterDepositSteps({
-				token: NATIVE,
-				amountWei: '1000000000000000000',
-				wallet: WALLET,
-				chainId: 56,
-				broker: 'not-a-number',
-			}),
-		).toThrow('Invalid --broker')
-	})
+  it('throws on invalid broker ID', () => {
+    expect(() =>
+      buildAsterDepositSteps({
+        token: NATIVE,
+        amountWei: '1000000000000000000',
+        wallet: WALLET,
+        chainId: 56,
+        broker: 'not-a-number',
+      }),
+    ).toThrow('Invalid --broker')
+  })
 })

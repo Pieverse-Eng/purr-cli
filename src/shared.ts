@@ -4,71 +4,71 @@ import type { TxStep } from './types.js'
 export const NATIVE_EVM = '0x0000000000000000000000000000000000000000'
 
 export const ERC20_APPROVE_ABI = parseAbi([
-	'function approve(address spender, uint256 amount) returns (bool)',
+  'function approve(address spender, uint256 amount) returns (bool)',
 ])
 
 export function isNative(token: string): boolean {
-	if (token === '') return true
-	const t = token.toLowerCase()
-	if (t === NATIVE_EVM.toLowerCase()) return true
-	// Accept any 0x-prefixed all-zeros string (agents sometimes add extra zeros)
-	return /^0x0+$/.test(t)
+  if (token === '') return true
+  const t = token.toLowerCase()
+  if (t === NATIVE_EVM.toLowerCase()) return true
+  // Accept any 0x-prefixed all-zeros string (agents sometimes add extra zeros)
+  return /^0x0+$/.test(t)
 }
 
 export function parseBigInt(value: string, name: string): bigint {
-	let n: bigint
-	try {
-		n = BigInt(value)
-	} catch {
-		throw new Error(`Invalid ${name}: "${value}" — must be a positive integer (wei)`)
-	}
-	if (n <= 0n) {
-		throw new Error(`${name} must be greater than 0`)
-	}
-	return n
+  let n: bigint
+  try {
+    n = BigInt(value)
+  } catch {
+    throw new Error(`Invalid ${name}: "${value}" — must be a positive integer (wei)`)
+  }
+  if (n <= 0n) {
+    throw new Error(`${name} must be greater than 0`)
+  }
+  return n
 }
 
 /**
  * Build a conditional ERC-20 approval step (maxUint256 approve, skipped if allowance >= requiredWei).
  */
 export function buildApprovalStep(
-	token: string,
-	spender: string,
-	requiredWei: string,
-	chainId: number,
-	label: string,
+  token: string,
+  spender: string,
+  requiredWei: string,
+  chainId: number,
+  label: string,
 ): TxStep {
-	const approveData = encodeFunctionData({
-		abi: ERC20_APPROVE_ABI,
-		functionName: 'approve',
-		args: [spender as `0x${string}`, maxUint256],
-	})
-	return {
-		to: token,
-		data: approveData,
-		value: '0x0',
-		chainId,
-		label,
-		conditional: {
-			type: 'allowance_lt',
-			token,
-			spender,
-			amount: requiredWei,
-		},
-	}
+  const approveData = encodeFunctionData({
+    abi: ERC20_APPROVE_ABI,
+    functionName: 'approve',
+    args: [spender as `0x${string}`, maxUint256],
+  })
+  return {
+    to: token,
+    data: approveData,
+    value: '0x0',
+    chainId,
+    label,
+    conditional: {
+      type: 'allowance_lt',
+      token,
+      spender,
+      amount: requiredWei,
+    },
+  }
 }
 
 export function requireAddress(value: string, name: string): `0x${string}` {
-	if (!isAddress(value)) {
-		throw new Error(`Invalid ${name}: "${value}" — must be a valid EVM address (0x + 40 hex chars)`)
-	}
-	return value
+  if (!isAddress(value)) {
+    throw new Error(`Invalid ${name}: "${value}" — must be a valid EVM address (0x + 40 hex chars)`)
+  }
+  return value
 }
 
 export function parseChainId(value: string): number {
-	const n = Number.parseInt(value, 10)
-	if (Number.isNaN(n) || n <= 0) {
-		throw new Error(`Invalid --chain-id: "${value}" — must be a positive integer`)
-	}
-	return n
+  const n = Number.parseInt(value, 10)
+  if (Number.isNaN(n) || n <= 0) {
+    throw new Error(`Invalid --chain-id: "${value}" — must be a positive integer`)
+  }
+  return n
 }

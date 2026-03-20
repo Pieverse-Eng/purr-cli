@@ -49,6 +49,13 @@ import {
   buildV3IncreaseLiquiditySteps,
   buildV3MintSteps,
 } from './vendors/pancake.js'
+import {
+  buildOkxApproveSteps,
+  buildOkxSwapSteps,
+  getOkxSwapChains,
+  getOkxSwapLiquidity,
+  quoteOkxSwap,
+} from './vendors/okx.js'
 
 function parseArgs(argv: string[]): Record<string, string> {
   const result: Record<string, string> = {}
@@ -79,6 +86,14 @@ function requireArg(args: Record<string, string>, name: string): string {
     throw new Error(`Missing required argument: --${name}`)
   }
   return val
+}
+
+function requireArgAlias(args: Record<string, string>, ...names: string[]): string {
+  for (const name of names) {
+    const val = args[name]
+    if (val !== undefined) return val
+  }
+  throw new Error(`Missing required argument: ${names.map((name) => `--${name}`).join(' or ')}`)
 }
 
 async function readStdin(): Promise<string> {
@@ -185,6 +200,7 @@ Groups:
   binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
   dflow             DFlow Solana-only swap
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
+  okx               OKX EVM swap adapter via onchainos
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
@@ -198,6 +214,11 @@ Examples:
   purr dflow swap --from-token So111...1112 --to-token <mint> --amount 0.1 --wallet <addr> --execute
   purr fourmeme login-challenge --wallet 0x...
   purr bitget swap --from-token 0x... --to-token 0x... --from-amount 0.05 --chain bnb --wallet 0x...
+  purr okx chains
+  purr okx liquidity --chain base
+  purr okx quote --from-token ETH --to-token USDC --amount 0.001 --chain base
+  purr okx approve --token USDC --amount 10 --chain xlayer
+  purr okx swap --from-token USDC --to-token OKB --amount 10 --chain xlayer --wallet 0x...
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
@@ -299,6 +320,61 @@ Examples:
           wallet: requireArg(args, 'wallet'),
           slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
         })
+      }
+      break
+    }
+
+    case 'okx': {
+      switch (command) {
+        case 'chains': {
+          const result = await getOkxSwapChains()
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'liquidity': {
+          const result = await getOkxSwapLiquidity({
+            chain: requireArg(args, 'chain'),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'quote': {
+          const result = await quoteOkxSwap({
+            fromToken: requireArgAlias(args, 'from-token', 'from'),
+            toToken: requireArgAlias(args, 'to-token', 'to'),
+            amount: requireArgAlias(args, 'amount', 'from-amount'),
+            chain: requireArg(args, 'chain'),
+            swapMode: args['swap-mode'] as 'exactIn' | 'exactOut' | undefined,
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'approve':
+          output = await buildOkxApproveSteps({
+            token: requireArg(args, 'token'),
+            amount: requireArg(args, 'amount'),
+            chain: requireArg(args, 'chain'),
+          })
+          break
+        case 'swap':
+          output = await buildOkxSwapSteps({
+            fromToken: requireArgAlias(args, 'from-token', 'from'),
+            toToken: requireArgAlias(args, 'to-token', 'to'),
+            amount: requireArgAlias(args, 'amount', 'from-amount'),
+            chain: requireArg(args, 'chain'),
+            wallet: requireArg(args, 'wallet'),
+            slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
+            swapMode: args['swap-mode'] as 'exactIn' | 'exactOut' | undefined,
+            gasLevel: args['gas-level'] as 'slow' | 'average' | 'fast' | undefined,
+            maxAutoSlippage: args['max-auto-slippage']
+              ? Number.parseFloat(args['max-auto-slippage'])
+              : undefined,
+          })
+          break
+        default:
+          throw new Error(
+            `Unknown okx command: ${command}. Use: chains, liquidity, quote, approve, swap`,
+          )
       }
       break
     }
@@ -652,7 +728,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, pancake, lista, evm, wallet, execute, config, version`,
+        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, okx, pancake, lista, evm, wallet, execute, config, version`,
       )
   }
 

@@ -14,6 +14,7 @@ import { buildApprovalStep, isNative, requireAddress } from '../shared.js'
 import type { StepOutput, TxStep } from '../types.js'
 import {
   cancelOrder,
+  submitOrder,
   OPENSEA_CONDUIT_ADDRESS,
   OPENSEA_CONDUIT_KEY,
   OPENSEA_SEAPORT_V1_6,
@@ -314,15 +315,7 @@ export interface OpenSeaOfferPreview {
 export interface OpenSeaOfferExecutionResult {
   approval?: ExecuteResult
   typedData: OpenSeaOfferPreview['typedData']
-  submission: {
-    path: string
-    body: {
-      parameters: OpenSeaOrderParametersWithCounter
-      protocol_address: string
-    }
-    signaturePlaceholder: string
-    jsonBodyTemplate: string
-  }
+  submission: unknown
   metadata: OpenSeaOfferPreview['metadata']
 }
 
@@ -347,15 +340,7 @@ export interface OpenSeaListingPreview {
 export interface OpenSeaListingExecutionResult {
   approval?: ExecuteResult
   typedData: OpenSeaListingPreview['typedData']
-  submission: {
-    path: string
-    body: {
-      parameters: OpenSeaOrderParametersWithCounter
-      protocol_address: string
-    }
-    signaturePlaceholder: string
-    jsonBodyTemplate: string
-  }
+  submission: unknown
   metadata: OpenSeaListingPreview['metadata']
 }
 
@@ -394,7 +379,6 @@ const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 const SUPPORTED_OPENSEA_CHAIN_IDS = new Set([
   1, 10, 137, 8453, 42161, 43114, 8217, 7777777, 81457, 11155111,
 ])
-const SUBMISSION_SIGNATURE_PLACEHOLDER = '__PURR_SIGNATURE__'
 
 function openSeaError(
   message: string,
@@ -1519,22 +1503,45 @@ async function buildListingApprovalStepsFromOrder(
   ]
 }
 
-function buildOpenSeaSubmissionTemplate(
-  path: string,
-  body: {
+interface SignTypedDataResponse {
+  ok: boolean
+  data: { address: string; signature: string }
+  error?: string
+}
+
+async function signAndSubmitOrder(
+  wallet: `0x${string}`,
+  typedData: OpenSeaOfferPreview['typedData'],
+  submissionPath: string,
+  submissionBody: {
     parameters: OpenSeaOrderParametersWithCounter
     protocol_address: string
   },
-) {
-  return {
-    path,
-    body,
-    signaturePlaceholder: SUBMISSION_SIGNATURE_PLACEHOLDER,
-    jsonBodyTemplate: JSON.stringify({
-      ...body,
-      signature: SUBMISSION_SIGNATURE_PLACEHOLDER,
-    }),
+): Promise<unknown> {
+  const { instanceId } = resolveCredentials()
+
+  // Sign the EIP-712 typed data via wallet API
+  const signRes = await apiPost<SignTypedDataResponse>(
+    `/v1/instances/${instanceId}/wallet/sign-typed-data`,
+    {
+      domain: typedData.domain,
+      types: typedData.types,
+      primaryType: typedData.primaryType,
+      message: typedData.message,
+    },
+  )
+  if (!signRes.ok) {
+    throw new Error(signRes.error ?? 'Failed to sign typed data for OpenSea order')
   }
+  if (signRes.data.address.toLowerCase() !== wallet.toLowerCase()) {
+    throw new Error(`Signature address mismatch: got ${signRes.data.address}, expected ${wallet}`)
+  }
+
+  // Submit the signed order to OpenSea
+  return submitOrder(submissionPath, {
+    ...submissionBody,
+    signature: signRes.data.signature,
+  })
 }
 
 async function ensureWalletOwnsTokenStandardNft(
@@ -1916,19 +1923,23 @@ export async function createOpenSeaOffer(
       ? (await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps),
         await executeStepsFromJson(JSON.stringify({ steps: preview.steps })))
       : undefined
-  const body = {
+  const submissionPath = `/api/v2/orders/${prepared.chain.apiName}/seaport/offers`
+  const submissionBody = {
     parameters: preview.submission.parameters,
     protocol_address: preview.submission.protocol_address,
   }
-  const submission = buildOpenSeaSubmissionTemplate(
-    `/api/v2/orders/${prepared.chain.apiName}/seaport/offers`,
-    body,
+
+  const orderResult = await signAndSubmitOrder(
+    wallet,
+    preview.typedData,
+    submissionPath,
+    submissionBody,
   )
 
   return {
     approval,
     typedData: preview.typedData,
-    submission,
+    submission: orderResult,
     metadata: preview.metadata,
   }
 }
@@ -1973,19 +1984,23 @@ export async function createOpenSeaListing(
       ? (await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps),
         await executeStepsFromJson(JSON.stringify({ steps: preview.steps })))
       : undefined
-  const body = {
+  const submissionPath = `/api/v2/orders/${prepared.chain.apiName}/seaport/listings`
+  const submissionBody = {
     parameters: preview.submission.parameters,
     protocol_address: preview.submission.protocol_address,
   }
-  const submission = buildOpenSeaSubmissionTemplate(
-    `/api/v2/orders/${prepared.chain.apiName}/seaport/listings`,
-    body,
+
+  const orderResult = await signAndSubmitOrder(
+    wallet,
+    preview.typedData,
+    submissionPath,
+    submissionBody,
   )
 
   return {
     approval,
     typedData: preview.typedData,
-    submission,
+    submission: orderResult,
     metadata: preview.metadata,
   }
 }

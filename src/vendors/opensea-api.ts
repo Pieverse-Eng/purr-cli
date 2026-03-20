@@ -475,6 +475,13 @@ export async function cancelOrder(args: {
   }
 }
 
+export async function submitOrder(path: string, body: Record<string, unknown>): Promise<unknown> {
+  return request(path, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export function normalizeOpenSeaChain(chain: string): {
   input: string
   apiName: string

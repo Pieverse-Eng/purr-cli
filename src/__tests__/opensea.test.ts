@@ -2383,6 +2383,26 @@ describe('createOpenSeaOffer', () => {
           text: () => Promise.resolve('ok'),
         }
       }
+      if (typeof url === 'string' && url.includes('/wallet/sign-typed-data')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              ok: true,
+              data: { address: WALLET, signature: '0xmocksig' },
+            }),
+          text: () => Promise.resolve('ok'),
+        }
+      }
+      if (typeof url === 'string' && url.includes('/api/v2/orders/')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ order: { hash: '0xorderhash' } }),
+          text: () => Promise.resolve('ok'),
+        }
+      }
       throw new Error(`Unexpected fetch URL: ${url}`)
     })
     vi.stubGlobal('fetch', mock)
@@ -2397,13 +2417,17 @@ describe('createOpenSeaOffer', () => {
 
     expect(result.approval?.results[0]?.label).toBe('Approve offer payment token for OpenSea')
     expect(result.typedData.primaryType).toBe('OrderComponents')
-    expect(result.submission.path).toBe('/api/v2/orders/ethereum/seaport/offers')
-    expect(result.submission.body).not.toHaveProperty('signature')
-    expect(result.submission.signaturePlaceholder).toBe('__PURR_SIGNATURE__')
-    expect(result.submission.jsonBodyTemplate).toContain('__PURR_SIGNATURE__')
-    expect(mock).not.toHaveBeenCalledWith(
+    expect(result.submission).toEqual({ order: { hash: '0xorderhash' } })
+    expect(mock).toHaveBeenCalledWith(
       expect.stringContaining('/wallet/sign-typed-data'),
       expect.anything(),
+    )
+    expect(mock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v2/orders/ethereum/seaport/offers'),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('0xmocksig'),
+      }),
     )
   })
 
@@ -2598,6 +2622,26 @@ describe('createOpenSeaListing', () => {
           text: () => Promise.resolve('ok'),
         }
       }
+      if (typeof url === 'string' && url.includes('/wallet/sign-typed-data')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              ok: true,
+              data: { address: WALLET, signature: '0xmocksig' },
+            }),
+          text: () => Promise.resolve('ok'),
+        }
+      }
+      if (typeof url === 'string' && url.includes('/api/v2/orders/')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ order: { hash: '0xorderhash' } }),
+          text: () => Promise.resolve('ok'),
+        }
+      }
       throw new Error(`Unexpected fetch URL: ${url}`)
     })
     vi.stubGlobal('fetch', mock)
@@ -2612,13 +2656,17 @@ describe('createOpenSeaListing', () => {
 
     expect(result.approval?.results[0]?.label).toBe('Approve NFT for OpenSea')
     expect(result.typedData.primaryType).toBe('OrderComponents')
-    expect(result.submission.path).toBe('/api/v2/orders/ethereum/seaport/listings')
-    expect(result.submission.body).not.toHaveProperty('signature')
-    expect(result.submission.signaturePlaceholder).toBe('__PURR_SIGNATURE__')
-    expect(result.submission.jsonBodyTemplate).toContain('__PURR_SIGNATURE__')
-    expect(mock).not.toHaveBeenCalledWith(
+    expect(result.submission).toEqual({ order: { hash: '0xorderhash' } })
+    expect(mock).toHaveBeenCalledWith(
       expect.stringContaining('/wallet/sign-typed-data'),
       expect.anything(),
+    )
+    expect(mock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v2/orders/ethereum/seaport/listings'),
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('0xmocksig'),
+      }),
     )
   })
 

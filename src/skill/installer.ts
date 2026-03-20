@@ -140,34 +140,50 @@ export function installSkill(options: InstallSkillOptions): InstallResult {
 	extractZip(buffer, canonical)
 
 	const agentInstalls: Record<string, AgentInstallResult> = {}
+	const installedAgentDirs: string[] = []
 
-	for (const agentSlug of agents) {
-		const agent = getAgent(agentSlug)
-		if (!agent) {
-			throw new Error(`Unknown agent: "${agentSlug}"`)
-		}
-
-		const targetDir = agentSkillDir(agent, scope, slug)
-
-		if (copyMode) {
-			copyDirRecursive(canonical, targetDir)
-			agentInstalls[agentSlug] = { path: targetDir, method: 'copy' }
-		} else {
-			// Symlink mode with auto-fallback to copy
-			mkdirSync(join(targetDir, '..'), { recursive: true })
-			// Remove existing target if present (stale symlink or old copy)
-			if (existsSync(targetDir)) {
-				rmSync(targetDir, { recursive: true, force: true })
+	try {
+		for (const agentSlug of agents) {
+			const agent = getAgent(agentSlug)
+			if (!agent) {
+				throw new Error(`Unknown agent: "${agentSlug}"`)
 			}
-			try {
-				symlinkSync(canonical, targetDir, 'junction')
-				agentInstalls[agentSlug] = { path: targetDir, method: 'symlink' }
-			} catch {
-				// Fallback to copy if symlink fails (e.g. on Windows without dev mode)
+
+			const targetDir = agentSkillDir(agent, scope, slug)
+
+			if (copyMode) {
 				copyDirRecursive(canonical, targetDir)
 				agentInstalls[agentSlug] = { path: targetDir, method: 'copy' }
+			} else {
+				// Symlink mode with auto-fallback to copy
+				mkdirSync(join(targetDir, '..'), { recursive: true })
+				// Remove existing target if present (stale symlink or old copy)
+				if (existsSync(targetDir)) {
+					rmSync(targetDir, { recursive: true, force: true })
+				}
+				try {
+					symlinkSync(canonical, targetDir, 'dir')
+					agentInstalls[agentSlug] = { path: targetDir, method: 'symlink' }
+				} catch {
+					// Fallback to copy if symlink fails (e.g. on Windows without dev mode)
+					copyDirRecursive(canonical, targetDir)
+					agentInstalls[agentSlug] = { path: targetDir, method: 'copy' }
+				}
+			}
+
+			installedAgentDirs.push(targetDir)
+		}
+	} catch (err) {
+		// Rollback: clean up agent dirs and canonical on failure
+		for (const dir of installedAgentDirs) {
+			if (existsSync(dir)) {
+				rmSync(dir, { recursive: true, force: true })
 			}
 		}
+		if (existsSync(canonical)) {
+			rmSync(canonical, { recursive: true, force: true })
+		}
+		throw err
 	}
 
 	return { canonicalPath: canonical, agentInstalls }

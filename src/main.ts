@@ -624,7 +624,22 @@ Examples:
 		}
 
 		case 'skill': {
-			const positional = rest.filter((a) => !a.startsWith('--'))
+			// Extract true positional args by skipping flags and their consumed values
+			const positional: string[] = []
+			for (let i = 0; i < rest.length; i++) {
+				const token = rest[i]
+				if (token.startsWith('--')) {
+					// Skip flag and its value (unless it uses = or is a boolean flag)
+					if (!token.includes('=')) {
+						const next = rest[i + 1]
+						if (next && !next.startsWith('--')) {
+							i++ // skip consumed value
+						}
+					}
+				} else {
+					positional.push(token)
+				}
+			}
 			switch (command) {
 				case 'list': {
 					const { skillList } = await import('./skill/commands/list.js')

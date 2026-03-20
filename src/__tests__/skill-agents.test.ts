@@ -1,5 +1,16 @@
-import { describe, expect, it } from 'vitest'
-import { detectInstalled, getAgent, getAllAgents } from '../skill/agents.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { getAllAgents, getAgent } from '../skill/agents.js'
+
+// Mutable flag that controls existsSync behavior in the mock
+let existsSyncImpl: (p: string) => boolean = () => false
+
+vi.mock('node:fs', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('node:fs')>()
+	return {
+		...actual,
+		existsSync: (p: string | Buffer | URL) => existsSyncImpl(String(p)),
+	}
+})
 
 describe('agent registry', () => {
 	const expectedSlugs = [
@@ -29,13 +40,45 @@ describe('agent registry', () => {
 		}
 	})
 
-	it('path functions return strings containing the slug', () => {
+	it('path functions return correct directory structures', () => {
+		const expectedPaths: Record<string, { localContains: string; globalContains: string }> = {
+			openclaw: {
+				localContains: '.openclaw/workspace/skills/my-skill',
+				globalContains: '.openclaw/workspace/skills/my-skill',
+			},
+			'claude-code': {
+				localContains: '.claude/skills/my-skill',
+				globalContains: '.claude/skills/my-skill',
+			},
+			cursor: {
+				localContains: '.cursor/skills/my-skill',
+				globalContains: '.cursor/skills/my-skill',
+			},
+			windsurf: {
+				localContains: '.windsurf/skills/my-skill',
+				globalContains: '.windsurf/skills/my-skill',
+			},
+			cline: {
+				localContains: '.cline/skills/my-skill',
+				globalContains: '.cline/skills/my-skill',
+			},
+			'github-copilot': {
+				localContains: '.github/copilot/skills/my-skill',
+				globalContains: '.github/copilot/skills/my-skill',
+			},
+		}
+
 		const agents = getAllAgents()
 		for (const agent of agents) {
+			const expected = expectedPaths[agent.slug]
+			expect(expected, `Missing expected paths for ${agent.slug}`).toBeDefined()
+
 			const localPath = agent.localSkillPath('/project', 'my-skill')
 			const globalPath = agent.globalSkillPath('my-skill')
-			expect(localPath).toContain('my-skill')
-			expect(globalPath).toContain('my-skill')
+
+			expect(localPath).toContain(expected.localContains)
+			expect(localPath).toMatch(/^\/project\//)
+			expect(globalPath).toContain(expected.globalContains)
 		}
 	})
 })
@@ -70,27 +113,41 @@ describe('getAgent', () => {
 })
 
 describe('detectInstalled', () => {
-	it('returns an array', () => {
-		const installed = detectInstalled()
-		expect(Array.isArray(installed)).toBe(true)
+	// Need to dynamically import since the module uses the mocked existsSync
+	async function importDetect() {
+		const mod = await import('../skill/agents.js')
+		return mod.detectInstalled
+	}
+
+	afterEach(() => {
+		existsSyncImpl = () => false
 	})
 
-	it('each detected agent has the AgentDefinition shape', () => {
-		const installed = detectInstalled()
-		for (const agent of installed) {
-			expect(agent.name).toBeTruthy()
-			expect(agent.slug).toBeTruthy()
-			expect(typeof agent.localSkillPath).toBe('function')
-			expect(typeof agent.globalSkillPath).toBe('function')
-		}
+	it('returns only agents whose config directory exists', async () => {
+		existsSyncImpl = (p) => p.includes('.claude')
+		const detectInstalled = (await importDetect())
+		const result = detectInstalled()
+
+		expect(result).toHaveLength(1)
+		expect(result[0].slug).toBe('claude-code')
 	})
 
-	it('only returns agents that are a subset of all agents', () => {
-		const all = getAllAgents()
-		const allSlugs = all.map((a) => a.slug)
-		const installed = detectInstalled()
-		for (const agent of installed) {
-			expect(allSlugs).toContain(agent.slug)
-		}
+	it('returns empty array when no agent directories exist', async () => {
+		existsSyncImpl = () => false
+		const detectInstalled = (await importDetect())
+		const result = detectInstalled()
+
+		expect(result).toHaveLength(0)
+	})
+
+	it('returns multiple agents when multiple directories exist', async () => {
+		existsSyncImpl = (p) => p.includes('.claude') || p.includes('.cursor')
+		const detectInstalled = (await importDetect())
+		const result = detectInstalled()
+		const slugs = result.map((a) => a.slug)
+
+		expect(slugs).toContain('claude-code')
+		expect(slugs).toContain('cursor')
+		expect(result).toHaveLength(2)
 	})
 })

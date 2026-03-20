@@ -39,6 +39,7 @@ export function readLock(scope: 'local' | 'global'): LockFile {
 		const raw = JSON.parse(readFileSync(filePath, 'utf-8')) as LockFile
 		return { skills: raw.skills ?? [] }
 	} catch {
+		console.error(`Warning: ${filePath} is corrupted and could not be parsed. Treating as empty.`)
 		return { skills: [] }
 	}
 }

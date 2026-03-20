@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { zipSync } from 'fflate'
-import { extractZip } from '../skill/installer.js'
+import { extractZip, installSkill } from '../skill/installer.js'
 
 let testDir: string
 
@@ -65,43 +65,27 @@ describe('extractZip', () => {
 })
 
 describe('SHA256 verification', () => {
-	it('passes when hash matches', async () => {
+	it('passes when hash matches', () => {
+		vi.spyOn(process, 'cwd').mockReturnValue(testDir)
+
 		const zipBuffer = makeZip({ 'skill.md': '# My Skill' })
 		const hash = sha256(zipBuffer)
 
-		// Mock process.cwd for installSkill's canonicalDir
-		const origCwd = process.cwd()
-		vi.spyOn(process, 'cwd').mockReturnValue(testDir)
-
-		const { installSkill } = await import('../skill/installer.js')
-
-		// installSkill requires valid agent slugs — use a known agent
-		// but since we can't guarantee the agent dir is writable, just verify
-		// that SHA256 verification itself doesn't throw by catching only agent errors
-		try {
+		expect(() =>
 			installSkill({
 				slug: 'test-skill',
 				buffer: zipBuffer,
 				sha256: hash,
 				scope: 'local',
 				agents: [],
-				copyMode: false,
-			})
-		} catch (e) {
-			// Should not throw SHA256 mismatch
-			expect(String(e)).not.toContain('SHA256 mismatch')
-		}
-
-		vi.spyOn(process, 'cwd').mockReturnValue(origCwd)
-		vi.restoreAllMocks()
+			}),
+		).not.toThrow()
 	})
 
-	it('fails when hash does not match', async () => {
-		const zipBuffer = makeZip({ 'skill.md': '# My Skill' })
-
+	it('fails when hash does not match', () => {
 		vi.spyOn(process, 'cwd').mockReturnValue(testDir)
 
-		const { installSkill } = await import('../skill/installer.js')
+		const zipBuffer = makeZip({ 'skill.md': '# My Skill' })
 
 		expect(() =>
 			installSkill({
@@ -110,10 +94,7 @@ describe('SHA256 verification', () => {
 				sha256: 'wrong-hash-value',
 				scope: 'local',
 				agents: [],
-				copyMode: false,
 			}),
 		).toThrow(/SHA256 mismatch/)
-
-		vi.restoreAllMocks()
 	})
 })

@@ -134,7 +134,13 @@ export async function downloadSkill(slug: string): Promise<SkillDownloadResult> 
 		throw new Error(`Marketplace API error ${res.status} GET /skills/${slug}/download: ${body}`)
 	}
 
-	const sha256 = res.headers.get('X-Skill-SHA256') ?? ''
+	const sha256 = res.headers.get('X-Skill-SHA256')
+	if (!sha256) {
+		throw new Error(
+			`Marketplace response for "${slug}" is missing the X-Skill-SHA256 header — cannot verify integrity`,
+		)
+	}
+
 	const arrayBuffer = await res.arrayBuffer()
 	const buffer = Buffer.from(arrayBuffer)
 

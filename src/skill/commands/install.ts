@@ -1,5 +1,5 @@
 import pc from 'picocolors'
-import { downloadSkill, listSkills } from '../api.js'
+import { downloadSkill, getSkill, listSkills } from '../api.js'
 import { getAgent, detectInstalled, getAllAgents } from '../agents.js'
 import { installSkill } from '../installer.js'
 import { getLockEntry, upsertLockEntry } from '../lock.js'
@@ -140,9 +140,23 @@ export async function skillInstall(args: Record<string, string>, positional: str
 		}
 	}
 
+	// Fetch skill metadata for display name (also validates slug exists)
+	let skillName = slug
+	try {
+		const meta = await getSkill(slug)
+		skillName = meta.name
+	} catch (err) {
+		// 404 means skill doesn't exist — re-throw as clear error
+		if (err instanceof Error && err.message.includes('not found')) {
+			console.error(err.message)
+			process.exit(1)
+		}
+		// Other network errors are non-fatal: fall back to slug as name
+	}
+
 	// Download from marketplace
 	if (!isJson) {
-		console.log(`Downloading skill "${slug}" from marketplace...`)
+		console.log(`Downloading skill "${skillName}" from marketplace...`)
 	}
 
 	let downloadResult: Awaited<ReturnType<typeof downloadSkill>>
@@ -180,7 +194,7 @@ export async function skillInstall(args: Record<string, string>, positional: str
 	// Update lock file
 	const lockEntry: LockEntry = {
 		slug,
-		name: slug,
+		name: skillName,
 		sha256: downloadResult.sha256,
 		installed_at: new Date().toISOString(),
 		install_method: primaryMethod,

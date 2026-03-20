@@ -355,7 +355,6 @@ describe('buildOpenSeaBuySteps', () => {
             chain: 1,
             to: SEAPORT,
             value: '1000',
-            data: '0xdeadbeef',
             input_data: {
               parameters: {
                 considerationToken: NATIVE,
@@ -386,10 +385,11 @@ describe('buildOpenSeaBuySteps', () => {
     expect(result.steps).toHaveLength(1)
     expect(result.steps[0]).toMatchObject({
       to: SEAPORT,
-      data: '0xdeadbeef',
       value: '0x3e8',
       label: 'OpenSea buy NFT',
     })
+    expect((result.steps[0].data as string).startsWith('0x')).toBe(true)
+    expect((result.steps[0].data as string).length).toBeGreaterThan(10)
   })
 })
 
@@ -413,7 +413,6 @@ describe('buildOpenSeaSellSteps', () => {
             chain: 1,
             to: SEAPORT,
             value: '0',
-            data: '0xbeef',
             input_data: {
               advancedOrder: {
                 parameters: {
@@ -470,11 +469,12 @@ describe('buildOpenSeaSellSteps', () => {
     expect(approval.args).toEqual([OPENSEA_CONDUIT, 1234n])
     expect(result.steps[1]).toMatchObject({
       to: SEAPORT,
-      data: '0xbeef',
       value: '0x0',
       chainId: 1,
       label: 'OpenSea sell NFT',
     })
+    expect((result.steps[1].data as string).startsWith('0x')).toBe(true)
+    expect((result.steps[1].data as string).length).toBeGreaterThan(10)
   })
 })
 

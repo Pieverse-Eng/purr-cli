@@ -1,5 +1,4 @@
 import { execFile } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import { promisify } from 'node:util'
 import {
   decodeAbiParameters,
@@ -9,31 +8,16 @@ import {
   toFunctionSelector,
 } from 'viem'
 import { apiPost, resolveCredentials } from '../api-client.js'
-import { executeStepsFromJson, type ExecuteResult } from '../executor.js'
 import { buildApprovalStep, isNative, requireAddress } from '../shared.js'
 import type { StepOutput, TxStep } from '../types.js'
 import {
-  cancelOrder,
-  submitOrder,
   OPENSEA_CONDUIT_ADDRESS,
   OPENSEA_CONDUIT_KEY,
   OPENSEA_SEAPORT_V1_6,
-  getCollection,
-  getNft,
-  getOrder,
-  getSwapQuote,
-  normalizeOpenSeaChain,
   type OpenSeaAdvancedOrder,
-  type OpenSeaBestListingResponse,
-  type OpenSeaBestOfferResponse,
-  type OpenSeaCollectionResponse,
   type OpenSeaCriteriaResolver,
   type OpenSeaFulfillmentMatch,
   type OpenSeaFulfillmentResponse,
-  type OpenSeaOrderResponse,
-  type OpenSeaOrderParametersWithCounter,
-  type OpenSeaSwapQuoteResponse,
-  type OpenSeaSwapTransaction,
 } from './opensea-api.js'
 
 export class OpenSeaCliError extends Error {
@@ -64,21 +48,17 @@ const ERC721_OWNER_OF_ABI = parseAbi(['function ownerOf(uint256 tokenId) view re
 const ERC1155_BALANCE_OF_ABI = parseAbi([
   'function balanceOf(address account, uint256 id) view returns (uint256)',
 ])
-const SEAPORT_CANCEL_ABI = parseAbi([
-  'function cancel((address offerer,address zone,(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount)[] offer,(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount,address recipient)[] consideration,uint8 orderType,uint256 startTime,uint256 endTime,bytes32 zoneHash,uint256 salt,bytes32 conduitKey,uint256 totalOriginalConsiderationItems,uint256 counter)[] orders) returns (bool cancelled)',
-])
-const SEAPORT_COUNTER_ABI = parseAbi([
-  'function getCounter(address offerer) view returns (uint256)',
-])
-const execFileAsync = promisify(execFile)
 const MATCH_ADVANCED_ORDERS_SELECTOR = toFunctionSelector(MATCH_ADVANCED_ORDERS_FUNCTION)
 const FULFILL_ADVANCED_ORDER_SELECTOR = toFunctionSelector(FULFILL_ADVANCED_ORDER_FUNCTION)
-const OPENSEA_SIGNED_ZONES = new Set([
-  '0x000056f7000000ece9003ca63978907a00ffd100',
-  '0x000000e7ec00e7b300774b00001314b8610022b8',
-])
+const BASIC_ORDER_SELECTOR = toFunctionSelector(BASIC_ORDER_FUNCTION)
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000'
+const execFileAsync = promisify(execFile)
+const ALLOWED_OPENSEA_FULFILLMENT_SELECTORS = new Set([
+  BASIC_ORDER_SELECTOR,
+  MATCH_ADVANCED_ORDERS_SELECTOR,
+  FULFILL_ADVANCED_ORDER_SELECTOR,
+])
 
 interface WalletEnsureResponse {
   ok: boolean
@@ -248,131 +228,21 @@ export interface OpenSeaSellArgs {
   fulfillment: OpenSeaFulfillmentResponse
 }
 
-export interface OpenSeaOfferArgs {
-  chain: string
-  collection: string
-  tokenId: string
-  wallet: string
-  amount: string
-  protocolAddress?: string
-  startTime?: number
-  endTime?: number
-  durationSeconds?: number
-}
-
-export interface OpenSeaListingArgs {
-  chain: string
-  collection: string
-  tokenId: string
-  wallet: string
-  amount: string
-  protocolAddress?: string
-  startTime?: number
-  endTime?: number
-  durationSeconds?: number
-}
-
-export interface OpenSeaSwapArgs {
-  fromChain: string
-  fromAddress: string
-  toChain: string
-  toAddress: string
-  quantity: string
-  wallet: string
-  slippage?: number
-  recipient?: string
-}
-
-export interface OpenSeaCancelArgs {
-  chain: string
-  orderHash: string
-  wallet: string
-  protocolAddress?: string
-}
-
-export interface OpenSeaOfferPreview {
-  steps: TxStep[]
-  typedData: {
-    domain: Record<string, unknown>
-    types: Record<string, unknown>
-    primaryType: string
-    message: Record<string, unknown>
-  }
-  submission: {
-    protocol_address: string
-    parameters: OpenSeaOrderParametersWithCounter
-  }
-  metadata: {
-    collection: string
-    contract: string
-    tokenId: string
-    paymentToken: string
-    paymentAmount: string
-    chainId: number
-  }
-}
-
-export interface OpenSeaOfferExecutionResult {
-  approval?: ExecuteResult
-  typedData: OpenSeaOfferPreview['typedData']
-  submission: unknown
-  metadata: OpenSeaOfferPreview['metadata']
-}
-
-export interface OpenSeaListingPreview {
-  steps: TxStep[]
-  typedData: OpenSeaOfferPreview['typedData']
-  submission: {
-    protocol_address: string
-    parameters: OpenSeaOrderParametersWithCounter
-  }
-  metadata: {
-    collection: string
-    contract: string
-    tokenId: string
-    paymentToken: string
-    paymentAmount: string
-    paymentItemType: 0 | 1
-    chainId: number
-  }
-}
-
-export interface OpenSeaListingExecutionResult {
-  approval?: ExecuteResult
-  typedData: OpenSeaListingPreview['typedData']
-  submission: unknown
-  metadata: OpenSeaListingPreview['metadata']
-}
-
-export interface OpenSeaCancelPreview {
-  mode: 'official-first' | 'onchain-only'
-  steps: TxStep[]
-  official?: {
-    path: string
-    method: 'POST'
-  }
-  metadata: {
-    orderHash: string
-    orderKind: 'offer' | 'listing'
-    offerer: string
-    protocolAddress: string
-    chainId: number
-    signedZone: boolean
-    status?: string
-  }
-}
-
-export interface OpenSeaCancelExecutionResult {
-  mode: 'official' | 'onchain' | 'official-fallback-onchain'
-  official?: unknown
-  execution?: ExecuteResult
-  metadata: OpenSeaCancelPreview['metadata']
-}
-
 interface PaymentDetails {
   itemType: number
   token: string
   totalAmount: bigint
+}
+
+interface SelectedAdvancedOrder {
+  order: OpenSeaAdvancedOrder
+  orderIndex: number
+}
+
+interface SelectedNftItem {
+  itemType: number
+  token: `0x${string}`
+  tokenId: string
 }
 
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
@@ -386,29 +256,6 @@ function openSeaError(
   details?: Record<string, string>,
 ): OpenSeaCliError {
   return new OpenSeaCliError(message, code, details)
-}
-
-interface OpenSeaCancelContext {
-  chain: ReturnType<typeof normalizeOpenSeaChain>
-  order: OpenSeaOrderResponse
-  orderKind: 'offer' | 'listing'
-  protocolAddress: string
-  offerer: `0x${string}`
-  signedZone: boolean
-  steps: TxStep[]
-}
-
-function isSignedZoneAddress(zone: string | undefined): boolean {
-  if (!zone) return false
-  return OPENSEA_SIGNED_ZONES.has(zone.toLowerCase())
-}
-
-function isMakerIdentityMismatch(message: string): boolean {
-  return message.toLowerCase().includes('api key account does not match the expected maker')
-}
-
-function isSignedZoneUnsupported(message: string): boolean {
-  return message.toLowerCase().includes('not under a signed zone')
 }
 
 function getRpcUrl(chainId: number): string {
@@ -509,90 +356,6 @@ async function ethCall(
   }
 }
 
-function parseTokenId(tokenId: string): string {
-  const trimmed = tokenId.trim()
-  if (!/^\d+$/.test(trimmed)) {
-    throw new Error(`Invalid --token-id: "${tokenId}" — must be a positive integer`)
-  }
-  return trimmed
-}
-
-function parseUintString(value: string, flagName: string): string {
-  const trimmed = value.trim()
-  if (!/^\d+$/.test(trimmed)) {
-    throw new Error(`Invalid --${flagName}: "${value}" — must be a non-negative integer`)
-  }
-  return trimmed
-}
-
-function parseSlippage(value: number | undefined): number | undefined {
-  if (value === undefined) return undefined
-  if (!Number.isFinite(value) || value < 0 || value > 0.5) {
-    throw new Error(`Invalid OpenSea slippage: ${value}. Expected a number between 0 and 0.5`)
-  }
-  return value
-}
-
-function _getPaymentDetails(listing: OpenSeaBestListingResponse): PaymentDetails {
-  const consideration = listing.protocol_data?.parameters?.consideration ?? []
-  if (consideration.length === 0) {
-    throw new Error('OpenSea listing response did not include consideration items')
-  }
-
-  const first = consideration[0]
-  for (const item of consideration) {
-    if (
-      item.itemType !== first.itemType ||
-      item.token.toLowerCase() !== first.token.toLowerCase()
-    ) {
-      throw new Error('Unsupported OpenSea listing: mixed payment assets are not supported')
-    }
-  }
-
-  if (first.itemType !== 0 && first.itemType !== 1) {
-    throw new Error(
-      `Unsupported OpenSea payment itemType: ${first.itemType}. Only native and ERC20 listings are supported`,
-    )
-  }
-
-  return {
-    itemType: first.itemType,
-    token: first.token,
-    totalAmount: consideration.reduce((sum, item) => sum + BigInt(item.endAmount), 0n),
-  }
-}
-
-function _ensureListingIsActive(listing: OpenSeaBestListingResponse): void {
-  if (listing.status && listing.status !== 'ACTIVE') {
-    throw new Error(`OpenSea listing is not active: ${listing.status}`)
-  }
-
-  const now = BigInt(Math.floor(Date.now() / 1000))
-  const startTime = listing.protocol_data?.parameters?.startTime
-  const endTime = listing.protocol_data?.parameters?.endTime
-  if (startTime && BigInt(startTime) > now) {
-    throw new Error('OpenSea listing is not active yet')
-  }
-  if (endTime && BigInt(endTime) <= now) {
-    throw new Error('OpenSea listing has expired')
-  }
-}
-
-function _ensureOfferIsActive(offer: OpenSeaBestOfferResponse): void {
-  if (offer.status && offer.status !== 'ACTIVE') {
-    throw new Error(`OpenSea offer is not active: ${offer.status}`)
-  }
-
-  const now = BigInt(Math.floor(Date.now() / 1000))
-  const startTime = offer.protocol_data?.parameters?.startTime
-  const endTime = offer.protocol_data?.parameters?.endTime
-  if (startTime && BigInt(startTime) > now) {
-    throw new Error('OpenSea offer is not active yet')
-  }
-  if (endTime && BigInt(endTime) <= now) {
-    throw new Error('OpenSea offer has expired')
-  }
-}
 
 function requireHexData(value: string, fieldName: string): `0x${string}` {
   const trimmed = value.trim()
@@ -613,78 +376,6 @@ function parseNonNegativeUintString(value: string | undefined, fieldName: string
 
 function extractTransaction(fulfillment: OpenSeaFulfillmentResponse) {
   return fulfillment.fulfillment_data?.transaction
-}
-
-function extractSwapTransactions(response: OpenSeaSwapQuoteResponse): OpenSeaSwapTransaction[] {
-  if (Array.isArray(response.transactions) && response.transactions.length > 0) {
-    return response.transactions
-  }
-
-  const fallback = response.swap?.actions
-    ?.map((action) => action.transactionSubmissionData)
-    .filter((tx): tx is NonNullable<typeof tx> => Boolean(tx))
-    .map((tx) => ({
-      chain: tx.chain,
-      to: tx.to,
-      data: tx.data,
-      value: tx.value,
-    }))
-
-  if (fallback && fallback.length > 0) {
-    return fallback
-  }
-
-  throw new Error('OpenSea swap quote did not include executable transactions')
-}
-
-function resolveSwapTransactionChainId(
-  chain: OpenSeaSwapTransaction['chain'],
-  fallbackChainId: number,
-): number {
-  if (typeof chain === 'string' && chain.trim() !== '') {
-    return normalizeOpenSeaChain(chain).chainId
-  }
-  if (chain && typeof chain === 'object') {
-    if (
-      typeof chain.networkId === 'number' &&
-      Number.isFinite(chain.networkId) &&
-      chain.networkId > 0
-    ) {
-      return chain.networkId
-    }
-    if (typeof chain.identifier === 'string' && chain.identifier.trim() !== '') {
-      return normalizeOpenSeaChain(chain.identifier).chainId
-    }
-  }
-  return fallbackChainId
-}
-
-function getSwapStepLabel(
-  transaction: OpenSeaSwapTransaction,
-  index: number,
-  total: number,
-): string {
-  if (transaction.data.toLowerCase().startsWith(ERC20_APPROVE_SELECTOR)) {
-    return 'Approve token for OpenSea swap'
-  }
-  if (total === 1 || index === total - 1) {
-    return 'OpenSea swap'
-  }
-  return `OpenSea swap step ${index + 1}`
-}
-
-function _getOfferContractAddress(offer: OpenSeaBestOfferResponse): `0x${string}` {
-  const criteriaContract = offer.criteria?.contract?.address
-  if (criteriaContract) return requireAddress(criteriaContract, 'offer contract')
-
-  const nftItem = offer.protocol_data?.parameters?.consideration?.find((item) =>
-    [2, 3, 4, 5].includes(item.itemType),
-  )
-  if (!nftItem) {
-    throw new Error('OpenSea offer response did not include an NFT contract')
-  }
-
-  return requireAddress(nftItem.token, 'offer contract')
 }
 
 function getErc20ApprovalAmount(
@@ -722,6 +413,63 @@ function requireFulfillmentTransaction(
   return transaction
 }
 
+function getFulfillmentSelector(
+  transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+): `0x${string}` | undefined {
+  if (transaction.data) {
+    return requireHexData(transaction.data, 'fulfillment transaction.data').slice(0, 10) as `0x${string}`
+  }
+
+  const rawData = transaction.input_data?.data
+  if (typeof rawData === 'string' && rawData.startsWith('0x')) {
+    return requireHexData(rawData, 'fulfillment transaction.input_data.data').slice(
+      0,
+      10,
+    ) as `0x${string}`
+  }
+
+  if (transaction.input_data?.parameters) {
+    return BASIC_ORDER_SELECTOR
+  }
+
+  if (transaction.function === BASIC_ORDER_FUNCTION) {
+    return BASIC_ORDER_SELECTOR
+  }
+
+  const functionName = transaction.function?.split('(')[0]
+  if (functionName === 'matchAdvancedOrders') {
+    return MATCH_ADVANCED_ORDERS_SELECTOR
+  }
+  if (functionName === 'fulfillAdvancedOrder') {
+    return FULFILL_ADVANCED_ORDER_SELECTOR
+  }
+
+  return undefined
+}
+
+function ensureOfficialOpenSeaFulfillment(
+  fulfillment: OpenSeaFulfillmentResponse,
+  transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+  action: 'buy' | 'sell',
+): void {
+  const target = requireAddress(transaction.to, 'fulfillment target')
+  if (target.toLowerCase() !== OPENSEA_SEAPORT_V1_6.toLowerCase()) {
+    throw new Error(
+      `OpenSea ${action} fulfillment must target the official Seaport contract`,
+    )
+  }
+
+  const protocol = fulfillment.protocol?.trim().toLowerCase()
+  if (protocol && protocol !== 'seaport') {
+    throw new Error(`OpenSea ${action} fulfillment must use the Seaport protocol`)
+  }
+
+  const selector = getFulfillmentSelector(transaction)
+  if (!selector || !ALLOWED_OPENSEA_FULFILLMENT_SELECTORS.has(selector)) {
+    throw new Error(`OpenSea ${action} fulfillment used an unsupported Seaport function`)
+  }
+}
+
 function requireFulfillmentChainId(
   transaction: NonNullable<ReturnType<typeof extractTransaction>>,
   action: 'buy' | 'sell',
@@ -752,6 +500,20 @@ function ensureFulfillmentRecipientMatchesWallet(
   }
 }
 
+function ensureSellFulfillmentRecipientMatchesWallet(
+  transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+  wallet: `0x${string}`,
+): void {
+  const recipient = transaction.input_data?.recipient
+  if (!recipient) return
+  const normalizedRecipient = requireAddress(recipient, 'sell fulfillment recipient')
+  if (normalizedRecipient.toLowerCase() !== wallet.toLowerCase()) {
+    throw new Error(
+      `OpenSea sell fulfillment recipient does not match wallet ${wallet}: ${normalizedRecipient}`,
+    )
+  }
+}
+
 function getListingOrderFromFulfillment(
   transaction: NonNullable<ReturnType<typeof extractTransaction>>,
 ): OpenSeaAdvancedOrder {
@@ -768,6 +530,54 @@ function getListingOrderFromFulfillment(
   }
 
   throw new Error('OpenSea buy fulfillment response did not include listing order details')
+}
+
+function getMatchingOfferSellerOrder(
+  transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+  wallet: `0x${string}`,
+): SelectedAdvancedOrder {
+  const orders = transaction.input_data?.orders
+  if (!orders || orders.length === 0) {
+    throw new Error('OpenSea offer fulfillment response did not include seller orders')
+  }
+
+  const walletLower = wallet.toLowerCase()
+  const orderIndex = orders.findIndex((order) => order.parameters.offerer.toLowerCase() === walletLower)
+  if (orderIndex === -1) {
+    throw new Error(`OpenSea offer fulfillment did not include a seller order for wallet ${wallet}`)
+  }
+
+  return {
+    order: orders[orderIndex],
+    orderIndex,
+  }
+}
+
+function getCriteriaResolvedTokenId(args: {
+  transaction: NonNullable<ReturnType<typeof extractTransaction>>
+  itemType: number
+  identifierOrCriteria: string
+  orderIndex: number
+  side: 0 | 1
+  itemIndex: number
+}): string {
+  if ((args.itemType !== 4 && args.itemType !== 5) || BigInt(args.identifierOrCriteria) !== 0n) {
+    return args.identifierOrCriteria.toString()
+  }
+
+  const resolver = args.transaction.input_data?.criteriaResolvers?.find(
+    (candidate) =>
+      BigInt(candidate.orderIndex) === BigInt(args.orderIndex) &&
+      Number(candidate.side) === args.side &&
+      BigInt(candidate.index) === BigInt(args.itemIndex),
+  )
+  if (!resolver?.identifier) {
+    throw new Error(
+      `OpenSea fulfillment did not include a matching criteria resolver for order ${args.orderIndex} item ${args.itemIndex}`,
+    )
+  }
+
+  return resolver.identifier
 }
 
 function getBuyPaymentDetails(
@@ -820,7 +630,7 @@ function encodeFulfillmentCalldata(
     return requireHexData(rawData, 'fulfillment transaction.input_data.data')
   }
 
-  if (transaction.function !== BASIC_ORDER_FUNCTION) {
+  if (transaction.function !== BASIC_ORDER_FUNCTION && !transaction.input_data?.parameters) {
     if (functionName === 'matchAdvancedOrders') {
       const encodedParameters = encodeAbiParameters(MATCH_ADVANCED_ORDERS_PARAMETERS, [
         (transaction.input_data?.orders ?? []).map((order: OpenSeaAdvancedOrder) => ({
@@ -1010,13 +820,8 @@ function getOfferSellerOrder(
   transaction: NonNullable<ReturnType<typeof extractTransaction>>,
   wallet: `0x${string}`,
 ): OpenSeaAdvancedOrder {
-  const orders = transaction.input_data?.orders
-  if (orders && orders.length > 0) {
-    const walletLower = wallet.toLowerCase()
-    return (
-      orders.find((order) => order.parameters.offerer.toLowerCase() === walletLower) ??
-      orders[orders.length - 1]
-    )
+  if (transaction.input_data?.orders?.length) {
+    return getMatchingOfferSellerOrder(transaction, wallet).order
   }
 
   const advancedOrder = transaction.input_data?.advancedOrder
@@ -1025,33 +830,52 @@ function getOfferSellerOrder(
   throw new Error('OpenSea offer fulfillment response did not include advanced orders')
 }
 
-function getSellNftItem(transaction: NonNullable<ReturnType<typeof extractTransaction>>): {
-  itemType: number
-  token: `0x${string}`
-  tokenId: string
-} {
+function getSellNftItem(
+  transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+  wallet: `0x${string}`,
+): SelectedNftItem {
   const advancedOrder = transaction.input_data?.advancedOrder
-  const nftItem = advancedOrder
-    ? advancedOrder.parameters.consideration.find((item) => [2, 3, 4, 5].includes(item.itemType))
-    : getOfferSellerOrder(
+  if (advancedOrder) {
+    const nftIndex = advancedOrder.parameters.consideration.findIndex((item) =>
+      [2, 3, 4, 5].includes(item.itemType),
+    )
+    const nftItem = nftIndex >= 0 ? advancedOrder.parameters.consideration[nftIndex] : undefined
+    if (!nftItem) {
+      throw new Error('OpenSea offer fulfillment response did not include an NFT to transfer')
+    }
+
+    return {
+      itemType: nftItem.itemType,
+      token: requireAddress(nftItem.token, 'NFT contract'),
+      tokenId: getCriteriaResolvedTokenId({
         transaction,
-        requireAddress(transaction.input_data?.recipient ?? transaction.to, 'recipient'),
-      ).parameters.offer[0]
+        itemType: nftItem.itemType,
+        identifierOrCriteria: nftItem.identifierOrCriteria.toString(),
+        orderIndex: 0,
+        side: 1,
+        itemIndex: nftIndex,
+      }),
+    }
+  }
+
+  const sellerOrder = getMatchingOfferSellerOrder(transaction, wallet)
+  const nftIndex = sellerOrder.order.parameters.offer.findIndex((item) => [2, 3, 4, 5].includes(item.itemType))
+  const nftItem = nftIndex >= 0 ? sellerOrder.order.parameters.offer[nftIndex] : undefined
   if (!nftItem) {
     throw new Error('OpenSea offer fulfillment response did not include an NFT to transfer')
   }
 
-  const tokenId =
-    (nftItem.itemType === 4 || nftItem.itemType === 5) &&
-    BigInt(nftItem.identifierOrCriteria) === 0n &&
-    transaction.input_data?.criteriaResolvers?.[0]?.identifier
-      ? transaction.input_data.criteriaResolvers[0].identifier
-      : nftItem.identifierOrCriteria.toString()
-
   return {
     itemType: nftItem.itemType,
     token: requireAddress(nftItem.token, 'NFT contract'),
-    tokenId,
+    tokenId: getCriteriaResolvedTokenId({
+      transaction,
+      itemType: nftItem.itemType,
+      identifierOrCriteria: nftItem.identifierOrCriteria.toString(),
+      orderIndex: sellerOrder.orderIndex,
+      side: 0,
+      itemIndex: nftIndex,
+    }),
   }
 }
 
@@ -1078,7 +902,7 @@ function _buildNftApprovalStep(
   chainId: number,
 ): TxStep {
   const sellerOrder = getOfferSellerOrder(transaction, wallet)
-  const nft = getSellNftItem(transaction)
+  const nft = getSellNftItem(transaction, wallet)
   const operator = getOperatorFromConduitKey(
     transaction.input_data?.fulfillerConduitKey ?? sellerOrder.parameters.conduitKey,
     transaction.to,
@@ -1115,433 +939,10 @@ function _buildNftApprovalStep(
   throw new Error(`Unsupported NFT itemType for OpenSea sell flow: ${nft.itemType}`)
 }
 
-async function getSeaportCounter(chainId: number, wallet: `0x${string}`): Promise<string> {
-  const result = await ethCall(
-    chainId,
-    requireAddress(OPENSEA_SEAPORT_V1_6, 'Seaport contract'),
-    encodeFunctionData({
-      abi: SEAPORT_COUNTER_ABI,
-      functionName: 'getCounter',
-      args: [wallet],
-    }),
-  )
-  const [counter] = decodeAbiParameters([{ type: 'uint256' }], result) as [bigint]
-  return counter.toString()
-}
-
-function getCollectionContractAddress(
-  collection: OpenSeaCollectionResponse,
-  chainApiName: string,
-): `0x${string}` {
-  const contract = collection.contracts?.find(
-    (item) => item.chain.toLowerCase() === chainApiName.toLowerCase(),
-  )
-  if (!contract) {
-    throw new Error(
-      `OpenSea collection ${collection.collection} does not expose a contract for chain ${chainApiName}`,
-    )
-  }
-  return requireAddress(contract.address, 'collection contract')
-}
-
-function getOfferCurrencyToken(collection: OpenSeaCollectionResponse): `0x${string}` {
-  const currency = collection.pricing_currencies?.offer_currency
-  if (!currency?.address || currency.address.toLowerCase() === ZERO_ADDRESS.toLowerCase()) {
-    throw new Error(
-      `OpenSea collection ${collection.collection} does not expose an ERC20 offer currency`,
-    )
-  }
-  return requireAddress(currency.address, 'offer currency')
-}
-
-function getNftItemTypeFromTokenStandard(tokenStandard: string | undefined): 2 | 3 {
-  const normalized = tokenStandard?.trim().toLowerCase()
-  if (normalized === 'erc721') return 2
-  if (normalized === 'erc1155') return 3
-  throw new Error(
-    `Unsupported NFT token standard for OpenSea offer flow: ${tokenStandard ?? 'missing'}`,
-  )
-}
-
 function getTokenStandardFromItemType(itemType: number): 'erc721' | 'erc1155' {
   if (itemType === 2 || itemType === 4) return 'erc721'
   if (itemType === 3 || itemType === 5) return 'erc1155'
   throw new Error(`Unsupported OpenSea NFT itemType: ${itemType}`)
-}
-
-function getListingCurrencyDetails(collection: OpenSeaCollectionResponse): {
-  itemType: 0 | 1
-  token: `0x${string}`
-} {
-  const currency = collection.pricing_currencies?.listing_currency
-  if (!currency?.address) {
-    throw new Error(
-      `OpenSea collection ${collection.collection} does not expose a listing currency`,
-    )
-  }
-  const token = requireAddress(currency.address, 'listing currency')
-  return {
-    itemType: token.toLowerCase() === ZERO_ADDRESS.toLowerCase() ? 0 : 1,
-    token,
-  }
-}
-
-function feeToBasisPoints(feePercent: number): bigint {
-  if (!Number.isFinite(feePercent) || feePercent < 0) {
-    throw new Error(`Invalid OpenSea fee percentage: ${feePercent}`)
-  }
-  return BigInt(Math.round(feePercent * 100))
-}
-
-function computeFeeAmount(amount: bigint, feePercent: number): string {
-  return ((amount * feeToBasisPoints(feePercent)) / 10_000n).toString()
-}
-
-function makeSalt(): string {
-  return BigInt(`0x${randomBytes(16).toString('hex')}`).toString()
-}
-
-function resolveOfferTimes(args: OpenSeaOfferArgs): { startTime: string; endTime: string } {
-  const now = Math.floor(Date.now() / 1000)
-  const start = args.startTime ?? now
-  const end = args.endTime ?? start + (args.durationSeconds ?? 7 * 24 * 60 * 60)
-  if (end <= start) {
-    throw new Error('OpenSea offer end time must be later than start time')
-  }
-  return {
-    startTime: start.toString(),
-    endTime: end.toString(),
-  }
-}
-
-function resolveListingTimes(args: OpenSeaListingArgs): { startTime: string; endTime: string } {
-  const now = Math.floor(Date.now() / 1000)
-  const start = args.startTime ?? now
-  const end = args.endTime ?? start + (args.durationSeconds ?? 7 * 24 * 60 * 60)
-  if (end <= start) {
-    throw new Error('OpenSea listing end time must be later than start time')
-  }
-  return {
-    startTime: start.toString(),
-    endTime: end.toString(),
-  }
-}
-
-async function buildPreparedOfferOrder(args: OpenSeaOfferArgs): Promise<{
-  chain: ReturnType<typeof normalizeOpenSeaChain>
-  protocolAddress: string
-  parameters: OpenSeaOrderParametersWithCounter
-  metadata: OpenSeaOfferPreview['metadata']
-}> {
-  const wallet = requireAddress(args.wallet, 'wallet')
-  const tokenId = parseTokenId(args.tokenId)
-  const amount = parseUintString(args.amount, 'amount')
-  if (amount === '0') {
-    throw new Error('Invalid --amount: "0" — must be greater than 0')
-  }
-  const chain = normalizeOpenSeaChain(args.chain)
-  const protocolAddress = args.protocolAddress ?? OPENSEA_SEAPORT_V1_6
-  const collection = await getCollection({ collection: args.collection })
-  const contract = getCollectionContractAddress(collection, chain.apiName)
-  const nft = await getNft({ chain: chain.input, contract, tokenId })
-  const itemType = getNftItemTypeFromTokenStandard(nft.nft?.token_standard)
-  const paymentToken = getOfferCurrencyToken(collection)
-  const { startTime, endTime } = resolveOfferTimes(args)
-  const counter = await getSeaportCounter(chain.chainId, wallet)
-  const requiredFees = (collection.fees ?? []).filter((fee) => fee.required)
-
-  const parameters: OpenSeaOrderParametersWithCounter = {
-    offerer: wallet,
-    zone: ZERO_ADDRESS,
-    offer: [
-      {
-        itemType: 1,
-        token: paymentToken,
-        identifierOrCriteria: '0',
-        startAmount: amount,
-        endAmount: amount,
-      },
-    ],
-    consideration: [
-      {
-        itemType,
-        token: contract,
-        identifierOrCriteria: tokenId,
-        startAmount: '1',
-        endAmount: '1',
-        recipient: wallet,
-      },
-      ...requiredFees.map((fee) => ({
-        itemType: 1,
-        token: paymentToken,
-        identifierOrCriteria: '0',
-        startAmount: computeFeeAmount(BigInt(amount), fee.fee),
-        endAmount: computeFeeAmount(BigInt(amount), fee.fee),
-        recipient: requireAddress(fee.recipient, 'OpenSea fee recipient'),
-      })),
-    ],
-    orderType: 0,
-    startTime,
-    endTime,
-    zoneHash: ZERO_BYTES32,
-    salt: makeSalt(),
-    conduitKey: OPENSEA_CONDUIT_KEY,
-    totalOriginalConsiderationItems: String(1 + requiredFees.length),
-    counter,
-  }
-
-  return {
-    chain,
-    protocolAddress,
-    parameters,
-    metadata: {
-      collection: args.collection,
-      contract,
-      tokenId,
-      paymentToken,
-      paymentAmount: amount,
-      chainId: chain.chainId,
-    },
-  }
-}
-
-async function buildPreparedListingOrder(args: OpenSeaListingArgs): Promise<{
-  chain: ReturnType<typeof normalizeOpenSeaChain>
-  protocolAddress: string
-  parameters: OpenSeaOrderParametersWithCounter
-  metadata: OpenSeaListingPreview['metadata']
-}> {
-  const wallet = requireAddress(args.wallet, 'wallet')
-  const tokenId = parseTokenId(args.tokenId)
-  const amount = BigInt(parseUintString(args.amount, 'amount'))
-  if (amount <= 0n) {
-    throw new Error(`Invalid --amount: "${args.amount}" — must be greater than 0`)
-  }
-  const chain = normalizeOpenSeaChain(args.chain)
-  const protocolAddress = args.protocolAddress ?? OPENSEA_SEAPORT_V1_6
-  const collection = await getCollection({ collection: args.collection })
-  const contract = getCollectionContractAddress(collection, chain.apiName)
-  const nft = await getNft({ chain: chain.input, contract, tokenId })
-  const tokenStandard = nft.nft?.token_standard
-  const itemType = getNftItemTypeFromTokenStandard(tokenStandard)
-  const currency = getListingCurrencyDetails(collection)
-  const { startTime, endTime } = resolveListingTimes(args)
-  const counter = await getSeaportCounter(chain.chainId, wallet)
-  const requiredFees = (collection.fees ?? []).filter((fee) => fee.required)
-  const feeItems = requiredFees.map((fee) => ({
-    itemType: currency.itemType,
-    token: currency.token,
-    identifierOrCriteria: '0',
-    startAmount: computeFeeAmount(amount, fee.fee),
-    endAmount: computeFeeAmount(amount, fee.fee),
-    recipient: requireAddress(fee.recipient, 'OpenSea fee recipient'),
-  }))
-  const totalFees = feeItems.reduce((sum, item) => sum + BigInt(item.endAmount), 0n)
-  const sellerProceeds = amount - totalFees
-  if (sellerProceeds <= 0n) {
-    throw new Error(`OpenSea listing amount ${amount} is not enough to cover required fees`)
-  }
-
-  const parameters: OpenSeaOrderParametersWithCounter = {
-    offerer: wallet,
-    zone: ZERO_ADDRESS,
-    offer: [
-      {
-        itemType,
-        token: contract,
-        identifierOrCriteria: tokenId,
-        startAmount: '1',
-        endAmount: '1',
-      },
-    ],
-    consideration: [
-      {
-        itemType: currency.itemType,
-        token: currency.token,
-        identifierOrCriteria: '0',
-        startAmount: sellerProceeds.toString(),
-        endAmount: sellerProceeds.toString(),
-        recipient: wallet,
-      },
-      ...feeItems,
-    ],
-    orderType: 0,
-    startTime,
-    endTime,
-    zoneHash: ZERO_BYTES32,
-    salt: makeSalt(),
-    conduitKey: OPENSEA_CONDUIT_KEY,
-    totalOriginalConsiderationItems: String(1 + feeItems.length),
-    counter,
-  }
-
-  return {
-    chain,
-    protocolAddress,
-    parameters,
-    metadata: {
-      collection: args.collection,
-      contract,
-      tokenId,
-      paymentToken: currency.token,
-      paymentAmount: amount.toString(),
-      paymentItemType: currency.itemType,
-      chainId: chain.chainId,
-    },
-  }
-}
-
-function buildOfferTypedData(
-  chainId: number,
-  parameters: OpenSeaOrderParametersWithCounter,
-): OpenSeaOfferPreview['typedData'] {
-  return {
-    domain: {
-      name: 'Seaport',
-      version: '1.6',
-      chainId,
-      verifyingContract: OPENSEA_SEAPORT_V1_6,
-    },
-    types: {
-      EIP712Domain: [
-        { name: 'name', type: 'string' },
-        { name: 'version', type: 'string' },
-        { name: 'chainId', type: 'uint256' },
-        { name: 'verifyingContract', type: 'address' },
-      ],
-      OfferItem: [
-        { name: 'itemType', type: 'uint8' },
-        { name: 'token', type: 'address' },
-        { name: 'identifierOrCriteria', type: 'uint256' },
-        { name: 'startAmount', type: 'uint256' },
-        { name: 'endAmount', type: 'uint256' },
-      ],
-      ConsiderationItem: [
-        { name: 'itemType', type: 'uint8' },
-        { name: 'token', type: 'address' },
-        { name: 'identifierOrCriteria', type: 'uint256' },
-        { name: 'startAmount', type: 'uint256' },
-        { name: 'endAmount', type: 'uint256' },
-        { name: 'recipient', type: 'address' },
-      ],
-      OrderComponents: [
-        { name: 'offerer', type: 'address' },
-        { name: 'zone', type: 'address' },
-        { name: 'offer', type: 'OfferItem[]' },
-        { name: 'consideration', type: 'ConsiderationItem[]' },
-        { name: 'orderType', type: 'uint8' },
-        { name: 'startTime', type: 'uint256' },
-        { name: 'endTime', type: 'uint256' },
-        { name: 'zoneHash', type: 'bytes32' },
-        { name: 'salt', type: 'uint256' },
-        { name: 'conduitKey', type: 'bytes32' },
-        { name: 'counter', type: 'uint256' },
-      ],
-    },
-    primaryType: 'OrderComponents',
-    message: {
-      offerer: parameters.offerer,
-      zone: parameters.zone,
-      offer: parameters.offer,
-      consideration: parameters.consideration,
-      orderType: parameters.orderType,
-      startTime: parameters.startTime,
-      endTime: parameters.endTime,
-      zoneHash: parameters.zoneHash,
-      salt: parameters.salt,
-      conduitKey: parameters.conduitKey,
-      counter: parameters.counter,
-    },
-  }
-}
-
-function buildOfferApprovalStepsFromOrder(
-  parameters: OpenSeaOrderParametersWithCounter,
-  chainId: number,
-): TxStep[] {
-  const paymentItem = parameters.offer[0]
-  if (!paymentItem) {
-    throw new Error('Prepared OpenSea offer order did not include payment offer item')
-  }
-  if (paymentItem.itemType !== 1) return []
-
-  return [
-    buildApprovalStep(
-      requireAddress(paymentItem.token, 'offer payment token'),
-      getOperatorFromConduitKey(parameters.conduitKey, OPENSEA_SEAPORT_V1_6),
-      paymentItem.endAmount,
-      chainId,
-      'Approve offer payment token for OpenSea',
-    ),
-  ]
-}
-
-async function buildListingApprovalStepsFromOrder(
-  parameters: OpenSeaOrderParametersWithCounter,
-  wallet: `0x${string}`,
-  chainId: number,
-): Promise<TxStep[]> {
-  const nftItem = parameters.offer[0]
-  if (!nftItem) {
-    throw new Error('Prepared OpenSea listing order did not include NFT offer item')
-  }
-
-  const tokenStandard = getTokenStandardFromItemType(nftItem.itemType)
-  const contract = requireAddress(nftItem.token, 'listing NFT contract')
-  const tokenId = nftItem.identifierOrCriteria
-
-  await ensureWalletOwnsTokenStandardNft(tokenStandard, wallet, chainId, tokenId, contract)
-
-  return [
-    buildDirectNftApprovalStep({
-      tokenStandard,
-      contract,
-      tokenId,
-      operator: getOperatorFromConduitKey(parameters.conduitKey, OPENSEA_SEAPORT_V1_6),
-      chainId,
-    }),
-  ]
-}
-
-interface SignTypedDataResponse {
-  ok: boolean
-  data: { address: string; signature: string }
-  error?: string
-}
-
-async function signAndSubmitOrder(
-  wallet: `0x${string}`,
-  typedData: OpenSeaOfferPreview['typedData'],
-  submissionPath: string,
-  submissionBody: {
-    parameters: OpenSeaOrderParametersWithCounter
-    protocol_address: string
-  },
-): Promise<unknown> {
-  const { instanceId } = resolveCredentials()
-
-  // Sign the EIP-712 typed data via wallet API
-  const signRes = await apiPost<SignTypedDataResponse>(
-    `/v1/instances/${instanceId}/wallet/sign-typed-data`,
-    {
-      domain: typedData.domain,
-      types: typedData.types,
-      primaryType: typedData.primaryType,
-      message: typedData.message,
-    },
-  )
-  if (!signRes.ok) {
-    throw new Error(signRes.error ?? 'Failed to sign typed data for OpenSea order')
-  }
-  if (signRes.data.address.toLowerCase() !== wallet.toLowerCase()) {
-    throw new Error(`Signature address mismatch: got ${signRes.data.address}, expected ${wallet}`)
-  }
-
-  // Submit the signed order to OpenSea
-  return submitOrder(submissionPath, {
-    ...submissionBody,
-    signature: signRes.data.signature,
-  })
 }
 
 async function ensureWalletOwnsTokenStandardNft(
@@ -1668,364 +1069,11 @@ function buildDirectNftApprovalStep(args: {
   )
 }
 
-function inferOrderKind(order: OpenSeaOrderResponse): 'offer' | 'listing' {
-  const paymentItem = order.protocol_data?.parameters?.offer?.[0]
-  if (paymentItem?.itemType === 1) return 'offer'
-  return 'listing'
-}
-
-function encodeSeaportCancelCalldata(parameters: OpenSeaOrderParametersWithCounter): `0x${string}` {
-  return encodeFunctionData({
-    abi: SEAPORT_CANCEL_ABI,
-    functionName: 'cancel',
-    args: [
-      [
-        {
-          offerer: requireAddress(parameters.offerer, 'order offerer'),
-          zone: requireAddress(parameters.zone, 'order zone'),
-          offer: parameters.offer.map((item) => ({
-            itemType: item.itemType,
-            token: requireAddress(item.token, 'order offer token'),
-            identifierOrCriteria: BigInt(item.identifierOrCriteria),
-            startAmount: BigInt(item.startAmount),
-            endAmount: BigInt(item.endAmount),
-          })),
-          consideration: parameters.consideration.map((item) => ({
-            itemType: item.itemType,
-            token: requireAddress(item.token, 'order consideration token'),
-            identifierOrCriteria: BigInt(item.identifierOrCriteria),
-            startAmount: BigInt(item.startAmount),
-            endAmount: BigInt(item.endAmount),
-            recipient: requireAddress(item.recipient, 'order recipient'),
-          })),
-          orderType: parameters.orderType,
-          startTime: BigInt(parameters.startTime),
-          endTime: BigInt(parameters.endTime),
-          zoneHash: parameters.zoneHash as `0x${string}`,
-          salt: BigInt(parameters.salt),
-          conduitKey: parameters.conduitKey as `0x${string}`,
-          totalOriginalConsiderationItems: BigInt(parameters.totalOriginalConsiderationItems),
-          counter: BigInt(parameters.counter),
-        },
-      ],
-    ],
-  })
-}
-
-async function resolveCancelContext(args: OpenSeaCancelArgs): Promise<OpenSeaCancelContext> {
-  const chain = normalizeOpenSeaChain(args.chain)
-  const wallet = requireAddress(args.wallet, 'wallet')
-  const order = await getOrder({
-    chain: chain.input,
-    orderHash: args.orderHash,
-    protocolAddress: args.protocolAddress,
-  })
-  const protocolAddress = order.protocol_address ?? args.protocolAddress ?? OPENSEA_SEAPORT_V1_6
-  const parameters = order.protocol_data?.parameters
-
-  if (!parameters) {
-    throw openSeaError(
-      `OpenSea order ${args.orderHash} did not include order parameters`,
-      'ORDER_PARAMETERS_MISSING',
-      { orderHash: args.orderHash },
-    )
-  }
-
-  const offerer = requireAddress(parameters.offerer, 'order offerer')
-  if (offerer.toLowerCase() !== wallet.toLowerCase()) {
-    throw openSeaError(
-      `Order offerer ${offerer} does not match wallet ${wallet}`,
-      'ORDER_OFFERER_MISMATCH',
-      {
-        orderHash: args.orderHash,
-        offerer,
-        wallet,
-      },
-    )
-  }
-
-  if (order.status && order.status !== 'ACTIVE') {
-    throw openSeaError(
-      `OpenSea order ${args.orderHash} is not active: ${order.status}`,
-      'ORDER_NOT_ACTIVE',
-      {
-        orderHash: args.orderHash,
-        status: order.status,
-      },
-    )
-  }
-
-  const orderKind = inferOrderKind(order)
-  const signedZone = isSignedZoneAddress(parameters.zone)
-
-  // Verify the order's counter matches the current on-chain counter.
-  // If the offerer's counter was incremented (e.g. via incrementCounter or bulk cancel),
-  // all orders created with the old counter are already dead on Seaport —
-  // cancel() would revert because the derived order hash won't match.
-  const currentCounter = await getSeaportCounter(chain.chainId, offerer)
-  if (parameters.counter !== currentCounter) {
-    throw openSeaError(
-      `Order ${args.orderHash} was created with counter ${parameters.counter} but the offerer's current on-chain counter is ${currentCounter}. The order is already effectively cancelled by a counter increment.`,
-      'ORDER_COUNTER_STALE',
-      {
-        orderHash: args.orderHash,
-        orderCounter: parameters.counter,
-        currentCounter,
-      },
-    )
-  }
-
-  const steps: TxStep[] = [
-    {
-      to: requireAddress(protocolAddress, 'Seaport contract'),
-      data: encodeSeaportCancelCalldata(parameters),
-      value: '0x0',
-      chainId: chain.chainId,
-      label:
-        orderKind === 'offer' ? 'Cancel OpenSea offer on-chain' : 'Cancel OpenSea listing on-chain',
-    },
-  ]
-
-  return {
-    chain,
-    order,
-    orderKind,
-    protocolAddress,
-    offerer,
-    signedZone,
-    steps,
-  }
-}
-
-async function buildOpenSeaCancelPreview(
-  args: OpenSeaCancelArgs,
-  expectedKind: 'offer' | 'listing',
-): Promise<OpenSeaCancelPreview> {
-  const context = await resolveCancelContext(args)
-  if (context.orderKind !== expectedKind) {
-    throw openSeaError(
-      `Order ${args.orderHash} is a ${context.orderKind}, not a ${expectedKind}`,
-      'ORDER_KIND_MISMATCH',
-      {
-        orderHash: args.orderHash,
-        expectedKind,
-        actualKind: context.orderKind,
-      },
-    )
-  }
-
-  return {
-    mode: context.signedZone ? 'official-first' : 'onchain-only',
-    steps: context.steps,
-    official: context.signedZone
-      ? {
-          path: `/api/v2/orders/chain/${context.chain.apiName}/protocol/${context.protocolAddress}/${args.orderHash}/cancel`,
-          method: 'POST',
-        }
-      : undefined,
-    metadata: {
-      orderHash: args.orderHash,
-      orderKind: context.orderKind,
-      offerer: context.offerer,
-      protocolAddress: context.protocolAddress,
-      chainId: context.chain.chainId,
-      signedZone: context.signedZone,
-      status: context.order.status,
-    },
-  }
-}
-
-async function executeOpenSeaCancel(
-  args: OpenSeaCancelArgs,
-  expectedKind: 'offer' | 'listing',
-): Promise<OpenSeaCancelExecutionResult> {
-  const preview = await buildOpenSeaCancelPreview(args, expectedKind)
-
-  if (preview.mode === 'official-first' && preview.official) {
-    try {
-      const official = await cancelOrder({
-        chain: args.chain,
-        orderHash: args.orderHash,
-        protocolAddress: preview.metadata.protocolAddress,
-      })
-      return {
-        mode: 'official',
-        official,
-        metadata: preview.metadata,
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (!isMakerIdentityMismatch(message) && !isSignedZoneUnsupported(message)) {
-        throw error
-      }
-    }
-  }
-
-  await ensureOpenSeaExecutionWalletMatches(args.wallet, preview.steps)
-  const execution = await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
-  return {
-    mode: preview.mode === 'official-first' ? 'official-fallback-onchain' : 'onchain',
-    execution,
-    metadata: preview.metadata,
-  }
-}
-
-export async function buildOpenSeaCancelOfferPreview(
-  args: OpenSeaCancelArgs,
-): Promise<OpenSeaCancelPreview> {
-  return buildOpenSeaCancelPreview(args, 'offer')
-}
-
-export async function buildOpenSeaCancelOfferSteps(args: OpenSeaCancelArgs): Promise<StepOutput> {
-  const preview = await buildOpenSeaCancelOfferPreview(args)
-  return { steps: preview.steps }
-}
-
-export async function buildOpenSeaCancelListingPreview(
-  args: OpenSeaCancelArgs,
-): Promise<OpenSeaCancelPreview> {
-  return buildOpenSeaCancelPreview(args, 'listing')
-}
-
-export async function buildOpenSeaCancelListingSteps(args: OpenSeaCancelArgs): Promise<StepOutput> {
-  const preview = await buildOpenSeaCancelListingPreview(args)
-  return { steps: preview.steps }
-}
-
-export async function cancelOpenSeaOffer(
-  args: OpenSeaCancelArgs,
-): Promise<OpenSeaCancelExecutionResult> {
-  return executeOpenSeaCancel(args, 'offer')
-}
-
-export async function cancelOpenSeaListing(
-  args: OpenSeaCancelArgs,
-): Promise<OpenSeaCancelExecutionResult> {
-  return executeOpenSeaCancel(args, 'listing')
-}
-
-export async function buildOpenSeaOfferPreview(
-  args: OpenSeaOfferArgs,
-): Promise<OpenSeaOfferPreview> {
-  const prepared = await buildPreparedOfferOrder(args)
-  return buildOfferPreviewFromPrepared(prepared)
-}
-
-function buildOfferPreviewFromPrepared(
-  prepared: Awaited<ReturnType<typeof buildPreparedOfferOrder>>,
-): OpenSeaOfferPreview {
-  const paymentItem = prepared.parameters.offer[0]
-  if (!paymentItem) {
-    throw new Error('Prepared OpenSea offer order did not include a payment offer item')
-  }
-
-  return {
-    steps: buildOfferApprovalStepsFromOrder(prepared.parameters, prepared.chain.chainId),
-    typedData: buildOfferTypedData(prepared.chain.chainId, prepared.parameters),
-    submission: {
-      protocol_address: prepared.protocolAddress,
-      parameters: prepared.parameters,
-    },
-    metadata: prepared.metadata,
-  }
-}
-
-export async function createOpenSeaOffer(
-  args: OpenSeaOfferArgs,
-): Promise<OpenSeaOfferExecutionResult> {
-  const prepared = await buildPreparedOfferOrder(args)
-  const preview = buildOfferPreviewFromPrepared(prepared)
-  const wallet = requireAddress(args.wallet, 'wallet')
-  let approval: ExecuteResult | undefined
-  if (preview.steps.length > 0) {
-    await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps)
-    approval = await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
-  }
-  const submissionPath = `/api/v2/orders/${prepared.chain.apiName}/seaport/offers`
-  const submissionBody = {
-    parameters: preview.submission.parameters,
-    protocol_address: preview.submission.protocol_address,
-  }
-
-  const orderResult = await signAndSubmitOrder(
-    wallet,
-    preview.typedData,
-    submissionPath,
-    submissionBody,
-  )
-
-  return {
-    approval,
-    typedData: preview.typedData,
-    submission: orderResult,
-    metadata: preview.metadata,
-  }
-}
-
-export async function buildOpenSeaListingPreview(
-  args: OpenSeaListingArgs,
-): Promise<OpenSeaListingPreview> {
-  const wallet = requireAddress(args.wallet, 'wallet')
-  const prepared = await buildPreparedListingOrder(args)
-  return buildListingPreviewFromPrepared(prepared, wallet)
-}
-
-async function buildListingPreviewFromPrepared(
-  prepared: Awaited<ReturnType<typeof buildPreparedListingOrder>>,
-  wallet: `0x${string}`,
-): Promise<OpenSeaListingPreview> {
-  const steps = await buildListingApprovalStepsFromOrder(
-    prepared.parameters,
-    wallet,
-    prepared.chain.chainId,
-  )
-
-  return {
-    steps,
-    typedData: buildOfferTypedData(prepared.chain.chainId, prepared.parameters),
-    submission: {
-      protocol_address: prepared.protocolAddress,
-      parameters: prepared.parameters,
-    },
-    metadata: prepared.metadata,
-  }
-}
-
-export async function createOpenSeaListing(
-  args: OpenSeaListingArgs,
-): Promise<OpenSeaListingExecutionResult> {
-  const wallet = requireAddress(args.wallet, 'wallet')
-  const prepared = await buildPreparedListingOrder(args)
-  const preview = await buildListingPreviewFromPrepared(prepared, wallet)
-  let approval: ExecuteResult | undefined
-  if (preview.steps.length > 0) {
-    await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps)
-    approval = await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
-  }
-  const submissionPath = `/api/v2/orders/${prepared.chain.apiName}/seaport/listings`
-  const submissionBody = {
-    parameters: preview.submission.parameters,
-    protocol_address: preview.submission.protocol_address,
-  }
-
-  const orderResult = await signAndSubmitOrder(
-    wallet,
-    preview.typedData,
-    submissionPath,
-    submissionBody,
-  )
-
-  return {
-    approval,
-    typedData: preview.typedData,
-    submission: orderResult,
-    metadata: preview.metadata,
-  }
-}
 
 export async function buildOpenSeaBuySteps(args: OpenSeaBuyArgs): Promise<StepOutput> {
   const wallet = requireAddress(args.wallet, 'wallet')
   const transaction = requireFulfillmentTransaction(args.fulfillment, 'buy')
+  ensureOfficialOpenSeaFulfillment(args.fulfillment, transaction, 'buy')
   const chainId = requireFulfillmentChainId(transaction, 'buy')
   ensureFulfillmentRecipientMatchesWallet(transaction, wallet)
   const to = requireAddress(transaction.to, 'fulfillment target')
@@ -2056,57 +1104,16 @@ export async function buildOpenSeaBuySteps(args: OpenSeaBuyArgs): Promise<StepOu
   return { steps }
 }
 
-export async function buildOpenSeaSwapSteps(args: OpenSeaSwapArgs): Promise<StepOutput> {
-  const quote = await getSwapQuote({
-    fromChain: args.fromChain,
-    fromAddress: args.fromAddress,
-    toChain: args.toChain,
-    toAddress: args.toAddress,
-    quantity: args.quantity,
-    address: requireAddress(args.wallet, 'wallet'),
-    slippage: parseSlippage(args.slippage),
-    recipient: args.recipient,
-  })
-  const transactions = extractSwapTransactions(quote)
-  const fallbackChain =
-    typeof transactions[0]?.chain === 'string'
-      ? normalizeOpenSeaChain(transactions[0].chain).chainId
-      : typeof transactions[0]?.chain === 'object' && transactions[0]?.chain?.networkId
-        ? transactions[0].chain.networkId
-        : undefined
-  if (!fallbackChain) {
-    throw new Error('OpenSea swap quote did not include a valid chain on the first transaction')
-  }
-
-  return {
-    steps: transactions.map((transaction, index) => {
-      if (!transaction.to) {
-        throw new Error(`OpenSea swap transaction ${index + 1} did not include a target contract`)
-      }
-      if (!transaction.data || !transaction.data.startsWith('0x')) {
-        throw new Error(`OpenSea swap transaction ${index + 1} did not include valid calldata`)
-      }
-
-      const chainId = resolveSwapTransactionChainId(transaction.chain, fallbackChain)
-      return {
-        to: requireAddress(transaction.to, `swap transaction ${index + 1} target`),
-        data: transaction.data as `0x${string}`,
-        value: `0x${BigInt(transaction.value ?? '0').toString(16)}`,
-        chainId,
-        label: getSwapStepLabel(transaction, index, transactions.length),
-      }
-    }),
-  }
-}
-
 export async function buildOpenSeaSellSteps(args: OpenSeaSellArgs): Promise<StepOutput> {
   const wallet = requireAddress(args.wallet, 'wallet')
   const transaction = requireFulfillmentTransaction(args.fulfillment, 'sell')
+  ensureOfficialOpenSeaFulfillment(args.fulfillment, transaction, 'sell')
   const chainId = requireFulfillmentChainId(transaction, 'sell')
+  ensureSellFulfillmentRecipientMatchesWallet(transaction, wallet)
   const to = requireAddress(transaction.to, 'fulfillment target')
   const calldata = encodeFulfillmentCalldata(transaction)
   const valueWei = parseNonNegativeUintString(transaction.value, 'value')
-  const nft = getSellNftItem(transaction)
+  const nft = getSellNftItem(transaction, wallet)
   await ensureWalletOwnsTokenStandardNft(
     getTokenStandardFromItemType(nft.itemType),
     wallet,

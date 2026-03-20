@@ -3,7 +3,6 @@ declare const PURR_VERSION: string
 import { configGet, configList, configSet } from './api-client.js'
 import { executeStepsFromFile, executeStepsFromJson } from './executor.js'
 import { requireArgOrFile } from './file-input.js'
-import { parseJsonCliArg } from './json-input.js'
 import { walletAddress } from './wallet/address.js'
 import { walletBalance } from './wallet/balance.js'
 import { walletSign } from './wallet/sign.js'
@@ -52,20 +51,11 @@ import {
 } from './vendors/pancake.js'
 import {
   buildOpenSeaBuySteps,
-  buildOpenSeaCancelListingSteps,
-  buildOpenSeaCancelOfferSteps,
   ensureOpenSeaExecutionWalletMatches,
-  buildOpenSeaListingPreview,
-  buildOpenSeaOfferPreview,
   buildOpenSeaSellSteps,
-  buildOpenSeaSwapSteps,
-  cancelOpenSeaListing,
-  cancelOpenSeaOffer,
-  createOpenSeaListing,
-  createOpenSeaOffer,
   OpenSeaCliError,
 } from './vendors/opensea.js'
-import type { OpenSeaFulfillmentResponse } from './vendors/opensea-api.js'
+import { parseOpenSeaFulfillmentInput } from './vendors/opensea-input.js'
 
 function parseArgs(argv: string[]): Record<string, string> {
   const result: Record<string, string> = {}
@@ -239,7 +229,7 @@ Groups:
   binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
   dflow             DFlow Solana-only swap
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
-  opensea           OpenSea execution/signing helpers for official OpenSea workflows
+  opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
@@ -257,13 +247,9 @@ Examples:
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
   purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
+  purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
-  purr opensea cancel-offer --chain ethereum --order-hash 0x... --wallet 0x...
-  purr opensea cancel-list --chain ethereum --order-hash 0x... --wallet 0x...
-  purr opensea make-offer --chain ethereum --collection pudgypenguins --token-id 7576 --wallet 0x... --amount 200000000000000
-  purr opensea create-list --chain ethereum --collection pudgypenguins --token-id 7576 --wallet 0x... --amount 4250000000000000000
-  purr opensea swap --from-chain base --from-address 0x0000000000000000000000000000000000000000 --to-chain base --to-address 0x4200000000000000000000000000000000000006 --quantity 1000000000000000 --wallet 0x...
-  purr opensea swap --from-chain base --from-address 0x0000000000000000000000000000000000000000 --to-chain base --to-address 0x4200000000000000000000000000000000000006 --quantity 1000000000000000 --wallet 0x... --execute
+  purr opensea sell --wallet 0x... --fulfillment-file ./fulfillment.json
   purr binance-connect quote --fiat USD --crypto USDT --amount 50
   purr binance-connect buy --fiat USD --crypto USDT --amount 50 --network BSC --wallet 0x...
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -499,109 +485,17 @@ Examples:
         case 'buy':
           output = await buildOpenSeaBuySteps({
             wallet: requireArg(args, 'wallet'),
-            fulfillment: parseJsonCliArg<OpenSeaFulfillmentResponse>(
-              requireArg(args, 'fulfillment-json'),
-              'fulfillment-json',
-            ),
+            fulfillment: parseOpenSeaFulfillmentInput(args),
           })
           break
         case 'sell':
           output = await buildOpenSeaSellSteps({
             wallet: requireArg(args, 'wallet'),
-            fulfillment: parseJsonCliArg<OpenSeaFulfillmentResponse>(
-              requireArg(args, 'fulfillment-json'),
-              'fulfillment-json',
-            ),
-          })
-          break
-        case 'cancel-offer': {
-          const cancelArgs = {
-            chain: requireArg(args, 'chain'),
-            orderHash: requireArg(args, 'order-hash'),
-            wallet: requireArg(args, 'wallet'),
-            protocolAddress: args['protocol-address'],
-          }
-          if (executeFlag) {
-            const result = await cancelOpenSeaOffer(cancelArgs)
-            console.log(JSON.stringify(result, null, 2))
-            return
-          }
-          output = await buildOpenSeaCancelOfferSteps(cancelArgs)
-          break
-        }
-        case 'cancel-list': {
-          const cancelArgs = {
-            chain: requireArg(args, 'chain'),
-            orderHash: requireArg(args, 'order-hash'),
-            wallet: requireArg(args, 'wallet'),
-            protocolAddress: args['protocol-address'],
-          }
-          if (executeFlag) {
-            const result = await cancelOpenSeaListing(cancelArgs)
-            console.log(JSON.stringify(result, null, 2))
-            return
-          }
-          output = await buildOpenSeaCancelListingSteps(cancelArgs)
-          break
-        }
-        case 'make-offer': {
-          const offerArgs = {
-            chain: requireArg(args, 'chain'),
-            collection: requireArg(args, 'collection'),
-            tokenId: requireArg(args, 'token-id'),
-            wallet: requireArg(args, 'wallet'),
-            amount: requireArg(args, 'amount'),
-            protocolAddress: args['protocol-address'],
-            startTime: parseIntegerArg(args['start-time'], 'start-time'),
-            endTime: parseIntegerArg(args['end-time'], 'end-time'),
-            durationSeconds: parseIntegerArg(args['duration-seconds'], 'duration-seconds'),
-          }
-          if (executeFlag) {
-            const result = await createOpenSeaOffer(offerArgs)
-            console.log(JSON.stringify(result, null, 2))
-            return
-          }
-          const preview = await buildOpenSeaOfferPreview(offerArgs)
-          console.log(JSON.stringify(preview, null, 2))
-          return
-        }
-        case 'create-list': {
-          const listingArgs = {
-            chain: requireArg(args, 'chain'),
-            collection: requireArg(args, 'collection'),
-            tokenId: requireArg(args, 'token-id'),
-            wallet: requireArg(args, 'wallet'),
-            amount: requireArg(args, 'amount'),
-            protocolAddress: args['protocol-address'],
-            startTime: parseIntegerArg(args['start-time'], 'start-time'),
-            endTime: parseIntegerArg(args['end-time'], 'end-time'),
-            durationSeconds: parseIntegerArg(args['duration-seconds'], 'duration-seconds'),
-          }
-          if (executeFlag) {
-            const result = await createOpenSeaListing(listingArgs)
-            console.log(JSON.stringify(result, null, 2))
-            return
-          }
-          const preview = await buildOpenSeaListingPreview(listingArgs)
-          console.log(JSON.stringify(preview, null, 2))
-          return
-        }
-        case 'swap':
-          output = await buildOpenSeaSwapSteps({
-            fromChain: requireArg(args, 'from-chain'),
-            fromAddress: requireArg(args, 'from-address'),
-            toChain: requireArg(args, 'to-chain'),
-            toAddress: requireArg(args, 'to-address'),
-            quantity: requireArg(args, 'quantity'),
-            wallet: requireArg(args, 'wallet'),
-            slippage: parseFloatArg(args.slippage, 'slippage'),
-            recipient: args.recipient,
+            fulfillment: parseOpenSeaFulfillmentInput(args),
           })
           break
         default:
-          throw new Error(
-            `Unknown opensea command: ${command}. Use: buy, sell, cancel-offer, cancel-list, make-offer, create-list, swap`,
-          )
+          throw new Error(`Unknown opensea command: ${command}. Use: buy, sell`)
       }
       break
     }

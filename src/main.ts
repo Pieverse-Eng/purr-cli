@@ -3,6 +3,7 @@ declare const PURR_VERSION: string
 import { configGet, configList, configSet } from './api-client.js'
 import { executeStepsFromFile, executeStepsFromJson } from './executor.js'
 import { requireArgOrFile } from './file-input.js'
+import { parseJsonCliArg } from './json-input.js'
 import { walletAddress } from './wallet/address.js'
 import { walletBalance } from './wallet/balance.js'
 import { walletSign } from './wallet/sign.js'
@@ -50,8 +51,9 @@ import {
 } from './vendors/pancake.js'
 import {
 	buildOpenSeaBuySteps,
-	buildOpenSeaCancelListingPreview,
-	buildOpenSeaCancelOfferPreview,
+	buildOpenSeaCancelListingSteps,
+	buildOpenSeaCancelOfferSteps,
+	ensureOpenSeaExecutionWalletMatches,
 	buildOpenSeaListingPreview,
 	buildOpenSeaOfferPreview,
 	buildOpenSeaSellSteps,
@@ -62,6 +64,7 @@ import {
 	createOpenSeaOffer,
 	OpenSeaCliError,
 } from './vendors/opensea.js'
+import type { OpenSeaFulfillmentResponse } from './vendors/opensea-api.js'
 
 function parseArgs(argv: string[]): Record<string, string> {
 	const result: Record<string, string> = {}
@@ -252,8 +255,8 @@ Examples:
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
-  purr opensea buy --chain ethereum --collection pudgypenguins --token-id 5598 --wallet 0x...
-  purr opensea sell --chain ethereum --collection pudgypenguins --token-id 7576 --wallet 0x...
+  purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
+  purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea cancel-offer --chain ethereum --order-hash 0x... --wallet 0x...
   purr opensea cancel-list --chain ethereum --order-hash 0x... --wallet 0x...
   purr opensea make-offer --chain ethereum --collection pudgypenguins --token-id 7576 --wallet 0x... --amount 200000000000000
@@ -488,18 +491,20 @@ Examples:
 			switch (command) {
 				case 'buy':
 					output = await buildOpenSeaBuySteps({
-						chain: requireArg(args, 'chain'),
-						collection: requireArg(args, 'collection'),
-						tokenId: requireArg(args, 'token-id'),
 						wallet: requireArg(args, 'wallet'),
+						fulfillment: parseJsonCliArg<OpenSeaFulfillmentResponse>(
+							requireArg(args, 'fulfillment-json'),
+							'fulfillment-json',
+						),
 					})
 					break
 				case 'sell':
 					output = await buildOpenSeaSellSteps({
-						chain: requireArg(args, 'chain'),
-						collection: requireArg(args, 'collection'),
-						tokenId: requireArg(args, 'token-id'),
 						wallet: requireArg(args, 'wallet'),
+						fulfillment: parseJsonCliArg<OpenSeaFulfillmentResponse>(
+							requireArg(args, 'fulfillment-json'),
+							'fulfillment-json',
+						),
 					})
 					break
 				case 'cancel-offer': {
@@ -514,9 +519,8 @@ Examples:
 						console.log(JSON.stringify(result, null, 2))
 						return
 					}
-					const preview = await buildOpenSeaCancelOfferPreview(cancelArgs)
-					console.log(JSON.stringify(preview, null, 2))
-					return
+					output = await buildOpenSeaCancelOfferSteps(cancelArgs)
+					break
 				}
 				case 'cancel-list': {
 					const cancelArgs = {
@@ -530,9 +534,8 @@ Examples:
 						console.log(JSON.stringify(result, null, 2))
 						return
 					}
-					const preview = await buildOpenSeaCancelListingPreview(cancelArgs)
-					console.log(JSON.stringify(preview, null, 2))
-					return
+					output = await buildOpenSeaCancelListingSteps(cancelArgs)
+					break
 				}
 				case 'make-offer': {
 					const offerArgs = {
@@ -825,6 +828,9 @@ Examples:
 	}
 
 	if (executeFlag) {
+		if (group === 'opensea' && args.wallet && output && Array.isArray(output.steps)) {
+			await ensureOpenSeaExecutionWalletMatches(args.wallet, output.steps)
+		}
 		const json = JSON.stringify(output)
 		const result = await executeStepsFromJson(json, args['dedup-key'])
 		console.log(JSON.stringify(result, null, 2))

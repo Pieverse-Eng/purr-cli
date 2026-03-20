@@ -1,5 +1,5 @@
-import { decodeAbiParameters, decodeFunctionData, parseAbi } from 'viem'
-import { describe, expect, it, vi } from 'vitest'
+import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, parseAbi } from 'viem'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildBitgetSwapStepsFromCalldata } from '../vendors/bitget.js'
 import {
 	buildFourMemeBuySteps,
@@ -27,6 +27,10 @@ import {
 	buildListaRedeemSteps,
 	buildListaWithdrawSteps,
 } from '../vendors/lista.js'
+import {
+	buildOpenSeaBuySteps,
+	buildOpenSeaSellSteps,
+} from '../vendors/opensea.js'
 
 const ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E'
 const USDT = '0x55d398326f99059fF775485246999027B3197955'
@@ -39,6 +43,11 @@ const TM2 = FOUR_MEME_TEST_CONSTANTS.DEFAULT_TOKEN_MANAGER_V2
 const HELPER = FOUR_MEME_TEST_CONSTANTS.DEFAULT_TOKEN_MANAGER_HELPER3
 const TOKEN = '0x1111111111111111111111111111111111111111'
 const QUOTE = '0x2222222222222222222222222222222222222222'
+const SEAPORT = '0x0000000000000068f116a894984e2db1123eb395'
+const OPENSEA_CONDUIT = '0x1E0049783F008A0085193E00003D00cd54003c71'
+const OPENSEA_CONDUIT_KEY =
+	'0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000'
+const ZERO_BYTES32 = `0x${'0'.repeat(64)}`
 
 const FOUR_MEME_V1_TEST_ABI = parseAbi([
 	'function purchaseToken(uint256 origin, address token, address to, uint256 amount, uint256 maxFunds) payable',
@@ -185,6 +194,11 @@ class FakeFourMemeClient {
 	}
 }
 
+afterEach(() => {
+	vi.unstubAllGlobals()
+	vi.restoreAllMocks()
+})
+
 describe('buildBitgetSwapStepsFromCalldata', () => {
 	it('handles txs[] format', () => {
 		const calldata = JSON.stringify({
@@ -280,6 +294,191 @@ describe('buildBitgetSwapStepsFromCalldata', () => {
 				chainId: 56,
 			}),
 		).toThrow('Invalid amount-wei')
+	})
+})
+
+describe('buildOpenSeaBuySteps', () => {
+	it('normalizes ERC20 fulfillment JSON into approval plus buy steps', async () => {
+		const result = await buildOpenSeaBuySteps({
+			wallet: WALLET,
+			fulfillment: {
+				fulfillment_data: {
+					transaction: {
+						function:
+							'fulfillBasicOrder_efficient_6GL6yc((address,uint256,uint256,address,address,address,uint256,uint256,uint8,uint256,uint256,bytes32,uint256,bytes32,bytes32,uint256,(uint256,address)[],bytes))',
+						chain: 1,
+						to: SEAPORT,
+						value: '0',
+						input_data: {
+							parameters: {
+								considerationToken: USDT,
+								considerationIdentifier: '0',
+								considerationAmount: '1000',
+								offerer: '0x9999999999999999999999999999999999999999',
+								zone: '0x8888888888888888888888888888888888888888',
+								offerToken: TOKEN,
+								offerIdentifier: '1234',
+								offerAmount: '1',
+								basicOrderType: 0,
+								startTime: '1',
+								endTime: '9999999999',
+								zoneHash: ZERO_BYTES32,
+								salt: '1',
+								offererConduitKey: ZERO_BYTES32,
+								fulfillerConduitKey: OPENSEA_CONDUIT_KEY,
+								totalOriginalAdditionalRecipients: '1',
+								additionalRecipients: [{ amount: '50', recipient: WALLET }],
+								signature: '0x12',
+							},
+						},
+					},
+				},
+			},
+		})
+
+		expect(result.steps).toHaveLength(2)
+		expect(result.steps[0].to).toBe(USDT)
+		expect(result.steps[0].conditional?.spender).toBe(OPENSEA_CONDUIT)
+		expect(result.steps[0].conditional?.amount).toBe('1050')
+		expect(result.steps[1]).toMatchObject({
+			to: SEAPORT,
+			value: '0x0',
+			chainId: 1,
+			label: 'OpenSea buy NFT',
+		})
+		expect((result.steps[1].data as string).startsWith('0x')).toBe(true)
+		expect((result.steps[1].data as string).length).toBeGreaterThan(10)
+	})
+
+	it('supports native-priced fulfillment JSON without an approval step', async () => {
+		const result = await buildOpenSeaBuySteps({
+			wallet: WALLET,
+			fulfillment: {
+				fulfillment_data: {
+					transaction: {
+						chain: 1,
+						to: SEAPORT,
+						value: '1000',
+						data: '0xdeadbeef',
+						input_data: {
+							parameters: {
+								considerationToken: NATIVE,
+								considerationIdentifier: '0',
+								considerationAmount: '1000',
+								offerer: '0x9999999999999999999999999999999999999999',
+								zone: '0x8888888888888888888888888888888888888888',
+								offerToken: TOKEN,
+								offerIdentifier: '1234',
+								offerAmount: '1',
+								basicOrderType: 0,
+								startTime: '1',
+								endTime: '9999999999',
+								zoneHash: ZERO_BYTES32,
+								salt: '1',
+								offererConduitKey: ZERO_BYTES32,
+								fulfillerConduitKey: ZERO_BYTES32,
+								totalOriginalAdditionalRecipients: '0',
+								additionalRecipients: [],
+								signature: '0x12',
+							},
+						},
+					},
+				},
+			},
+		})
+
+		expect(result.steps).toHaveLength(1)
+		expect(result.steps[0]).toMatchObject({
+			to: SEAPORT,
+			data: '0xdeadbeef',
+			value: '0x3e8',
+			label: 'OpenSea buy NFT',
+		})
+	})
+})
+
+describe('buildOpenSeaSellSteps', () => {
+	it('normalizes offer fulfillment JSON into NFT approval plus sell steps', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({
+				json: async () => ({
+					result: encodeAbiParameters([{ type: 'address' }], [WALLET as `0x${string}`]),
+				}),
+			})),
+		)
+
+		const result = await buildOpenSeaSellSteps({
+			fulfillment: {
+				fulfillment_data: {
+					transaction: {
+						function:
+							'fulfillAdvancedOrder(((address offerer,address zone,(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount)[] offer,(uint8 itemType,address token,uint256 identifierOrCriteria,uint256 startAmount,uint256 endAmount,address recipient)[] consideration,uint8 orderType,uint256 startTime,uint256 endTime,bytes32 zoneHash,uint256 salt,bytes32 conduitKey,uint256 totalOriginalConsiderationItems) parameters,uint120 numerator,uint120 denominator,bytes signature,bytes extraData),(uint256 orderIndex,uint8 side,uint256 index,uint256 identifier,bytes32[] criteriaProof)[],bytes32,address)',
+						chain: 1,
+						to: SEAPORT,
+						value: '0',
+						data: '0xbeef',
+						input_data: {
+							advancedOrder: {
+								parameters: {
+									offerer: '0x9999999999999999999999999999999999999999',
+									zone: '0x8888888888888888888888888888888888888888',
+									offer: [
+										{
+											itemType: 1,
+											token: USDT,
+											identifierOrCriteria: '0',
+											startAmount: '1000',
+											endAmount: '1000',
+										},
+									],
+									consideration: [
+										{
+											itemType: 2,
+											token: TOKEN,
+											identifierOrCriteria: '1234',
+											startAmount: '1',
+											endAmount: '1',
+											recipient: WALLET,
+										},
+									],
+									orderType: 0,
+									startTime: '1',
+									endTime: '9999999999',
+									zoneHash: ZERO_BYTES32,
+									salt: '1',
+									conduitKey: OPENSEA_CONDUIT_KEY,
+									totalOriginalConsiderationItems: '1',
+								},
+								numerator: '1',
+								denominator: '1',
+								signature: '0x12',
+								extraData: '0x',
+							},
+							fulfillerConduitKey: OPENSEA_CONDUIT_KEY,
+							recipient: WALLET,
+						},
+					},
+				},
+			},
+			wallet: WALLET,
+		})
+
+		expect(result.steps).toHaveLength(2)
+		expect(result.steps[0].to).toBe(TOKEN)
+		const approval = decodeFunctionData({
+			abi: parseAbi(['function approve(address to, uint256 tokenId)']),
+			data: result.steps[0].data as `0x${string}`,
+		})
+		expect(approval.functionName).toBe('approve')
+		expect(approval.args).toEqual([OPENSEA_CONDUIT, 1234n])
+		expect(result.steps[1]).toMatchObject({
+			to: SEAPORT,
+			data: '0xbeef',
+			value: '0x0',
+			chainId: 1,
+			label: 'OpenSea sell NFT',
+		})
 	})
 })
 

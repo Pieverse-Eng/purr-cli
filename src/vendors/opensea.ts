@@ -18,11 +18,7 @@ import {
 	OPENSEA_CONDUIT_KEY,
 	OPENSEA_SEAPORT_V1_6,
 	getCollection,
-	getBestOffer,
-	getBestListing,
 	getNft,
-	getOfferFulfillmentData,
-	getListingFulfillmentData,
 	getOrder,
 	getSwapQuote,
 	normalizeOpenSeaChain,
@@ -82,6 +78,17 @@ const OPENSEA_SIGNED_ZONES = new Set([
 ])
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000'
+
+interface WalletEnsureResponse {
+	ok: boolean
+	data: {
+		address: string
+		chainId: number
+		chainType: string
+		createdNow: boolean
+	}
+	error?: string
+}
 const MATCH_ADVANCED_ORDERS_PARAMETERS = [
 	{
 		name: 'orders',
@@ -231,17 +238,13 @@ const FULFILL_ADVANCED_ORDER_PARAMETERS = [
 ] as const
 
 export interface OpenSeaBuyArgs {
-	chain: string
-	collection: string
-	tokenId: string
 	wallet: string
+	fulfillment: OpenSeaFulfillmentResponse
 }
 
 export interface OpenSeaSellArgs {
-	chain: string
-	collection: string
-	tokenId: string
 	wallet: string
+	fulfillment: OpenSeaFulfillmentResponse
 }
 
 export interface OpenSeaOfferArgs {
@@ -294,7 +297,7 @@ export interface OpenSeaOfferPreview {
 		primaryType: string
 		message: Record<string, unknown>
 	}
-	submit: {
+	submission: {
 		protocol_address: string
 		parameters: OpenSeaOrderParametersWithCounter
 	}
@@ -310,17 +313,23 @@ export interface OpenSeaOfferPreview {
 
 export interface OpenSeaOfferExecutionResult {
 	approval?: ExecuteResult
-	signature: {
-		address: string
-		signature: string
+	typedData: OpenSeaOfferPreview['typedData']
+	submission: {
+		path: string
+		body: {
+			parameters: OpenSeaOrderParametersWithCounter
+			protocol_address: string
+		}
+		signaturePlaceholder: string
+		jsonBodyTemplate: string
 	}
-	submission: unknown
+	metadata: OpenSeaOfferPreview['metadata']
 }
 
 export interface OpenSeaListingPreview {
 	steps: TxStep[]
 	typedData: OpenSeaOfferPreview['typedData']
-	submit: {
+	submission: {
 		protocol_address: string
 		parameters: OpenSeaOrderParametersWithCounter
 	}
@@ -337,11 +346,17 @@ export interface OpenSeaListingPreview {
 
 export interface OpenSeaListingExecutionResult {
 	approval?: ExecuteResult
-	signature: {
-		address: string
-		signature: string
+	typedData: OpenSeaListingPreview['typedData']
+	submission: {
+		path: string
+		body: {
+			parameters: OpenSeaOrderParametersWithCounter
+			protocol_address: string
+		}
+		signaturePlaceholder: string
+		jsonBodyTemplate: string
 	}
-	submission: unknown
+	metadata: OpenSeaListingPreview['metadata']
 }
 
 export interface OpenSeaCancelPreview {
@@ -376,6 +391,8 @@ interface PaymentDetails {
 }
 
 const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
+const SUPPORTED_OPENSEA_CHAIN_IDS = new Set([1, 10, 137, 8453, 42161, 43114, 8217, 7777777, 81457, 11155111])
+const SUBMISSION_SIGNATURE_PLACEHOLDER = '__PURR_SIGNATURE__'
 
 function openSeaError(
 	message: string,
@@ -591,6 +608,23 @@ function ensureOfferIsActive(offer: OpenSeaBestOfferResponse): void {
 	}
 }
 
+function requireHexData(value: string, fieldName: string): `0x${string}` {
+	const trimmed = value.trim()
+	if (!/^0x[0-9a-fA-F]*$/.test(trimmed) || trimmed.length % 2 !== 0) {
+		throw new Error(`Invalid ${fieldName}: "${value}" — must be 0x-prefixed hex calldata`)
+	}
+	return trimmed as `0x${string}`
+}
+
+function parseNonNegativeUintString(value: string | undefined, fieldName: string): bigint {
+	if (value === undefined) return 0n
+	const trimmed = value.trim()
+	if (!/^\d+$/.test(trimmed)) {
+		throw new Error(`Invalid ${fieldName}: "${value}" — must be a non-negative integer`)
+	}
+	return BigInt(trimmed)
+}
+
 function extractTransaction(fulfillment: OpenSeaFulfillmentResponse) {
 	return fulfillment.fulfillment_data?.transaction
 }
@@ -684,19 +718,106 @@ function getErc20ApprovalAmount(
 function getErc20ApprovalSpender(
 	transaction: NonNullable<ReturnType<typeof extractTransaction>>,
 ): `0x${string}` {
-	const conduitKey = transaction.input_data?.parameters?.fulfillerConduitKey?.toLowerCase()
-	if (
-		!conduitKey ||
-		conduitKey === '0x0000000000000000000000000000000000000000000000000000000000000000'
-	) {
-		return requireAddress(transaction.to, 'seaport target')
+	return getOperatorFromConduitKey(
+		transaction.input_data?.parameters?.fulfillerConduitKey ??
+			transaction.input_data?.fulfillerConduitKey,
+		transaction.to,
+	)
+}
+
+function requireFulfillmentTransaction(
+	fulfillment: OpenSeaFulfillmentResponse,
+	action: 'buy' | 'sell',
+): NonNullable<ReturnType<typeof extractTransaction>> {
+	const transaction = extractTransaction(fulfillment)
+	if (!transaction) {
+		throw new Error(`OpenSea ${action} fulfillment response did not include a transaction`)
+	}
+	return transaction
+}
+
+function requireFulfillmentChainId(
+	transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+	action: 'buy' | 'sell',
+): number {
+	const chainId = transaction.chain
+	if (!Number.isFinite(chainId) || !chainId || chainId <= 0) {
+		throw new Error(`OpenSea ${action} fulfillment response did not include a valid chain`)
+	}
+	if (!SUPPORTED_OPENSEA_CHAIN_IDS.has(chainId)) {
+		throw new Error(
+			`OpenSea ${action} fulfillment response did not include a supported OpenSea chain`,
+		)
+	}
+	return chainId
+}
+
+function ensureFulfillmentRecipientMatchesWallet(
+	transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+	wallet: `0x${string}`,
+): void {
+	const recipient = transaction.input_data?.recipient
+	if (!recipient) return
+	const normalizedRecipient = requireAddress(recipient, 'fulfillment recipient')
+	if (normalizedRecipient.toLowerCase() !== wallet.toLowerCase()) {
+		throw new Error(
+			`OpenSea buy fulfillment recipient does not match wallet ${wallet}: ${normalizedRecipient}`,
+		)
+	}
+}
+
+function getListingOrderFromFulfillment(
+	transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+): OpenSeaAdvancedOrder {
+	const advancedOrder = transaction.input_data?.advancedOrder
+	if (advancedOrder) return advancedOrder
+
+	const orders = transaction.input_data?.orders
+	if (orders && orders.length > 0) {
+		return (
+			orders.find((order) => order.parameters.offer.some((item) => [2, 3, 4, 5].includes(item.itemType))) ??
+			orders[0]
+		)
 	}
 
-	if (conduitKey === OPENSEA_CONDUIT_KEY.toLowerCase()) {
-		return requireAddress(OPENSEA_CONDUIT_ADDRESS, 'OpenSea conduit')
+	throw new Error('OpenSea buy fulfillment response did not include listing order details')
+}
+
+function getBuyPaymentDetails(
+	transaction: NonNullable<ReturnType<typeof extractTransaction>>,
+): PaymentDetails {
+	const parameters = transaction.input_data?.parameters
+	if (parameters) {
+		const paymentToken = requireAddress(parameters.considerationToken, 'consideration token')
+		return {
+			itemType: paymentToken.toLowerCase() === ZERO_ADDRESS ? 0 : 1,
+			token: paymentToken,
+			totalAmount: getErc20ApprovalAmount(transaction),
+		}
 	}
 
-	throw new Error(`Unsupported OpenSea fulfiller conduit key: ${conduitKey}`)
+	const listingOrder = getListingOrderFromFulfillment(transaction)
+	const paymentItems = listingOrder.parameters.consideration.filter(
+		(item) => item.itemType === 0 || item.itemType === 1,
+	)
+	if (paymentItems.length === 0) {
+		throw new Error('OpenSea buy fulfillment response did not include payment consideration items')
+	}
+
+	const first = paymentItems[0]
+	for (const item of paymentItems) {
+		if (item.itemType !== first.itemType || item.token.toLowerCase() !== first.token.toLowerCase()) {
+			throw new Error(
+				'Unsupported OpenSea buy fulfillment: mixed payment assets are not supported',
+			)
+		}
+	}
+
+	return {
+		itemType: first.itemType,
+		token: requireAddress(first.token, 'payment token'),
+		totalAmount: paymentItems.reduce((sum, item) => sum + BigInt(item.endAmount), 0n),
+	}
 }
 
 function encodeFulfillmentCalldata(
@@ -704,11 +825,11 @@ function encodeFulfillmentCalldata(
 ): `0x${string}` {
 	const functionName = transaction.function?.split('(')[0]
 
-	if (transaction.data) return transaction.data as `0x${string}`
+	if (transaction.data) return requireHexData(transaction.data, 'fulfillment transaction.data')
 
 	const rawData = transaction.input_data?.data
 	if (typeof rawData === 'string' && rawData.startsWith('0x')) {
-		return rawData as `0x${string}`
+		return requireHexData(rawData, 'fulfillment transaction.input_data.data')
 	}
 
 	if (transaction.function !== BASIC_ORDER_FUNCTION) {
@@ -866,6 +987,38 @@ function encodeFulfillmentCalldata(
 			],
 		],
 	})
+}
+
+async function ensureInstanceWalletMatches(
+	wallet: `0x${string}`,
+	chainId: number,
+): Promise<void> {
+	const { instanceId } = resolveCredentials()
+	const res = await apiPost<WalletEnsureResponse>(`/v1/instances/${instanceId}/wallet/ensure`, {
+		chainType: 'ethereum',
+		chainId,
+	})
+	if (!res.ok) {
+		throw new Error(res.error ?? 'Failed to resolve instance wallet for OpenSea execution')
+	}
+
+	const instanceWallet = requireAddress(res.data.address, 'instance wallet')
+	if (instanceWallet.toLowerCase() !== wallet.toLowerCase()) {
+		throw new Error(
+			`OpenSea instance wallet does not match requested wallet ${wallet}: ${instanceWallet}`,
+		)
+	}
+}
+
+export async function ensureOpenSeaExecutionWalletMatches(
+	wallet: string,
+	steps: TxStep[],
+): Promise<void> {
+	const normalizedWallet = requireAddress(wallet, 'wallet')
+	const chainIds = [...new Set(steps.map((step) => step.chainId).filter(Number.isFinite))]
+	for (const chainId of chainIds) {
+		await ensureInstanceWalletMatches(normalizedWallet, chainId)
+	}
 }
 
 function getOfferSellerOrder(
@@ -1098,6 +1251,9 @@ async function buildPreparedOfferOrder(args: OpenSeaOfferArgs): Promise<{
 	const wallet = requireAddress(args.wallet, 'wallet')
 	const tokenId = parseTokenId(args.tokenId)
 	const amount = parseUintString(args.amount, 'amount')
+	if (amount === '0') {
+		throw new Error('Invalid --amount: "0" — must be greater than 0')
+	}
 	const chain = normalizeOpenSeaChain(args.chain)
 	const protocolAddress = args.protocolAddress ?? OPENSEA_SEAPORT_V1_6
 	const collection = await getCollection({ collection: args.collection })
@@ -1173,6 +1329,9 @@ async function buildPreparedListingOrder(args: OpenSeaListingArgs): Promise<{
 	const wallet = requireAddress(args.wallet, 'wallet')
 	const tokenId = parseTokenId(args.tokenId)
 	const amount = BigInt(parseUintString(args.amount, 'amount'))
+	if (amount <= 0n) {
+		throw new Error(`Invalid --amount: "${args.amount}" — must be greater than 0`)
+	}
 	const chain = normalizeOpenSeaChain(args.chain)
 	const protocolAddress = args.protocolAddress ?? OPENSEA_SEAPORT_V1_6
 	const collection = await getCollection({ collection: args.collection })
@@ -1359,30 +1518,22 @@ async function buildListingApprovalStepsFromOrder(
 	]
 }
 
-async function signTypedDataWithWallet(
-	wallet: `0x${string}`,
-	typedData: OpenSeaOfferPreview['typedData'],
-): Promise<{ address: string; signature: string }> {
-	const { instanceId } = resolveCredentials()
-	const response = await apiPost<{
-		ok: boolean
-		data?: { address: string; signature: string }
-		error?: string
-	}>(`/v1/instances/${instanceId}/wallet/sign-typed-data`, {
-		domain: typedData.domain,
-		types: typedData.types,
-		primaryType: typedData.primaryType,
-		message: typedData.message,
-	})
-	if (!response.ok || !response.data) {
-		throw new Error(response.error ?? 'Failed to sign OpenSea offer typed data')
+function buildOpenSeaSubmissionTemplate(
+	path: string,
+	body: {
+		parameters: OpenSeaOrderParametersWithCounter
+		protocol_address: string
+	},
+) {
+	return {
+		path,
+		body,
+		signaturePlaceholder: SUBMISSION_SIGNATURE_PLACEHOLDER,
+		jsonBodyTemplate: JSON.stringify({
+			...body,
+			signature: SUBMISSION_SIGNATURE_PLACEHOLDER,
+		}),
 	}
-	if (response.data.address.toLowerCase() !== wallet.toLowerCase()) {
-		throw new Error(
-			`Typed data signature returned unexpected address ${response.data.address}; expected ${wallet}`,
-		)
-	}
-	return response.data
 }
 
 async function ensureWalletOwnsTokenStandardNft(
@@ -1684,6 +1835,7 @@ async function executeOpenSeaCancel(
 		}
 	}
 
+	await ensureOpenSeaExecutionWalletMatches(args.wallet, preview.steps)
 	const execution = await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
 	return {
 		mode: preview.mode === 'official-first' ? 'official-fallback-onchain' : 'onchain',
@@ -1698,10 +1850,24 @@ export async function buildOpenSeaCancelOfferPreview(
 	return buildOpenSeaCancelPreview(args, 'offer')
 }
 
+export async function buildOpenSeaCancelOfferSteps(
+	args: OpenSeaCancelArgs,
+): Promise<StepOutput> {
+	const preview = await buildOpenSeaCancelOfferPreview(args)
+	return { steps: preview.steps }
+}
+
 export async function buildOpenSeaCancelListingPreview(
 	args: OpenSeaCancelArgs,
 ): Promise<OpenSeaCancelPreview> {
 	return buildOpenSeaCancelPreview(args, 'listing')
+}
+
+export async function buildOpenSeaCancelListingSteps(
+	args: OpenSeaCancelArgs,
+): Promise<StepOutput> {
+	const preview = await buildOpenSeaCancelListingPreview(args)
+	return { steps: preview.steps }
 }
 
 export async function cancelOpenSeaOffer(
@@ -1734,7 +1900,7 @@ function buildOfferPreviewFromPrepared(
 	return {
 		steps: buildOfferApprovalStepsFromOrder(prepared.parameters, prepared.chain.chainId),
 		typedData: buildOfferTypedData(prepared.chain.chainId, prepared.parameters),
-		submit: {
+		submission: {
 			protocol_address: prepared.protocolAddress,
 			parameters: prepared.parameters,
 		},
@@ -1745,27 +1911,28 @@ function buildOfferPreviewFromPrepared(
 export async function createOpenSeaOffer(
 	args: OpenSeaOfferArgs,
 ): Promise<OpenSeaOfferExecutionResult> {
-	const wallet = requireAddress(args.wallet, 'wallet')
 	const prepared = await buildPreparedOfferOrder(args)
 	const preview = buildOfferPreviewFromPrepared(prepared)
+	const wallet = requireAddress(args.wallet, 'wallet')
 	const approval =
 		preview.steps.length > 0
-			? await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
+			? (await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps),
+				await executeStepsFromJson(JSON.stringify({ steps: preview.steps })))
 			: undefined
-	const signature = await signTypedDataWithWallet(wallet, preview.typedData)
-	const submission = {
-		path: `/api/v2/orders/${prepared.chain.apiName}/seaport/offers`,
-		body: {
-			parameters: preview.submit.parameters,
-			signature: signature.signature,
-			protocol_address: preview.submit.protocol_address,
-		},
+	const body = {
+		parameters: preview.submission.parameters,
+		protocol_address: preview.submission.protocol_address,
 	}
+	const submission = buildOpenSeaSubmissionTemplate(
+		`/api/v2/orders/${prepared.chain.apiName}/seaport/offers`,
+		body,
+	)
 
 	return {
 		approval,
-		signature,
+		typedData: preview.typedData,
 		submission,
+		metadata: preview.metadata,
 	}
 }
 
@@ -1790,7 +1957,7 @@ async function buildListingPreviewFromPrepared(
 	return {
 		steps,
 		typedData: buildOfferTypedData(prepared.chain.chainId, prepared.parameters),
-		submit: {
+		submission: {
 			protocol_address: prepared.protocolAddress,
 			parameters: prepared.parameters,
 		},
@@ -1806,63 +1973,42 @@ export async function createOpenSeaListing(
 	const preview = await buildListingPreviewFromPrepared(prepared, wallet)
 	const approval =
 		preview.steps.length > 0
-			? await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
+			? (await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps),
+				await executeStepsFromJson(JSON.stringify({ steps: preview.steps })))
 			: undefined
-	const signature = await signTypedDataWithWallet(wallet, preview.typedData)
-	const submission = {
-		path: `/api/v2/orders/${prepared.chain.apiName}/seaport/listings`,
-		body: {
-			parameters: preview.submit.parameters,
-			signature: signature.signature,
-			protocol_address: preview.submit.protocol_address,
-		},
+	const body = {
+		parameters: preview.submission.parameters,
+		protocol_address: preview.submission.protocol_address,
 	}
+	const submission = buildOpenSeaSubmissionTemplate(
+		`/api/v2/orders/${prepared.chain.apiName}/seaport/listings`,
+		body,
+	)
 
 	return {
 		approval,
-		signature,
+		typedData: preview.typedData,
 		submission,
+		metadata: preview.metadata,
 	}
 }
 
 export async function buildOpenSeaBuySteps(args: OpenSeaBuyArgs): Promise<StepOutput> {
-	const chain = normalizeOpenSeaChain(args.chain)
-	const tokenId = parseTokenId(args.tokenId)
 	const wallet = requireAddress(args.wallet, 'wallet')
-	const listing = await getBestListing({
-		collection: args.collection,
-		tokenId,
-	})
-	ensureListingIsActive(listing)
-	const paymentDetails = getPaymentDetails(listing)
-	const fulfillment = await getListingFulfillmentData({
-		chain: chain.input,
-		orderHash: listing.order_hash,
-		wallet,
-		protocolAddress: listing.protocol_address ?? OPENSEA_SEAPORT_V1_6,
-	})
-	const transaction = extractTransaction(fulfillment)
-	if (!transaction) {
-		throw new Error('OpenSea fulfillment response did not include a transaction')
-	}
-	const chainId = transaction.chain
-	if (!chainId || !Number.isFinite(chainId)) {
-		throw new Error('OpenSea fulfillment response did not include a valid chain id')
-	}
-	if (chainId !== chain.chainId) {
-		throw new Error(`OpenSea fulfillment chain mismatch: expected ${chain.chainId}, got ${chainId}`)
-	}
+	const transaction = requireFulfillmentTransaction(args.fulfillment, 'buy')
+	const chainId = requireFulfillmentChainId(transaction, 'buy')
+	ensureFulfillmentRecipientMatchesWallet(transaction, wallet)
+	const to = requireAddress(transaction.to, 'fulfillment target')
 	const calldata = encodeFulfillmentCalldata(transaction)
-	const valueWei = BigInt(transaction.value ?? '0')
+	const valueWei = parseNonNegativeUintString(transaction.value, 'value')
+	const payment = getBuyPaymentDetails(transaction)
 	const steps: TxStep[] = []
-	if (!isNative(paymentDetails.token)) {
-		const approvalAmount = getErc20ApprovalAmount(transaction).toString()
-		const approvalSpender = getErc20ApprovalSpender(transaction)
+	if (!isNative(payment.token)) {
 		steps.push(
 			buildApprovalStep(
-				requireAddress(paymentDetails.token, 'payment token'),
-				approvalSpender,
-				approvalAmount,
+				payment.token,
+				getErc20ApprovalSpender(transaction),
+				payment.totalAmount.toString(),
 				chainId,
 				'Approve ERC20 payment token for OpenSea',
 			),
@@ -1870,7 +2016,7 @@ export async function buildOpenSeaBuySteps(args: OpenSeaBuyArgs): Promise<StepOu
 	}
 
 	steps.push({
-		to: requireAddress(transaction.to, 'fulfillment target'),
+		to,
 		data: calldata,
 		value: `0x${valueWei.toString(16)}`,
 		chainId,
@@ -1925,31 +2071,11 @@ export async function buildOpenSeaSwapSteps(args: OpenSeaSwapArgs): Promise<Step
 
 export async function buildOpenSeaSellSteps(args: OpenSeaSellArgs): Promise<StepOutput> {
 	const wallet = requireAddress(args.wallet, 'wallet')
-	const tokenId = parseTokenId(args.tokenId)
-	const chain = normalizeOpenSeaChain(args.chain)
-	const offer = await getBestOffer({
-		collection: args.collection,
-		tokenId,
-	})
-	ensureOfferIsActive(offer)
-	const contractAddress = getOfferContractAddress(offer)
-	const fulfillment = await getOfferFulfillmentData({
-		chain: chain.input,
-		orderHash: offer.order_hash,
-		wallet,
-		contractAddress,
-		tokenId,
-		protocolAddress: offer.protocol_address ?? OPENSEA_SEAPORT_V1_6,
-	})
-	const transaction = extractTransaction(fulfillment)
-	if (!transaction) {
-		throw new Error('OpenSea offer fulfillment response did not include a transaction')
-	}
-	const chainId = transaction.chain
-	if (!chainId || !Number.isFinite(chainId)) {
-		throw new Error('OpenSea offer fulfillment response did not include a valid chain id')
-	}
+	const transaction = requireFulfillmentTransaction(args.fulfillment, 'sell')
+	const chainId = requireFulfillmentChainId(transaction, 'sell')
+	const to = requireAddress(transaction.to, 'fulfillment target')
 	const calldata = encodeFulfillmentCalldata(transaction)
+	const valueWei = parseNonNegativeUintString(transaction.value, 'value')
 	const nft = getSellNftItem(transaction)
 	await ensureWalletOwnsTokenStandardNft(
 		getTokenStandardFromItemType(nft.itemType),
@@ -1958,15 +2084,25 @@ export async function buildOpenSeaSellSteps(args: OpenSeaSellArgs): Promise<Step
 		nft.tokenId,
 		nft.token,
 	)
-	const approvalStep = buildNftApprovalStep(transaction, wallet, chainId)
+	const approvalStep = buildDirectNftApprovalStep({
+		tokenStandard: getTokenStandardFromItemType(nft.itemType),
+		contract: nft.token,
+		tokenId: nft.tokenId,
+		operator: getOperatorFromConduitKey(
+			transaction.input_data?.fulfillerConduitKey ??
+				getOfferSellerOrder(transaction, wallet).parameters.conduitKey,
+			transaction.to,
+		),
+		chainId,
+	})
 
 	return {
 		steps: [
 			approvalStep,
 			{
-				to: requireAddress(transaction.to, 'fulfillment target'),
+				to,
 				data: calldata,
-				value: `0x${BigInt(transaction.value ?? '0').toString(16)}`,
+				value: `0x${valueWei.toString(16)}`,
 				chainId,
 				label: 'OpenSea sell NFT',
 			},

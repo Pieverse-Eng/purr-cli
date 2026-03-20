@@ -53,7 +53,7 @@ export function writeLock(scope: 'local' | 'global', lockFile: LockFile): void {
 	mkdirSync(dir, { recursive: true })
 
 	const tmpPath = `${filePath}.tmp`
-	writeFileSync(tmpPath, JSON.stringify(lockFile, null, '\t') + '\n', 'utf-8')
+	writeFileSync(tmpPath, `${JSON.stringify(lockFile, null, '\t')}\n`, 'utf-8')
 	renameSync(tmpPath, filePath)
 }
 

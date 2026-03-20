@@ -48,9 +48,7 @@ function listInstalledSkills(args: Record<string, string>, json: boolean): void 
 			console.log(`  ${pc.dim('Agents:')}`)
 			for (const agentSlug of agentSlugs) {
 				const info = entry.agent_installs[agentSlug]
-				console.log(
-					`    ${pc.yellow(agentSlug)}  ${pc.dim(info.path)}  (${info.method})`,
-				)
+				console.log(`    ${pc.yellow(agentSlug)}  ${pc.dim(info.path)}  (${info.method})`)
 			}
 		}
 

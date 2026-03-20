@@ -46,8 +46,7 @@ const agents: readonly AgentDefinition[] = [
 	{
 		name: 'GitHub Copilot',
 		slug: 'github-copilot',
-		localSkillPath: (projectRoot, slug) =>
-			join(projectRoot, '.github', 'copilot', 'skills', slug),
+		localSkillPath: (projectRoot, slug) => join(projectRoot, '.github', 'copilot', 'skills', slug),
 		globalSkillPath: (slug) => join(home, '.github', 'copilot', 'skills', slug),
 	},
 ]

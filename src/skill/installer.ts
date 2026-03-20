@@ -4,7 +4,6 @@ import {
 	existsSync,
 	mkdirSync,
 	readdirSync,
-	readFileSync,
 	rmSync,
 	statSync,
 	symlinkSync,

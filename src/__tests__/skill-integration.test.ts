@@ -230,7 +230,9 @@ describe('Full install → list → remove flow', () => {
 	it('install skill, verify files and lock, then remove cleanly', async () => {
 		const { downloadSkill, getSkill } = await import('../skill/api.js')
 		const { installSkill, uninstallSkill } = await import('../skill/installer.js')
-		const { readLock, upsertLockEntry, removeLockEntry, getLockEntry } = await import('../skill/lock.js')
+		const { readLock, upsertLockEntry, removeLockEntry, getLockEntry } = await import(
+			'../skill/lock.js'
+		)
 		const { getAgent } = await import('../skill/agents.js')
 
 		const slug = 'code-review'
@@ -242,7 +244,7 @@ describe('Full install → list → remove flow', () => {
 		expect(download.sha256).toBeTruthy()
 
 		// --- Step 2: Install to local scope with claude-code agent ---
-		const agent = getAgent('claude-code')!
+		expect(getAgent('claude-code')).toBeDefined()
 		const result = installSkill({
 			slug,
 			buffer: download.buffer,
@@ -295,7 +297,7 @@ describe('Full install → list → remove flow', () => {
 		// --- Step 4: List installed shows our skill ---
 		const entry = getLockEntry('local', 'code-review')
 		expect(entry).toBeDefined()
-		expect(entry!.agent_installs['claude-code']).toBeDefined()
+		expect(entry?.agent_installs['claude-code']).toBeDefined()
 
 		// --- Step 5: Remove agent install ---
 		uninstallSkill({ slug, scope: 'local', agentSlug: 'claude-code' })
@@ -334,11 +336,11 @@ describe('Multi-agent install', () => {
 		// Both agents should have installs
 		expect(Object.keys(result.agentInstalls)).toHaveLength(2)
 		expect(result.agentInstalls['claude-code']).toBeDefined()
-		expect(result.agentInstalls['cursor']).toBeDefined()
+		expect(result.agentInstalls.cursor).toBeDefined()
 
 		// Both should be symlinks to the same canonical
 		const claudePath = result.agentInstalls['claude-code'].path
-		const cursorPath = result.agentInstalls['cursor'].path
+		const cursorPath = result.agentInstalls.cursor.path
 		expect(existsSync(claudePath)).toBe(true)
 		expect(existsSync(cursorPath)).toBe(true)
 		expect(lstatSync(claudePath).isSymbolicLink()).toBe(true)

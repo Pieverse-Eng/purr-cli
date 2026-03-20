@@ -18,9 +18,7 @@ async function promptSkillSlug(scope: 'local' | 'global'): Promise<string> {
 
 	if (lock.skills.length === 0) {
 		console.error(
-			scope === 'global'
-				? 'No skills installed globally.'
-				: 'No skills installed in this project.',
+			scope === 'global' ? 'No skills installed globally.' : 'No skills installed in this project.',
 		)
 		process.exit(1)
 	}
@@ -75,19 +73,26 @@ async function promptConfirmation(entry: LockEntry, agentSlug?: string): Promise
 	return result === true
 }
 
-export async function skillRemove(args: Record<string, string>, positional: string[]): Promise<void> {
+export async function skillRemove(
+	args: Record<string, string>,
+	positional: string[],
+): Promise<void> {
 	let slug = positional[0]
 	const isJson = args.json === 'true'
 	const isGlobal = args.global === 'true'
 	const isYes = args.yes === 'true'
-	const scope = isGlobal ? 'global' : 'local' as const
+	const scope = isGlobal ? 'global' : ('local' as const)
 	const agentSlug = args.agent
 
 	// Validate --agent if provided
 	if (agentSlug) {
 		const agent = getAgent(agentSlug)
 		if (!agent) {
-			console.error(`Error: Unknown agent "${agentSlug}". Valid agents: ${getAllAgents().map(a => a.slug).join(', ')}`)
+			console.error(
+				`Error: Unknown agent "${agentSlug}". Valid agents: ${getAllAgents()
+					.map((a) => a.slug)
+					.join(', ')}`,
+			)
 			process.exit(1)
 		}
 	}
@@ -165,12 +170,18 @@ export async function skillRemove(args: Record<string, string>, positional: stri
 
 	// Output
 	if (isJson) {
-		console.log(JSON.stringify({
-			success: true,
-			slug,
-			scope,
-			removed_agent: agentSlug ?? null,
-		}, null, 2))
+		console.log(
+			JSON.stringify(
+				{
+					success: true,
+					slug,
+					scope,
+					removed_agent: agentSlug ?? null,
+				},
+				null,
+				2,
+			),
+		)
 		return
 	}
 

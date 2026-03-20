@@ -657,9 +657,7 @@ Examples:
 					return
 				}
 				default:
-					throw new Error(
-						`Unknown skill command: ${command}. Use: list, install, remove`,
-					)
+					throw new Error(`Unknown skill command: ${command}. Use: list, install, remove`)
 			}
 		}
 

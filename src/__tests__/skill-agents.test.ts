@@ -13,14 +13,7 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 describe('agent registry', () => {
-	const expectedSlugs = [
-		'openclaw',
-		'claude-code',
-		'cursor',
-		'windsurf',
-		'cline',
-		'github-copilot',
-	]
+	const expectedSlugs = ['openclaw', 'claude-code', 'cursor', 'windsurf', 'cline', 'github-copilot']
 
 	it('has all expected agents registered', () => {
 		const agents = getAllAgents()
@@ -125,7 +118,7 @@ describe('detectInstalled', () => {
 
 	it('returns only agents whose config directory exists', async () => {
 		existsSyncImpl = (p) => p.includes('.claude')
-		const detectInstalled = (await importDetect())
+		const detectInstalled = await importDetect()
 		const result = detectInstalled()
 
 		expect(result).toHaveLength(1)
@@ -134,7 +127,7 @@ describe('detectInstalled', () => {
 
 	it('returns empty array when no agent directories exist', async () => {
 		existsSyncImpl = () => false
-		const detectInstalled = (await importDetect())
+		const detectInstalled = await importDetect()
 		const result = detectInstalled()
 
 		expect(result).toHaveLength(0)
@@ -142,7 +135,7 @@ describe('detectInstalled', () => {
 
 	it('returns multiple agents when multiple directories exist', async () => {
 		existsSyncImpl = (p) => p.includes('.claude') || p.includes('.cursor')
-		const detectInstalled = (await importDetect())
+		const detectInstalled = await importDetect()
 		const result = detectInstalled()
 		const slugs = result.map((a) => a.slug)
 

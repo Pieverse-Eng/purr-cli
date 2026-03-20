@@ -15,7 +15,10 @@ import { detectInstalled } from '../skill/agents.js'
 let testDir: string
 
 beforeEach(() => {
-	testDir = join(tmpdir(), `purr-review-verify-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+	testDir = join(
+		tmpdir(),
+		`purr-review-verify-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+	)
 	mkdirSync(testDir, { recursive: true })
 })
 
@@ -67,8 +70,8 @@ describe('CRITICAL 1: SHA256 empty hash produces misleading error', () => {
 		// Issue confirmed if: error says "SHA256 mismatch" with "expected ,"
 		// instead of something like "header missing"
 		expect(thrownError).toBeDefined()
-		expect(thrownError!.message).toContain('SHA256 mismatch')
-		expect(thrownError!.message).toMatch(/expected\s*,/) // "expected , got ..." — empty expected
+		expect(thrownError?.message).toContain('SHA256 mismatch')
+		expect(thrownError?.message).toMatch(/expected\s*,/) // "expected , got ..." — empty expected
 	})
 })
 
@@ -110,7 +113,7 @@ describe('HIGH 3: lock entry name field (FIXED)', () => {
 		const lockEntryMatch = source.match(/const lockEntry.*?=\s*\{([\s\S]*?)\}/m)
 		expect(lockEntryMatch).toBeTruthy()
 
-		const lockEntryBody = lockEntryMatch![1]
+		const lockEntryBody = lockEntryMatch?.[1]
 		// Should now use skillName (fetched from getSkill API) instead of slug
 		expect(lockEntryBody).toContain('name: skillName')
 		expect(lockEntryBody).not.toContain('name: slug')
@@ -153,10 +156,7 @@ describe('HIGH 5: delete mutation in remove.ts', () => {
 // ============================================================
 describe('MEDIUM: symlink type (FIXED)', () => {
 	it('installer.ts now uses dir type instead of junction', () => {
-		const source = readFileSync(
-			join(process.cwd(), 'src', 'skill', 'installer.ts'),
-			'utf-8',
-		)
+		const source = readFileSync(join(process.cwd(), 'src', 'skill', 'installer.ts'), 'utf-8')
 		expect(source).toContain("symlinkSync(canonical, targetDir, 'dir')")
 		expect(source).not.toContain("'junction'")
 	})

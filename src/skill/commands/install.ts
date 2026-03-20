@@ -66,7 +66,11 @@ async function promptAgentSelection(): Promise<string[]> {
 	if (detected.length === 0) {
 		console.error('No agents detected on this system.')
 		console.error('Specify target agent(s) manually with --agent <name>')
-		console.error(`Valid agents: ${getAllAgents().map(a => a.slug).join(', ')}`)
+		console.error(
+			`Valid agents: ${getAllAgents()
+				.map((a) => a.slug)
+				.join(', ')}`,
+		)
 		process.exit(1)
 	}
 
@@ -86,18 +90,23 @@ async function promptAgentSelection(): Promise<string[]> {
 	return selected as string[]
 }
 
-export async function skillInstall(args: Record<string, string>, positional: string[]): Promise<void> {
+export async function skillInstall(
+	args: Record<string, string>,
+	positional: string[],
+): Promise<void> {
 	let slug = positional[0]
 	const isJson = args.json === 'true'
 	const isGlobal = args.global === 'true'
 	const isCopy = args.copy === 'true'
 	const isForce = args.force === 'true'
-	const scope = isGlobal ? 'global' : 'local' as const
+	const scope = isGlobal ? 'global' : ('local' as const)
 
 	// Interactive skill search if no slug provided
 	if (!slug) {
 		if (!isTTY()) {
-			console.error('Usage: purr skill install <slug> --agent <name> [--global] [--copy] [--force] [--json]')
+			console.error(
+				'Usage: purr skill install <slug> --agent <name> [--global] [--copy] [--force] [--json]',
+			)
 			console.error('  --agent   Target agent(s), comma-separated (e.g. claude-code,cursor)')
 			console.error('  --global  Install to global scope')
 			console.error('  --copy    Force copy mode instead of symlink')
@@ -113,19 +122,28 @@ export async function skillInstall(args: Record<string, string>, positional: str
 	const agentArg = args.agent
 	if (!agentArg) {
 		if (!isTTY()) {
-			console.error('Error: --agent flag is required. Specify target agent(s), e.g. --agent claude-code')
+			console.error(
+				'Error: --agent flag is required. Specify target agent(s), e.g. --agent claude-code',
+			)
 			console.error('Use comma-separated values for multiple agents: --agent claude-code,cursor')
 			process.exit(1)
 		}
 		agentSlugs = await promptAgentSelection()
 	} else {
-		agentSlugs = agentArg.split(',').map(s => s.trim()).filter(Boolean)
+		agentSlugs = agentArg
+			.split(',')
+			.map((s) => s.trim())
+			.filter(Boolean)
 
 		// Validate all agent names
 		for (const agentSlug of agentSlugs) {
 			const agent = getAgent(agentSlug)
 			if (!agent) {
-				console.error(`Error: Unknown agent "${agentSlug}". Valid agents: ${getAllAgents().map(a => a.slug).join(', ')}`)
+				console.error(
+					`Error: Unknown agent "${agentSlug}". Valid agents: ${getAllAgents()
+						.map((a) => a.slug)
+						.join(', ')}`,
+				)
 				process.exit(1)
 			}
 		}
@@ -188,7 +206,7 @@ export async function skillInstall(args: Record<string, string>, positional: str
 	}
 
 	// Determine primary install method for lock entry
-	const methods = Object.values(result.agentInstalls).map(a => a.method)
+	const methods = Object.values(result.agentInstalls).map((a) => a.method)
 	const primaryMethod: 'symlink' | 'copy' = methods.includes('copy') ? 'copy' : 'symlink'
 
 	// Update lock file

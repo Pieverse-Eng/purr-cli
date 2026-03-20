@@ -1,0 +1,161 @@
+## Codebase Patterns
+- Config directory: ~/.purrfectclaw (used by api-client.ts for config storage)
+- CLI routing: main.ts uses switch/case on group then command, with parseArgs() for flags
+- Module pattern: ESM with .js extensions in imports, verbatimModuleSyntax enabled
+- Typecheck: `npx tsc --noEmit` (tsc not globally installed, use npx)
+- GPG signing disabled for commits on this branch (local GPG config issue)
+- homedir() from node:os used for home directory paths
+- Lock file uses atomic write (write .tmp then rename) to prevent corruption
+- Lock file paths: local = ./skills-lock.json, global = ~/.purrfectclaw/skills-lock.json
+- Marketplace API: base URL resolved via SKILL_MARKETPLACE_URL env → config 'skill-marketplace-url' → hardcoded default
+- Config reading: reuse readConfigFile pattern from api-client.ts (read ~/.purrfectclaw/config.json, return {} on missing/corrupt)
+- API client uses native fetch (Node 18+), no auth needed for public marketplace API
+- URL params: use encodeURIComponent for path segments, URLSearchParams for query strings
+- Canonical skill paths: local = .skills/<slug>/, global = ~/.purrfectclaw/skills/<slug>/
+- ZIP extraction: use fflate (unzipSync), always validate against zip-slip before writing
+- Symlink with 'junction' type for cross-platform compat; auto-fallback to copy on failure
+- Skill command routing: main.ts switch case with dynamic imports, early return pattern (like wallet)
+- Stub command handlers accept (args, positional?) — positional extracted via rest.filter(a => !a.startsWith('--'))
+- picocolors (imported as `pc`) used for CLI output styling; added as production dependency
+- Boolean flags (--remote, --json, --global) parsed as string 'true' by parseArgs, compare with === 'true'
+- parseArgs returns Record<string, string> (last value wins) — for multi-value flags use comma-separated: --agent claude-code,cursor
+- Install flow: downloadSkill() → installSkill() → upsertLockEntry() — each step can fail independently, wrap in try/catch
+- Interactive prompts: use @clack/prompts (text, select, multiselect, isCancel), dynamically imported to keep non-interactive path lightweight
+- TTY detection: check process.stdin.isTTY before showing interactive prompts; fall back to usage/error in non-TTY
+- Remove command: single-agent removal updates lock entry (upsertLockEntry), full removal deletes lock entry (removeLockEntry) + canonical dir
+- Confirmation prompts: skip with --yes or --json flag; require TTY for interactive confirmation
+- Tests: use real temp directories (tmpdir()) for filesystem tests — no mocking of fs needed; use fflate's zipSync to create test ZIP buffers
+- Tests: tsconfig excludes src/__tests__ from compilation; vitest handles test files independently
+
+---
+
+## 2026-03-19 - US-001
+- What was implemented: Agent registry module at src/skill/agents.ts
+- Files changed: src/skill/agents.ts (new)
+- **Learnings for future iterations:**
+  - Agent definitions use readonly interface with function properties for path computation
+  - detectInstalled() probes config directories (e.g., ~/.claude, ~/.cursor) to determine agent presence
+  - getAllAgents() exported for listing all registered agents
+  - homedir() cached at module level for consistent path resolution
+---
+
+## 2026-03-19 - US-002
+- What was implemented: Lock file CRUD module at src/skill/lock.ts
+- Files changed: src/skill/lock.ts (new)
+- **Learnings for future iterations:**
+  - LockEntry and LockFile types use readonly properties for immutability
+  - readLock() returns empty `{ skills: [] }` on missing or corrupt files (fail-safe)
+  - writeLock() uses atomic write (write to .tmp, then rename) to prevent corruption
+  - upsertLockEntry() creates new skills array via spread + findIndex pattern
+  - lockFilePath() derives path from scope: local uses cwd(), global uses ~/.purrfectclaw/
+---
+
+## 2026-03-19 - US-003
+- What was implemented: Marketplace API client at src/skill/api.ts
+- Files changed: src/skill/api.ts (new)
+- **Learnings for future iterations:**
+  - SkillMeta and SkillListResponse types defined with readonly properties
+  - Base URL resolution: env var SKILL_MARKETPLACE_URL → config 'skill-marketplace-url' → hardcoded default
+  - loadConfig() replicates readConfigFile pattern from api-client.ts (private, not shared)
+  - downloadSkill() reads SHA256 from X-Skill-SHA256 response header
+  - All fetch calls wrapped in try/catch for network error handling with clear messages
+  - 404 responses handled specifically for getSkill() and downloadSkill()
+---
+
+## 2026-03-19 - US-004
+- What was implemented: ZIP installer module at src/skill/installer.ts
+- Files changed: src/skill/installer.ts (new), package.json (added fflate dependency)
+- **Learnings for future iterations:**
+  - extractZip() uses fflate's unzipSync with zip-slip validation (rejects .., absolute paths, entries escaping target)
+  - installSkill() flow: verifySha256 → extract to canonical → symlink/copy to each agent dir
+  - Symlink uses 'junction' type for Windows compatibility; auto-fallbacks to copy on symlink failure
+  - uninstallSkill() supports single-agent removal (agentSlug param) or full canonical cleanup
+  - copyDirRecursive() is a private helper for deep directory copy when symlinks aren't available
+  - canonicalDir() resolves: local = .skills/<slug>/, global = ~/.purrfectclaw/skills/<slug>/
+---
+
+## 2026-03-19 - US-005
+- What was implemented: Skill command routing in main.ts with stub command handlers
+- Files changed: src/main.ts (modified), src/skill/commands/list.ts (new), src/skill/commands/install.ts (new), src/skill/commands/remove.ts (new)
+- **Learnings for future iterations:**
+  - Skill group uses early-return pattern (like wallet) — each sub-command returns directly, no StepOutput
+  - Dynamic imports used for command handlers to keep main.ts bundle lean
+  - Positional args extracted from rest via `rest.filter(a => !a.startsWith('--'))` since parseArgs only handles --flags
+  - install and remove handlers receive (args, positional) to support `purr skill install <slug>` pattern
+  - list handler receives only args (no positional needed)
+---
+
+## 2026-03-19 - US-006
+- What was implemented: List remote skills command in src/skill/commands/list.ts
+- Files changed: src/skill/commands/list.ts (modified), package.json (added picocolors dependency)
+- **Learnings for future iterations:**
+  - `--remote` flag triggers marketplace API call via listSkills()
+  - `--search` and `--category` passed through to API as query params
+  - `--json` outputs raw JSON for programmatic agent consumption
+  - Default output uses picocolors for human-readable styled table (slug in cyan bold, description dim, category yellow)
+  - API errors caught and printed to stderr with process.exit(1)
+  - Installed mode stub preserved for US-007 implementation
+---
+
+## 2026-03-19 - US-007
+- What was implemented: List installed skills command in src/skill/commands/list.ts
+- Files changed: src/skill/commands/list.ts (modified)
+- **Learnings for future iterations:**
+  - Installed mode reads lock file via readLock(scope) — scope determined by --global flag
+  - --json outputs raw lock file JSON for programmatic agent use
+  - Empty state messages are scope-aware (local vs global)
+  - Agent install details shown per skill: slug, path, method (symlink/copy)
+  - listInstalledSkills is synchronous (no async needed — lock file is local fs read)
+---
+
+## 2026-03-19 - US-008
+- What was implemented: Non-interactive install command in src/skill/commands/install.ts
+- Files changed: src/skill/commands/install.ts (rewritten from stub)
+- **Learnings for future iterations:**
+  - Multiple agents supported via comma-separated --agent flag (parseArgs limitation: Record<string, string>)
+  - All agent slugs validated upfront before downloading to fail fast
+  - --force flag skips the "already installed" check via getLockEntry()
+  - Lock entry uses slug as name (marketplace API doesn't return a display name on download)
+  - Primary install_method for lock entry derived from actual agent install results (copy if any agent used copy)
+  - --json mode suppresses progress messages (download/install) for clean programmatic output
+  - SHA256 verification handled inside installSkill() — no need to verify separately in the command
+---
+
+## 2026-03-19 - US-009
+- What was implemented: Interactive install mode in src/skill/commands/install.ts
+- Files changed: src/skill/commands/install.ts (modified), package.json (added @clack/prompts dependency)
+- **Learnings for future iterations:**
+  - @clack/prompts dynamically imported (`await import('@clack/prompts')`) so non-interactive paths don't pay the import cost
+  - isCancel() check required after every @clack prompt — user can Ctrl+C at any point
+  - detectInstalled() from agents.ts used to populate the multi-select with only agents present on the system
+  - TTY check (process.stdin.isTTY) gates interactive mode — non-TTY falls back to error messages with usage instructions
+  - slug variable changed from const to let to support reassignment from interactive prompt
+  - Agent validation only runs on the explicit --agent flag path; interactive multi-select already provides valid agents
+---
+
+## 2026-03-19 - US-010
+- What was implemented: Remove skill command in src/skill/commands/remove.ts
+- Files changed: src/skill/commands/remove.ts (rewritten from stub)
+- **Learnings for future iterations:**
+  - Single-agent removal: uninstallSkill(agentSlug) removes agent dir, then update lock entry's agent_installs via upsertLockEntry()
+  - When last agent is removed: also call uninstallSkill() without agentSlug to remove canonical, then removeLockEntry()
+  - Full removal iterates Object.keys(entry.agent_installs) to remove each agent dir before removing canonical
+  - Confirmation prompt skipped for --json mode (programmatic use shouldn't block on interactive prompts)
+  - Agent slug validation happens before lock entry lookup to fail fast on invalid agents
+  - Lock entry agent_installs validated to confirm the specified agent actually has an install before proceeding
+---
+
+## 2026-03-19 - US-011
+- What was implemented: Unit tests for core skill modules (lock, agents, installer)
+- Files changed: src/__tests__/skill-lock.test.ts (new), src/__tests__/skill-agents.test.ts (new), src/__tests__/skill-installer.test.ts (new)
+- **Test coverage:**
+  - skill-lock: 11 tests — readLock empty/corrupt, writeLock+readLock roundtrip, atomic write, upsertLockEntry add/update/preserve, removeLockEntry, getLockEntry
+  - skill-agents: 9 tests — registry completeness, agent shape validation, path functions, getAgent lookup, detectInstalled shape and subset
+  - skill-installer: 5 tests — extractZip normal extraction, path traversal rejection (.. and embedded ..), SHA256 pass on correct hash, SHA256 fail on mismatch
+- **Learnings for future iterations:**
+  - Use real temp directories (os.tmpdir) instead of mocking fs — simpler, more reliable, tests actual filesystem behavior
+  - fflate's zipSync creates test ZIP buffers easily: `zipSync({ 'file.txt': new TextEncoder().encode('content') })`
+  - vi.spyOn(process, 'cwd') works for redirecting lock file paths to temp dirs
+  - tsconfig excludes __tests__ but vitest handles them independently — no config changes needed
+  - installSkill with empty agents array is valid and useful for testing SHA256 verification in isolation
+---

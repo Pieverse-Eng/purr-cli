@@ -1,0 +1,213 @@
+{
+  "project": "purr-cli",
+  "branchName": "ralph/skill-management",
+  "description": "Skill Management - Add skill lifecycle management (list, install, remove) to purr-cli for multi-agent skill discovery and installation from Pieverse Marketplace",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Agent registry and directory detection",
+      "description": "As a developer, I need an agent registry that defines supported agents, their skill directory paths, and auto-detection logic.",
+      "acceptanceCriteria": [
+        "Create src/skill/agents.ts with agent definitions",
+        "Define agents: OpenClaw (local: .openclaw/workspace/skills/<slug>, global: ~/.openclaw/workspace/skills/<slug>), Claude Code (.claude/skills/<slug>), Cursor (.cursor/skills/<slug>), Windsurf (.windsurf/skills/<slug>), Cline (.cline/skills/<slug>), GitHub Copilot (.github/copilot/skills/<slug>)",
+        "Each agent has: name, slug, localSkillPath(projectRoot, slug) function, globalSkillPath(slug) function",
+        "Export detectInstalled() that checks which agents exist on the current system by probing their config directories",
+        "detectInstalled() returns array of agent definitions that are present",
+        "Export getAgent(name) to look up a single agent by slug",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Foundation module. No external dependencies needed. Use Node.js fs.existsSync for detection."
+    },
+    {
+      "id": "US-002",
+      "title": "Lock file CRUD module",
+      "description": "As a developer, I need a lock file system to persist skill installation state for reproducibility.",
+      "acceptanceCriteria": [
+        "Create src/skill/lock.ts",
+        "Define LockEntry type: { slug: string, name: string, sha256: string, installed_at: string, install_method: 'symlink' | 'copy', canonical_path: string, agent_installs: Record<string, { path: string, method: 'symlink' | 'copy' }> }",
+        "Define LockFile type: { skills: LockEntry[] }",
+        "Project-level lock file path: ./skills-lock.json",
+        "Global-level lock file path: ~/.purrfectclaw/skills-lock.json",
+        "Export readLock(scope: 'local' | 'global'): returns LockFile, returns empty { skills: [] } if file does not exist",
+        "Export writeLock(scope, lockFile): atomic write (write to .tmp then rename)",
+        "Export upsertLockEntry(scope, entry): add or update a skill entry",
+        "Export removeLockEntry(scope, slug): remove a skill entry by slug",
+        "Export getLockEntry(scope, slug): get a single entry or undefined",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Foundation module. Use Node.js fs for file ops. Atomic write prevents corruption on interrupted writes."
+    },
+    {
+      "id": "US-003",
+      "title": "Marketplace API client",
+      "description": "As a developer, I need an API client to interact with the Pieverse Skill Marketplace REST API.",
+      "acceptanceCriteria": [
+        "Create src/skill/api.ts",
+        "Export listSkills(options?: { search?: string, category?: string, offset?: number, limit?: number }): fetches GET /skills with query params, returns { skills: SkillMeta[], total: number }",
+        "SkillMeta type: { slug: string, name: string, description: string, category: string, download_url: string }",
+        "Export getSkill(slug: string): fetches GET /skills/{slug}, returns full skill detail",
+        "Export downloadSkill(slug: string): fetches GET /skills/{slug}/download, returns { buffer: Buffer, sha256: string } where sha256 comes from X-Skill-SHA256 response header",
+        "Base URL configurable via SKILL_MARKETPLACE_URL env var, fallback to loadConfig() for 'skill-marketplace-url' key, then hardcoded default",
+        "Reuse loadConfig pattern from existing src/api-client.ts for config reading",
+        "Clear error messages for network errors, 404, and non-200 responses",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Uses native fetch (Node 18+). No auth needed - public API. Reference src/api-client.ts for config pattern."
+    },
+    {
+      "id": "US-004",
+      "title": "ZIP installer module (download, extract, symlink/copy)",
+      "description": "As a developer, I need an installer that downloads skill ZIPs, extracts them, and places them in agent directories.",
+      "acceptanceCriteria": [
+        "Create src/skill/installer.ts",
+        "Export extractZip(buffer: Buffer, targetDir: string): extracts ZIP to target directory",
+        "Validate all paths during extraction to prevent zip-slip / path traversal attacks (reject entries with .. or absolute paths)",
+        "Export installSkill(options: { slug, buffer, sha256, scope, agents, copyMode }): orchestrates full install flow",
+        "installSkill writes to canonical path: local = .skills/<slug>/, global = ~/.purrfectclaw/skills/<slug>/",
+        "Default symlink mode: extract to canonical, create symlink from each agent skill dir to canonical",
+        "Copy mode (--copy): extract directly to each agent skill dir, no symlinks",
+        "If symlink creation fails (e.g. Windows), auto-fallback to copy mode for that agent",
+        "Verify SHA256 of downloaded buffer matches expected hash, throw on mismatch",
+        "Return install result with actual method used per agent for lock file recording",
+        "Export uninstallSkill(options: { slug, scope, agentSlug? }): remove symlinks/copies and clean up canonical if no agents remain",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Use fflate or built-in ZIP parsing for extraction. Use Node.js crypto for SHA256. Import agents from agents.ts and lock from lock.ts."
+    },
+    {
+      "id": "US-005",
+      "title": "Skill command routing in main.ts",
+      "description": "As a developer, I need the 'skill' command group wired into the existing CLI router.",
+      "acceptanceCriteria": [
+        "Add 'skill' case to the main switch statement in src/main.ts",
+        "Sub-commands: list, install, remove",
+        "Route to dynamic imports: src/skill/commands/list.ts, src/skill/commands/install.ts, src/skill/commands/remove.ts",
+        "Create stub files for each command that export a handler function accepting parsed args",
+        "Add 'skill' to the help text output with description of available sub-commands",
+        "Unknown sub-command prints help for skill group",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Follow existing routing pattern in main.ts (switch on group, then switch on command). Stub handlers can just print 'not implemented yet'."
+    },
+    {
+      "id": "US-006",
+      "title": "List remote skills command",
+      "description": "As an agent operator, I want to list available skills from the marketplace so I can discover what to install.",
+      "acceptanceCriteria": [
+        "Implement src/skill/commands/list.ts handler for --remote mode",
+        "purr skill list --remote calls listSkills() from api.ts and displays results",
+        "Each skill shows: slug, name, description, category",
+        "Support --search <term> to filter by keyword",
+        "Support --category <name> to filter by category",
+        "Support --json flag to output raw JSON (for programmatic use by agents)",
+        "Human-readable table format by default (using picocolors for styling)",
+        "Clear error message when API request fails",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Add picocolors as dependency. Default output is human-friendly table; --json outputs raw API response."
+    },
+    {
+      "id": "US-007",
+      "title": "List installed skills command",
+      "description": "As an agent operator, I want to see what skills are currently installed locally or globally.",
+      "acceptanceCriteria": [
+        "Implement src/skill/commands/list.ts handler for installed mode (no --remote flag)",
+        "purr skill list reads local lock file and displays installed skills",
+        "purr skill list --global reads global lock file",
+        "Each skill shows: slug, name, installed_at, canonical_path, list of agents with their paths",
+        "Support --json flag for programmatic output",
+        "Show friendly empty state message when no skills are installed",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Reads lock file via lock.ts module. Same list.ts file handles both --remote and installed modes."
+    },
+    {
+      "id": "US-008",
+      "title": "Install skill command (non-interactive, flags only)",
+      "description": "As an agent operator, I want to install a skill by providing slug and agent via CLI flags.",
+      "acceptanceCriteria": [
+        "Implement src/skill/commands/install.ts handler",
+        "purr skill install <slug> --agent <name> downloads and installs skill to specified agent",
+        "Support multiple --agent flags to install to multiple agents at once",
+        "Support --global to install to global scope (default is project-level local)",
+        "Support --copy to force copy mode instead of symlink",
+        "Support --force to overwrite if skill already installed",
+        "Verify SHA256 after download, abort with error on mismatch",
+        "Update lock file after successful install via upsertLockEntry()",
+        "Support --json flag for programmatic output (output install result as JSON)",
+        "Error if skill slug not found on marketplace (404)",
+        "Error if specified --agent name not recognized",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "This is the non-interactive path. All required info provided via flags. Orchestrates: api.downloadSkill() -> installer.installSkill() -> lock.upsertLockEntry()."
+    },
+    {
+      "id": "US-009",
+      "title": "Install skill interactive mode (agent selection and skill search)",
+      "description": "As an agent operator, I want interactive prompts when I don't provide all flags, so I can discover and select skills and agents interactively.",
+      "acceptanceCriteria": [
+        "Add @clack/prompts as dependency",
+        "When purr skill install is run without <slug>: show interactive search prompt, call listSkills with user input, display results as selectable list",
+        "When purr skill install <slug> is run without --agent: call detectInstalled() to find available agents, show multi-select prompt for user to pick target agents",
+        "If no agents detected, show helpful message suggesting manual --agent flag",
+        "Interactive prompts are skipped entirely when all flags are provided (non-interactive path from US-008)",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Extends install.ts from US-008. @clack/prompts provides select(), multiselect(), text() for interactive UI. Check if stdin is TTY before showing prompts."
+    },
+    {
+      "id": "US-010",
+      "title": "Remove skill command",
+      "description": "As an agent operator, I want to uninstall a skill to clean up unused skills.",
+      "acceptanceCriteria": [
+        "Implement src/skill/commands/remove.ts handler",
+        "purr skill remove <slug> removes skill from all agents and canonical path",
+        "Support --agent <name> to remove only from a specific agent (keep others and canonical)",
+        "Support --global to remove from global scope",
+        "Support --yes to skip confirmation prompt",
+        "Without --yes, show confirmation prompt via @clack/prompts (list what will be deleted)",
+        "Without <slug>, show interactive list of installed skills to select from",
+        "When removing from specific agent: update agent_installs in lock entry, keep canonical if other agents remain",
+        "When removing last agent: delete canonical directory and remove lock entry entirely",
+        "Support --json flag for programmatic output",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Uses installer.uninstallSkill() for file cleanup and lock.removeLockEntry() / lock.upsertLockEntry() for state. Interactive mode via @clack/prompts."
+    },
+    {
+      "id": "US-011",
+      "title": "Unit tests for skill modules",
+      "description": "As a developer, I need tests for the core skill modules to ensure correctness.",
+      "acceptanceCriteria": [
+        "Create src/__tests__/skill-lock.test.ts: test readLock returns empty on missing file, writeLock + readLock roundtrip, upsertLockEntry adds and updates, removeLockEntry removes",
+        "Create src/__tests__/skill-agents.test.ts: test agent registry has expected agents, getAgent returns correct agent, detectInstalled returns array",
+        "Create src/__tests__/skill-installer.test.ts: test extractZip rejects path traversal attempts, SHA256 verification passes on correct hash and fails on mismatch",
+        "All tests pass with bun run test",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": true,
+      "notes": "Use vitest (already in devDependencies). Mock filesystem for lock tests. Use a small test ZIP buffer for installer tests."
+    }
+  ]
+}

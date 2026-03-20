@@ -1757,6 +1757,24 @@ async function resolveCancelContext(args: OpenSeaCancelArgs): Promise<OpenSeaCan
 
   const orderKind = inferOrderKind(order)
   const signedZone = isSignedZoneAddress(parameters.zone)
+
+  // Verify the order's counter matches the current on-chain counter.
+  // If the offerer's counter was incremented (e.g. via incrementCounter or bulk cancel),
+  // all orders created with the old counter are already dead on Seaport —
+  // cancel() would revert because the derived order hash won't match.
+  const currentCounter = await getSeaportCounter(chain.chainId, offerer)
+  if (parameters.counter !== currentCounter) {
+    throw openSeaError(
+      `Order ${args.orderHash} was created with counter ${parameters.counter} but the offerer's current on-chain counter is ${currentCounter}. The order is already effectively cancelled by a counter increment.`,
+      'ORDER_COUNTER_STALE',
+      {
+        orderHash: args.orderHash,
+        orderCounter: parameters.counter,
+        currentCounter,
+      },
+    )
+  }
+
   const steps: TxStep[] = [
     {
       to: requireAddress(protocolAddress, 'Seaport contract'),
@@ -1918,11 +1936,11 @@ export async function createOpenSeaOffer(
   const prepared = await buildPreparedOfferOrder(args)
   const preview = buildOfferPreviewFromPrepared(prepared)
   const wallet = requireAddress(args.wallet, 'wallet')
-  const approval =
-    preview.steps.length > 0
-      ? (await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps),
-        await executeStepsFromJson(JSON.stringify({ steps: preview.steps })))
-      : undefined
+  let approval: ExecuteResult | undefined
+  if (preview.steps.length > 0) {
+    await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps)
+    approval = await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
+  }
   const submissionPath = `/api/v2/orders/${prepared.chain.apiName}/seaport/offers`
   const submissionBody = {
     parameters: preview.submission.parameters,
@@ -1979,11 +1997,11 @@ export async function createOpenSeaListing(
   const wallet = requireAddress(args.wallet, 'wallet')
   const prepared = await buildPreparedListingOrder(args)
   const preview = await buildListingPreviewFromPrepared(prepared, wallet)
-  const approval =
-    preview.steps.length > 0
-      ? (await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps),
-        await executeStepsFromJson(JSON.stringify({ steps: preview.steps })))
-      : undefined
+  let approval: ExecuteResult | undefined
+  if (preview.steps.length > 0) {
+    await ensureOpenSeaExecutionWalletMatches(wallet, preview.steps)
+    approval = await executeStepsFromJson(JSON.stringify({ steps: preview.steps }))
+  }
   const submissionPath = `/api/v2/orders/${prepared.chain.apiName}/seaport/listings`
   const submissionBody = {
     parameters: preview.submission.parameters,

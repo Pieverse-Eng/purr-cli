@@ -56,6 +56,16 @@ const SEAPORT_CANCEL_ABI = parseAbi([
 
 // -- Helpers ----------------------------------------------------------------
 
+// Mock RPC response for getCounter returning 5 (matches counter: '5' in test order data)
+const COUNTER_5_RPC = {
+  url: /publicnode\.com/,
+  data: {
+    jsonrpc: '2.0',
+    id: 1,
+    result: '0x0000000000000000000000000000000000000000000000000000000000000005',
+  },
+}
+
 function mockFetchSequence(responses: Array<{ url: RegExp; data: unknown }>) {
   return vi.fn().mockImplementation(async (url: string) => {
     const match = responses.find((r) => r.url.test(url))
@@ -1292,7 +1302,7 @@ describe('buildOpenSeaCancelOfferPreview', () => {
       },
     }
 
-    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }])
+    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC])
     vi.stubGlobal('fetch', mock)
 
     const preview = await buildOpenSeaCancelOfferPreview({
@@ -1361,7 +1371,7 @@ describe('buildOpenSeaCancelOfferPreview', () => {
       },
     }
 
-    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }])
+    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC])
     vi.stubGlobal('fetch', mock)
 
     const preview = await buildOpenSeaCancelOfferPreview({
@@ -1419,7 +1429,7 @@ describe('buildOpenSeaCancelOfferPreview', () => {
       },
     }
 
-    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }])
+    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC])
     vi.stubGlobal('fetch', mock)
 
     await expect(
@@ -1473,7 +1483,7 @@ describe('buildOpenSeaCancelOfferPreview', () => {
       },
     }
 
-    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }])
+    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC])
     vi.stubGlobal('fetch', mock)
 
     await expect(
@@ -1528,7 +1538,7 @@ describe('buildOpenSeaCancelOfferPreview', () => {
       },
     }
 
-    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }])
+    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC])
     vi.stubGlobal('fetch', mock)
 
     await expect(
@@ -1600,7 +1610,7 @@ describe('buildOpenSeaCancelListingPreview', () => {
       },
     }
 
-    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }])
+    const mock = mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC])
     vi.stubGlobal('fetch', mock)
 
     const preview = await buildOpenSeaCancelListingPreview({
@@ -1675,7 +1685,10 @@ describe('cancel preview step builders', () => {
       },
     }
 
-    vi.stubGlobal('fetch', mockFetchSequence([{ url: /\/orders\/chain/, data: order }]))
+    vi.stubGlobal(
+      'fetch',
+      mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC]),
+    )
 
     const result = await buildOpenSeaCancelOfferSteps({
       chain: 'ethereum',
@@ -1736,7 +1749,10 @@ describe('cancel preview step builders', () => {
       },
     }
 
-    vi.stubGlobal('fetch', mockFetchSequence([{ url: /\/orders\/chain/, data: order }]))
+    vi.stubGlobal(
+      'fetch',
+      mockFetchSequence([{ url: /\/orders\/chain/, data: order }, COUNTER_5_RPC]),
+    )
 
     const result = await buildOpenSeaCancelListingSteps({
       chain: 'ethereum',
@@ -1830,6 +1846,14 @@ describe('cancelOpenSeaOffer', () => {
           status: 200,
           json: () => Promise.resolve(order),
           text: () => Promise.resolve(JSON.stringify(order)),
+        }
+      }
+      if (typeof url === 'string' && url.includes('publicnode.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(COUNTER_5_RPC.data),
+          text: () => Promise.resolve(JSON.stringify(COUNTER_5_RPC.data)),
         }
       }
       throw new Error(`Unexpected fetch URL: ${url}`)
@@ -1958,6 +1982,14 @@ describe('cancelOpenSeaOffer', () => {
           text: () => Promise.resolve('ok'),
         }
       }
+      if (typeof url === 'string' && url.includes('publicnode.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(COUNTER_5_RPC.data),
+          text: () => Promise.resolve(JSON.stringify(COUNTER_5_RPC.data)),
+        }
+      }
       throw new Error(`Unexpected fetch URL: ${url}`)
     })
     vi.stubGlobal('fetch', mock)
@@ -2060,6 +2092,14 @@ describe('cancelOpenSeaOffer', () => {
       }
       if (typeof url === 'string' && url.includes('/wallet/execute')) {
         throw new Error('cancel execution should not start when wallet mismatches')
+      }
+      if (typeof url === 'string' && url.includes('publicnode.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(COUNTER_5_RPC.data),
+          text: () => Promise.resolve(JSON.stringify(COUNTER_5_RPC.data)),
+        }
       }
       throw new Error(`Unexpected fetch URL: ${url}`)
     })
@@ -2180,6 +2220,14 @@ describe('cancelOpenSeaListing', () => {
           text: () => Promise.resolve('ok'),
         }
       }
+      if (typeof url === 'string' && url.includes('publicnode.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(COUNTER_5_RPC.data),
+          text: () => Promise.resolve(JSON.stringify(COUNTER_5_RPC.data)),
+        }
+      }
       throw new Error(`Unexpected fetch URL: ${url}`)
     })
     vi.stubGlobal('fetch', mock)
@@ -2265,6 +2313,14 @@ describe('cancelOpenSeaListing', () => {
       }
       if (typeof url === 'string' && url.includes('/wallet/execute')) {
         throw new Error('cancel execution should not start when wallet mismatches')
+      }
+      if (typeof url === 'string' && url.includes('publicnode.com')) {
+        return {
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(COUNTER_5_RPC.data),
+          text: () => Promise.resolve(JSON.stringify(COUNTER_5_RPC.data)),
+        }
       }
       throw new Error(`Unexpected fetch URL: ${url}`)
     })

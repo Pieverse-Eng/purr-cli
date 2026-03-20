@@ -120,6 +120,14 @@ describe('resolveToken', () => {
     expect(resolveToken('BONK', -1)).toBe('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263')
   })
 
+  it('resolves JTO on Solana', () => {
+    expect(resolveToken('JTO', -1)).toBe('jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL')
+  })
+
+  it('resolves JITOSOL on Solana', () => {
+    expect(resolveToken('JITOSOL', -1)).toBe('J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn')
+  })
+
   // --- Error cases ---
   it('throws for unknown ticker with available list', () => {
     expect(() => resolveToken('FAKECOIN', 56)).toThrow(/Unknown token "FAKECOIN" on chain 56/)

@@ -12,7 +12,7 @@ import { buildApproveSteps } from './primitives/approve.js'
 import { buildRawStep } from './primitives/raw.js'
 import { buildTransferSteps } from './primitives/transfer.js'
 import { NATIVE_EVM, parseChainId } from './shared.js'
-import { inferChainId, resolveToken } from './token-registry.js'
+import { SOLANA_CHAIN_ID, inferChainId, resolveToken } from './token-registry.js'
 import type { StepOutput } from './types.js'
 import {
   createOrder,
@@ -225,6 +225,8 @@ Examples:
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'
   purr wallet transfer --to 0x... --amount 0.01 --chain-id 56
   purr wallet transfer --to 0x... --amount 1000 --chain-id 56 --token 0x55d3...7955
+  purr wallet transfer --to FuQPd1q... --amount 0.5 --chain-type solana
+  purr wallet transfer --to FuQPd1q... --amount 100 --chain-type solana --token EPjFWdd5...
   purr execute --steps-file /tmp/purr_steps.json
   purr execute --steps-file /tmp/purr_steps.json --dedup-key my-swap-123
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
@@ -307,8 +309,8 @@ Examples:
     case 'dflow': {
       if (command !== 'swap') throw new Error(`Unknown dflow command: ${command}. Use: swap`)
       const dflowResult = await dflowSwap({
-        fromToken: resolveToken(requireArg(args, 'from-token'), -1),
-        toToken: resolveToken(requireArg(args, 'to-token'), -1),
+        fromToken: resolveToken(requireArg(args, 'from-token'), SOLANA_CHAIN_ID),
+        toToken: resolveToken(requireArg(args, 'to-token'), SOLANA_CHAIN_ID),
         amount: requireArg(args, 'amount'),
         wallet: requireArg(args, 'wallet'),
         slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,

@@ -2,6 +2,9 @@ import { isAddress } from 'viem'
 import { NATIVE_EVM } from './shared.js'
 
 const DEFAULT_CHAIN_ID = 56
+
+/** Sentinel chain ID used to route Solana token resolution (not a real EVM chain ID). */
+export const SOLANA_CHAIN_ID = -1
 const NATIVE = NATIVE_EVM as `0x${string}`
 
 const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
@@ -112,8 +115,8 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   matic: 137,
   polygon: 137,
   optimism: 10,
-  solana: -1, // sentinel — handled separately
-  sol: -1,
+  solana: SOLANA_CHAIN_ID,
+  sol: SOLANA_CHAIN_ID,
 }
 
 export function inferChainId(args: Record<string, string>): number {
@@ -129,7 +132,7 @@ export function inferChainId(args: Record<string, string>): number {
 }
 
 export function resolveToken(input: string, chainId: number): string {
-  if (chainId === -1) return resolveSolanaToken(input)
+  if (chainId === SOLANA_CHAIN_ID) return resolveSolanaToken(input)
   if (isAddress(input)) return input
 
   const ticker = input.toUpperCase()

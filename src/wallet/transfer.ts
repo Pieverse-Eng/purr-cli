@@ -1,5 +1,6 @@
 import { apiPost, resolveCredentials } from '../api-client.js'
-import { resolveToken } from '../token-registry.js'
+import { parseChainId } from '../shared.js'
+import { SOLANA_CHAIN_ID, resolveToken } from '../token-registry.js'
 
 interface WalletTransferResponse {
   ok: boolean
@@ -8,7 +9,8 @@ interface WalletTransferResponse {
     to: string
     amount: string
     hash: string
-    chainId: number
+    chainId?: number
+    chainType: string
     assetType: string
   }
   error?: string
@@ -25,20 +27,29 @@ export async function walletTransfer(args: Record<string, string>): Promise<void
   if (!amount) {
     throw new Error('Missing required argument: --amount')
   }
-  const chainId = args['chain-id']
-  if (!chainId) {
-    throw new Error('Missing required argument: --chain-id')
+
+  const chainType = args['chain-type'] ?? 'ethereum'
+  const isSolana = chainType === 'solana'
+
+  // chain-id is required for EVM, not needed for Solana
+  if (!isSolana && !args['chain-id']) {
+    throw new Error('Missing required argument: --chain-id (not required for --chain-type solana)')
   }
+  const parsedChainId = args['chain-id'] ? parseChainId(args['chain-id']) : undefined
 
   const body: Record<string, unknown> = {
     to,
     amount,
-    chainId: Number.parseInt(chainId, 10),
+    chainType,
+  }
+
+  if (parsedChainId !== undefined) {
+    body.chainId = parsedChainId
   }
 
   if (args.token) {
-    body.assetType = 'erc20'
-    body.tokenAddress = resolveToken(args.token, Number.parseInt(chainId, 10))
+    body.assetType = isSolana ? 'spl' : 'erc20'
+    body.tokenAddress = resolveToken(args.token, isSolana ? SOLANA_CHAIN_ID : parsedChainId!)
   } else {
     body.assetType = 'native'
   }

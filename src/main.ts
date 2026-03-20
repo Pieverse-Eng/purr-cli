@@ -12,6 +12,7 @@ import { buildApproveSteps } from './primitives/approve.js'
 import { buildRawStep } from './primitives/raw.js'
 import { buildTransferSteps } from './primitives/transfer.js'
 import { NATIVE_EVM, parseChainId } from './shared.js'
+import { inferChainId, resolveToken } from './token-registry.js'
 import type { StepOutput } from './types.js'
 import {
   createOrder,
@@ -259,7 +260,7 @@ Examples:
       switch (command) {
         case 'deposit':
           output = buildAsterDepositSteps({
-            token: requireArg(args, 'token'),
+            token: resolveToken(requireArg(args, 'token'), chainId),
             amountWei: requireArg(args, 'amount-wei'),
             wallet: requireArg(args, 'wallet'),
             chainId,
@@ -274,6 +275,7 @@ Examples:
 
     case 'bitget': {
       if (command !== 'swap') throw new Error(`Unknown bitget command: ${command}`)
+      const bitgetChainId = inferChainId(args)
 
       if (args.calldata) {
         // Legacy mode: pre-fetched calldata JSON
@@ -283,15 +285,15 @@ Examples:
         }
         output = buildBitgetSwapStepsFromCalldata({
           calldata,
-          fromToken: requireArg(args, 'from-token'),
+          fromToken: resolveToken(requireArg(args, 'from-token'), bitgetChainId),
           amountWei: requireArg(args, 'amount-wei'),
           chainId: parseChainId(requireArg(args, 'chain-id')),
         })
       } else {
         // Full flow: quote → calldata → steps
         output = await buildBitgetSwapSteps({
-          fromToken: requireArg(args, 'from-token'),
-          toToken: requireArg(args, 'to-token'),
+          fromToken: resolveToken(requireArg(args, 'from-token'), bitgetChainId),
+          toToken: resolveToken(requireArg(args, 'to-token'), bitgetChainId),
           fromAmount: requireArg(args, 'from-amount'),
           chain: requireArg(args, 'chain'),
           wallet: requireArg(args, 'wallet'),
@@ -305,8 +307,8 @@ Examples:
     case 'dflow': {
       if (command !== 'swap') throw new Error(`Unknown dflow command: ${command}. Use: swap`)
       const dflowResult = await dflowSwap({
-        fromToken: requireArg(args, 'from-token'),
-        toToken: requireArg(args, 'to-token'),
+        fromToken: resolveToken(requireArg(args, 'from-token'), -1),
+        toToken: resolveToken(requireArg(args, 'to-token'), -1),
         amount: requireArg(args, 'amount'),
         wallet: requireArg(args, 'wallet'),
         slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
@@ -327,7 +329,7 @@ Examples:
       switch (command) {
         case 'buy':
           output = await buildFourMemeBuySteps({
-            token: requireArg(args, 'token'),
+            token: resolveToken(requireArg(args, 'token'), 56),
             wallet: requireArg(args, 'wallet'),
             amount: args.amount,
             funds: args.funds,
@@ -336,7 +338,7 @@ Examples:
           break
         case 'sell':
           output = await buildFourMemeSellSteps({
-            token: requireArg(args, 'token'),
+            token: resolveToken(requireArg(args, 'token'), 56),
             wallet: requireArg(args, 'wallet'),
             amount: requireArg(args, 'amount'),
             slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
@@ -429,7 +431,9 @@ Examples:
       switch (command) {
         case 'swap':
           output = buildPancakeSwapSteps({
-            path: requireArg(args, 'path').split(','),
+            path: requireArg(args, 'path')
+              .split(',')
+              .map((t) => resolveToken(t.trim(), chainId)),
             amountInWei: requireArg(args, 'amount-in-wei'),
             amountOutMinWei: requireArg(args, 'amount-out-min-wei'),
             wallet: requireArg(args, 'wallet'),
@@ -440,8 +444,8 @@ Examples:
           break
         case 'add-liquidity':
           output = buildPancakeAddLiquiditySteps({
-            tokenA: requireArg(args, 'token-a'),
-            tokenB: requireArg(args, 'token-b'),
+            tokenA: resolveToken(requireArg(args, 'token-a'), chainId),
+            tokenB: resolveToken(requireArg(args, 'token-b'), chainId),
             amountAWei: requireArg(args, 'amount-a-wei'),
             amountBWei: requireArg(args, 'amount-b-wei'),
             wallet: requireArg(args, 'wallet'),
@@ -453,8 +457,8 @@ Examples:
         case 'remove-liquidity':
           output = buildPancakeRemoveLiquiditySteps({
             pairAddress: requireArg(args, 'pair-address'),
-            token0: requireArg(args, 'token0'),
-            token1: requireArg(args, 'token1'),
+            token0: resolveToken(requireArg(args, 'token0'), chainId),
+            token1: resolveToken(requireArg(args, 'token1'), chainId),
             lpAmountWei: requireArg(args, 'lp-amount-wei'),
             wallet: requireArg(args, 'wallet'),
             deadline: parseDeadline(requireArg(args, 'deadline')),
@@ -476,8 +480,8 @@ Examples:
           break
         case 'v3-mint':
           output = buildV3MintSteps({
-            token0: requireArg(args, 'token0'),
-            token1: requireArg(args, 'token1'),
+            token0: resolveToken(requireArg(args, 'token0'), chainId),
+            token1: resolveToken(requireArg(args, 'token1'), chainId),
             fee: Number.parseInt(requireArg(args, 'fee'), 10),
             tickLower: Number.parseInt(requireArg(args, 'tick-lower'), 10),
             tickUpper: Number.parseInt(requireArg(args, 'tick-upper'), 10),
@@ -558,7 +562,7 @@ Examples:
           output = buildListaDepositSteps({
             vault: requireArg(args, 'vault'),
             amountWei: requireArg(args, 'amount-wei'),
-            token: requireArg(args, 'token'),
+            token: resolveToken(requireArg(args, 'token'), chainId),
             wallet: requireArg(args, 'wallet'),
             chainId,
           })
@@ -592,7 +596,7 @@ Examples:
       switch (command) {
         case 'approve':
           output = buildApproveSteps({
-            token: requireArg(args, 'token'),
+            token: resolveToken(requireArg(args, 'token'), chainId),
             spender: requireArg(args, 'spender'),
             amount: requireArg(args, 'amount'),
             chainId,
@@ -600,7 +604,7 @@ Examples:
           break
         case 'transfer':
           output = buildTransferSteps({
-            token: args.token ?? NATIVE_EVM,
+            token: args.token ? resolveToken(args.token, chainId) : NATIVE_EVM,
             to: requireArg(args, 'to'),
             amountWei: requireArg(args, 'amount-wei'),
             chainId,

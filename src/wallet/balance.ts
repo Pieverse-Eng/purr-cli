@@ -1,4 +1,5 @@
 import { apiGet, resolveCredentials } from '../api-client.js'
+import { inferChainId, resolveToken } from '../token-registry.js'
 
 interface WalletBalanceResponse {
   ok: boolean
@@ -23,7 +24,7 @@ export async function walletBalance(args: Record<string, string>): Promise<void>
   params.set('balance', 'true')
 
   if (args.token) {
-    params.set('token', args.token)
+    params.set('token', resolveToken(args.token, inferChainId(args)))
     params.set('chain_type', args['chain-type'] ?? 'ethereum')
   } else if (args['chain-type']) {
     params.set('chain_type', args['chain-type'])

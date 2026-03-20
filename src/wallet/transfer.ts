@@ -1,4 +1,5 @@
 import { apiPost, resolveCredentials } from '../api-client.js'
+import { resolveToken } from '../token-registry.js'
 
 interface WalletTransferResponse {
   ok: boolean
@@ -37,7 +38,7 @@ export async function walletTransfer(args: Record<string, string>): Promise<void
 
   if (args.token) {
     body.assetType = 'erc20'
-    body.tokenAddress = args.token
+    body.tokenAddress = resolveToken(args.token, Number.parseInt(chainId, 10))
   } else {
     body.assetType = 'native'
   }

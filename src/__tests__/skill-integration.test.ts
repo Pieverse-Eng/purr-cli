@@ -21,6 +21,7 @@ const SKILLS_DB = [
 		name: 'Code Review Helper',
 		description: 'AI-powered code review assistant',
 		category: 'Development',
+		version: '1.0.0',
 		download_url: '/skills/code-review/download',
 	},
 	{
@@ -28,6 +29,7 @@ const SKILLS_DB = [
 		name: 'Dune Analytics',
 		description: 'Query blockchain data with DuneSQL',
 		category: 'Crypto',
+		version: '2.1.0',
 		download_url: '/skills/dune-analytics/download',
 	},
 ]

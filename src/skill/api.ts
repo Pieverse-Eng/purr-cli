@@ -3,13 +3,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 
 const CONFIG_FILE = join(homedir(), '.purrfectclaw', 'config.json')
-const DEFAULT_BASE_URL = 'https://marketplace.pieverse.io/api'
+const DEFAULT_BASE_URL = 'https://www.pieverse.io/api/skill-store/cli'
 
 export interface SkillMeta {
 	readonly slug: string
 	readonly name: string
 	readonly description: string
 	readonly category: string
+	readonly version: string
 	readonly download_url: string
 }
 

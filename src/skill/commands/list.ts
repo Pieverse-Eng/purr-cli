@@ -81,7 +81,7 @@ async function listRemoteSkills(args: Record<string, string>, json: boolean): Pr
 	console.log(pc.bold(`Found ${result.total} skill${result.total !== 1 ? 's' : ''}:\n`))
 
 	for (const skill of result.skills) {
-		console.log(`  ${pc.cyan(pc.bold(skill.slug))}  ${skill.name}`)
+		console.log(`  ${pc.cyan(pc.bold(skill.slug))}  ${skill.name}  ${pc.dim(`v${skill.version}`)}`)
 		console.log(`  ${pc.dim(skill.description)}`)
 		console.log(`  ${pc.yellow(skill.category)}`)
 		console.log()

@@ -51,19 +51,19 @@ import {
   buildV3MintSteps,
 } from './vendors/pancake.js'
 import {
-	buildOpenSeaBuySteps,
-	buildOpenSeaCancelListingSteps,
-	buildOpenSeaCancelOfferSteps,
-	ensureOpenSeaExecutionWalletMatches,
-	buildOpenSeaListingPreview,
-	buildOpenSeaOfferPreview,
-	buildOpenSeaSellSteps,
-	buildOpenSeaSwapSteps,
-	cancelOpenSeaListing,
-	cancelOpenSeaOffer,
-	createOpenSeaListing,
-	createOpenSeaOffer,
-	OpenSeaCliError,
+  buildOpenSeaBuySteps,
+  buildOpenSeaCancelListingSteps,
+  buildOpenSeaCancelOfferSteps,
+  ensureOpenSeaExecutionWalletMatches,
+  buildOpenSeaListingPreview,
+  buildOpenSeaOfferPreview,
+  buildOpenSeaSellSteps,
+  buildOpenSeaSwapSteps,
+  cancelOpenSeaListing,
+  cancelOpenSeaOffer,
+  createOpenSeaListing,
+  createOpenSeaOffer,
+  OpenSeaCliError,
 } from './vendors/opensea.js'
 import type { OpenSeaFulfillmentResponse } from './vendors/opensea-api.js'
 
@@ -116,12 +116,12 @@ function parseIntegerArg(value: string | undefined, name: string): number | unde
 }
 
 function parseFloatArg(value: string | undefined, name: string): number | undefined {
-	if (value === undefined) return undefined
-	const parsed = Number.parseFloat(value)
-	if (!Number.isFinite(parsed)) {
-		throw new Error(`Invalid --${name}: "${value}"`)
-	}
-	return parsed
+  if (value === undefined) return undefined
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid --${name}: "${value}"`)
+  }
+  return parsed
 }
 
 function parseBooleanFlag(value: string | undefined): boolean | undefined {
@@ -141,31 +141,31 @@ function parseDeadline(value: string): number {
 }
 
 function formatOpenSeaError(err: unknown): string {
-	if (err instanceof OpenSeaCliError) {
-		return JSON.stringify(
-			{
-				error: {
-					code: err.code,
-					message: err.message,
-					...(err.details ? { details: err.details } : {}),
-				},
-			},
-			null,
-			2,
-		)
-	}
+  if (err instanceof OpenSeaCliError) {
+    return JSON.stringify(
+      {
+        error: {
+          code: err.code,
+          message: err.message,
+          ...(err.details ? { details: err.details } : {}),
+        },
+      },
+      null,
+      2,
+    )
+  }
 
-	const message = err instanceof Error ? err.message : String(err)
-	return JSON.stringify(
-		{
-			error: {
-				code: 'OPENSEA_ERROR',
-				message,
-			},
-		},
-		null,
-		2,
-	)
+  const message = err instanceof Error ? err.message : String(err)
+  return JSON.stringify(
+    {
+      error: {
+        code: 'OPENSEA_ERROR',
+        message,
+      },
+    },
+    null,
+    2,
+  )
 }
 
 async function main(): Promise<void> {
@@ -371,6 +371,9 @@ Examples:
     // DFlow swap is executed server-side — early return like wallet commands
     case 'dflow': {
       if (command !== 'swap') throw new Error(`Unknown dflow command: ${command}. Use: swap`)
+      if (executeFlag) {
+        console.error('Note: dflow swap always executes server-side, --execute is ignored')
+      }
       const dflowResult = await dflowSwap({
         fromToken: resolveToken(requireArg(args, 'from-token'), SOLANA_CHAIN_ID),
         toToken: resolveToken(requireArg(args, 'to-token'), SOLANA_CHAIN_ID),

@@ -49,7 +49,8 @@ export async function walletTransfer(args: Record<string, string>): Promise<void
 
   if (args.token) {
     body.assetType = isSolana ? 'spl' : 'erc20'
-    body.tokenAddress = resolveToken(args.token, isSolana ? SOLANA_CHAIN_ID : parsedChainId!)
+    const tokenChainId = isSolana ? SOLANA_CHAIN_ID : (parsedChainId as number)
+    body.tokenAddress = resolveToken(args.token, tokenChainId)
   } else {
     body.assetType = 'native'
   }

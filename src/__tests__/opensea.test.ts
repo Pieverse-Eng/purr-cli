@@ -1,5 +1,5 @@
 import { decodeFunctionData, parseAbi } from 'viem'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   OPENSEA_CONDUIT_ADDRESS,
   normalizeOpenSeaChain,
@@ -7,11 +7,7 @@ import {
   OPENSEA_SEAPORT_V1_6,
   type OpenSeaFulfillmentResponse,
 } from '../vendors/opensea-api.js'
-import {
-  buildOpenSeaBuySteps,
-  buildOpenSeaSellSteps,
-  OpenSeaCliError,
-} from '../vendors/opensea.js'
+import { buildOpenSeaBuySteps, buildOpenSeaSellSteps, OpenSeaCliError } from '../vendors/opensea.js'
 
 const WALLET = '0x1234567890123456789012345678901234567890'
 const NFT_CONTRACT = '0xabcdef0123456789abcdef0123456789abcdef01'
@@ -153,7 +149,10 @@ describe('normalizeOpenSeaChain', () => {
 
 describe('buildOpenSeaBuySteps', () => {
   it('builds native listing fulfillment into a single tx step', async () => {
-    const result = await buildOpenSeaBuySteps({ wallet: WALLET, fulfillment: makeBasicFulfillment() })
+    const result = await buildOpenSeaBuySteps({
+      wallet: WALLET,
+      fulfillment: makeBasicFulfillment(),
+    })
 
     expect(result.steps).toHaveLength(1)
     expect(result.steps[0].label).toBe('OpenSea buy NFT')
@@ -223,13 +222,19 @@ describe('buildOpenSeaSellSteps', () => {
       vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
         const body = init?.body ? JSON.parse(init.body as string) : {}
         if (body.method === 'eth_call') {
-          return { ok: true, json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: ownerResult }) }
+          return {
+            ok: true,
+            json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: ownerResult }),
+          }
         }
         return { ok: true, json: () => Promise.resolve({}) }
       }),
     )
 
-    const result = await buildOpenSeaSellSteps({ wallet: WALLET, fulfillment: makeSellFulfillment() })
+    const result = await buildOpenSeaSellSteps({
+      wallet: WALLET,
+      fulfillment: makeSellFulfillment(),
+    })
 
     expect(result.steps).toHaveLength(2)
     expect(result.steps[0].label).toMatch(/Approve NFT/)
@@ -248,7 +253,8 @@ describe('buildOpenSeaSellSteps', () => {
             advancedOrder: {
               ...makeSellFulfillment().fulfillment_data!.transaction!.input_data!.advancedOrder!,
               parameters: {
-                ...makeSellFulfillment().fulfillment_data!.transaction!.input_data!.advancedOrder!.parameters,
+                ...makeSellFulfillment().fulfillment_data!.transaction!.input_data!.advancedOrder!
+                  .parameters,
                 consideration: [
                   {
                     itemType: 3,
@@ -271,7 +277,10 @@ describe('buildOpenSeaSellSteps', () => {
       vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
         const body = init?.body ? JSON.parse(init.body as string) : {}
         if (body.method === 'eth_call') {
-          return { ok: true, json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: balanceResult }) }
+          return {
+            ok: true,
+            json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: balanceResult }),
+          }
         }
         return { ok: true, json: () => Promise.resolve({}) }
       }),
@@ -293,7 +302,10 @@ describe('buildOpenSeaSellSteps', () => {
       vi.fn().mockImplementation(async (_url: string, init?: RequestInit) => {
         const body = init?.body ? JSON.parse(init.body as string) : {}
         if (body.method === 'eth_call') {
-          return { ok: true, json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: ownerResult }) }
+          return {
+            ok: true,
+            json: () => Promise.resolve({ jsonrpc: '2.0', id: 1, result: ownerResult }),
+          }
         }
         return { ok: true, json: () => Promise.resolve({}) }
       }),

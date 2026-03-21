@@ -105,7 +105,7 @@ function parseIntegerArg(value: string | undefined, name: string): number | unde
   return parsed
 }
 
-function parseFloatArg(value: string | undefined, name: string): number | undefined {
+function _parseFloatArg(value: string | undefined, name: string): number | undefined {
   if (value === undefined) return undefined
   const parsed = Number.parseFloat(value)
   if (!Number.isFinite(parsed)) {

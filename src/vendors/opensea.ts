@@ -245,7 +245,7 @@ interface SelectedNftItem {
   tokenId: string
 }
 
-const ERC20_APPROVE_SELECTOR = '0x095ea7b3'
+const _ERC20_APPROVE_SELECTOR = '0x095ea7b3'
 const SUPPORTED_OPENSEA_CHAIN_IDS = new Set([
   1, 10, 137, 8453, 42161, 43114, 8217, 7777777, 81457, 11155111,
 ])
@@ -356,7 +356,6 @@ async function ethCall(
   }
 }
 
-
 function requireHexData(value: string, fieldName: string): `0x${string}` {
   const trimmed = value.trim()
   if (!/^0x[0-9a-fA-F]*$/.test(trimmed) || trimmed.length % 2 !== 0) {
@@ -417,7 +416,10 @@ function getFulfillmentSelector(
   transaction: NonNullable<ReturnType<typeof extractTransaction>>,
 ): `0x${string}` | undefined {
   if (transaction.data) {
-    return requireHexData(transaction.data, 'fulfillment transaction.data').slice(0, 10) as `0x${string}`
+    return requireHexData(transaction.data, 'fulfillment transaction.data').slice(
+      0,
+      10,
+    ) as `0x${string}`
   }
 
   const rawData = transaction.input_data?.data
@@ -454,9 +456,7 @@ function ensureOfficialOpenSeaFulfillment(
 ): void {
   const target = requireAddress(transaction.to, 'fulfillment target')
   if (target.toLowerCase() !== OPENSEA_SEAPORT_V1_6.toLowerCase()) {
-    throw new Error(
-      `OpenSea ${action} fulfillment must target the official Seaport contract`,
-    )
+    throw new Error(`OpenSea ${action} fulfillment must target the official Seaport contract`)
   }
 
   const protocol = fulfillment.protocol?.trim().toLowerCase()
@@ -542,7 +542,9 @@ function getMatchingOfferSellerOrder(
   }
 
   const walletLower = wallet.toLowerCase()
-  const orderIndex = orders.findIndex((order) => order.parameters.offerer.toLowerCase() === walletLower)
+  const orderIndex = orders.findIndex(
+    (order) => order.parameters.offerer.toLowerCase() === walletLower,
+  )
   if (orderIndex === -1) {
     throw new Error(`OpenSea offer fulfillment did not include a seller order for wallet ${wallet}`)
   }
@@ -859,7 +861,9 @@ function getSellNftItem(
   }
 
   const sellerOrder = getMatchingOfferSellerOrder(transaction, wallet)
-  const nftIndex = sellerOrder.order.parameters.offer.findIndex((item) => [2, 3, 4, 5].includes(item.itemType))
+  const nftIndex = sellerOrder.order.parameters.offer.findIndex((item) =>
+    [2, 3, 4, 5].includes(item.itemType),
+  )
   const nftItem = nftIndex >= 0 ? sellerOrder.order.parameters.offer[nftIndex] : undefined
   if (!nftItem) {
     throw new Error('OpenSea offer fulfillment response did not include an NFT to transfer')
@@ -1068,7 +1072,6 @@ function buildDirectNftApprovalStep(args: {
     `Unsupported NFT token standard for OpenSea listing flow: ${args.tokenStandard ?? 'missing'}`,
   )
 }
-
 
 export async function buildOpenSeaBuySteps(args: OpenSeaBuyArgs): Promise<StepOutput> {
   const wallet = requireAddress(args.wallet, 'wallet')

@@ -8,6 +8,7 @@ import { walletBalance } from './wallet/balance.js'
 import { walletSign } from './wallet/sign.js'
 import { walletSignTypedData } from './wallet/sign-typed-data.js'
 import { walletTransfer } from './wallet/transfer.js'
+import { x402Sign } from './x402/sign.js'
 import { buildApproveSteps } from './primitives/approve.js'
 import { buildRawStep } from './primitives/raw.js'
 import { buildTransferSteps } from './primitives/transfer.js'
@@ -187,6 +188,7 @@ Groups:
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
+  x402              x402 payment protocol (sign)
   wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
@@ -227,6 +229,7 @@ Examples:
   purr wallet transfer --to 0x... --amount 1000 --chain-id 56 --token 0x55d3...7955
   purr wallet transfer --to FuQPd1q... --amount 0.5 --chain-type solana
   purr wallet transfer --to FuQPd1q... --amount 100 --chain-type solana --token EPjFWdd5...
+  purr x402 sign --payment-required '<base64>'
   purr execute --steps-file /tmp/purr_steps.json
   purr execute --steps-file /tmp/purr_steps.json --dedup-key my-swap-123
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
@@ -628,6 +631,16 @@ Examples:
       break
     }
 
+    case 'x402': {
+      switch (command) {
+        case 'sign':
+          await x402Sign(args)
+          return
+        default:
+          throw new Error(`Unknown x402 command: ${command}. Use: sign`)
+      }
+    }
+
     case 'wallet': {
       switch (command) {
         case 'address':
@@ -654,7 +667,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, pancake, lista, evm, wallet, execute, config, version`,
+        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, pancake, lista, evm, x402, wallet, execute, config, version`,
       )
   }
 

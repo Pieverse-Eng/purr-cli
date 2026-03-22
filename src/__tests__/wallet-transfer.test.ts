@@ -33,11 +33,22 @@ describe('walletTransfer', () => {
   it('does not throw when --chain-id is missing for Solana', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: 'A', to: 'B', amount: '1', hash: 'tx', chainType: 'solana', assetType: 'native' },
+      data: {
+        from: 'A',
+        to: 'B',
+        amount: '1',
+        hash: 'tx',
+        chainType: 'solana',
+        assetType: 'native',
+      },
     })
     vi.stubGlobal('fetch', mock)
     await expect(
-      walletTransfer({ to: 'FuQPd1qZaexnx88CCL3mrr4d6o8LUCWA8WCkSvv86nYc', amount: '0.5', 'chain-type': 'solana' }),
+      walletTransfer({
+        to: 'FuQPd1qZaexnx88CCL3mrr4d6o8LUCWA8WCkSvv86nYc',
+        amount: '0.5',
+        'chain-type': 'solana',
+      }),
     ).resolves.toBeUndefined()
   })
 
@@ -46,7 +57,15 @@ describe('walletTransfer', () => {
   it('sends EVM native transfer with correct body', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: '0x1', to: '0x2', amount: '0.01', hash: '0xabc', chainId: 56, chainType: 'ethereum', assetType: 'native' },
+      data: {
+        from: '0x1',
+        to: '0x2',
+        amount: '0.01',
+        hash: '0xabc',
+        chainId: 56,
+        chainType: 'ethereum',
+        assetType: 'native',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -68,7 +87,15 @@ describe('walletTransfer', () => {
   it('sends EVM ERC-20 transfer with assetType erc20', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: '0x1', to: '0x2', amount: '100', hash: '0xdef', chainId: 56, chainType: 'ethereum', assetType: 'erc20' },
+      data: {
+        from: '0x1',
+        to: '0x2',
+        amount: '100',
+        hash: '0xdef',
+        chainId: 56,
+        chainType: 'ethereum',
+        assetType: 'erc20',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -90,7 +117,15 @@ describe('walletTransfer', () => {
   it('resolves EVM token ticker to address', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: '0x1', to: '0x2', amount: '100', hash: '0xdef', chainId: 56, chainType: 'ethereum', assetType: 'erc20' },
+      data: {
+        from: '0x1',
+        to: '0x2',
+        amount: '100',
+        hash: '0xdef',
+        chainId: 56,
+        chainType: 'ethereum',
+        assetType: 'erc20',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -105,7 +140,14 @@ describe('walletTransfer', () => {
   it('sends Solana native transfer without chain-id', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: 'A1', to: 'B2', amount: '0.5', hash: 'txhash', chainType: 'solana', assetType: 'native' },
+      data: {
+        from: 'A1',
+        to: 'B2',
+        amount: '0.5',
+        hash: 'txhash',
+        chainType: 'solana',
+        assetType: 'native',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -131,7 +173,14 @@ describe('walletTransfer', () => {
   it('sends Solana SPL transfer with assetType spl', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: 'A1', to: 'B2', amount: '100', hash: 'txhash', chainType: 'solana', assetType: 'spl' },
+      data: {
+        from: 'A1',
+        to: 'B2',
+        amount: '100',
+        hash: 'txhash',
+        chainType: 'solana',
+        assetType: 'spl',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -153,7 +202,14 @@ describe('walletTransfer', () => {
   it('resolves Solana token ticker to mint address', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: 'A1', to: 'B2', amount: '100', hash: 'txhash', chainType: 'solana', assetType: 'spl' },
+      data: {
+        from: 'A1',
+        to: 'B2',
+        amount: '100',
+        hash: 'txhash',
+        chainType: 'solana',
+        assetType: 'spl',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -173,7 +229,14 @@ describe('walletTransfer', () => {
   it('includes decimals when provided', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: 'A1', to: 'B2', amount: '100', hash: 'txhash', chainType: 'solana', assetType: 'spl' },
+      data: {
+        from: 'A1',
+        to: 'B2',
+        amount: '100',
+        hash: 'txhash',
+        chainType: 'solana',
+        assetType: 'spl',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -195,9 +258,9 @@ describe('walletTransfer', () => {
     const mock = mockFetch({ ok: false, error: 'Insufficient balance' })
     vi.stubGlobal('fetch', mock)
 
-    await expect(
-      walletTransfer({ to: '0x2', amount: '999', 'chain-id': '56' }),
-    ).rejects.toThrow('Insufficient balance')
+    await expect(walletTransfer({ to: '0x2', amount: '999', 'chain-id': '56' })).rejects.toThrow(
+      'Insufficient balance',
+    )
   })
 
   // ── API URL construction ──
@@ -205,7 +268,15 @@ describe('walletTransfer', () => {
   it('calls correct API endpoint with instance ID', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: '0x1', to: '0x2', amount: '1', hash: '0x', chainId: 56, chainType: 'ethereum', assetType: 'native' },
+      data: {
+        from: '0x1',
+        to: '0x2',
+        amount: '1',
+        hash: '0x',
+        chainId: 56,
+        chainType: 'ethereum',
+        assetType: 'native',
+      },
     })
     vi.stubGlobal('fetch', mock)
 
@@ -218,7 +289,15 @@ describe('walletTransfer', () => {
   it('sends Authorization header', async () => {
     const mock = mockFetch({
       ok: true,
-      data: { from: '0x1', to: '0x2', amount: '1', hash: '0x', chainId: 56, chainType: 'ethereum', assetType: 'native' },
+      data: {
+        from: '0x1',
+        to: '0x2',
+        amount: '1',
+        hash: '0x',
+        chainId: 56,
+        chainType: 'ethereum',
+        assetType: 'native',
+      },
     })
     vi.stubGlobal('fetch', mock)
 

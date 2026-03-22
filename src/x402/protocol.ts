@@ -249,10 +249,7 @@ export function buildEIP712ForEIP3009(
       chainId,
       verifyingContract: requirements.asset,
     },
-    types: AUTHORIZATION_TYPES as unknown as Record<
-      string,
-      Array<{ name: string; type: string }>
-    >,
+    types: AUTHORIZATION_TYPES as unknown as Record<string, Array<{ name: string; type: string }>>,
     primaryType: 'TransferWithAuthorization',
     message: {
       from: wallet,
@@ -267,7 +264,7 @@ export function buildEIP712ForEIP3009(
 }
 
 export function buildEIP712ForPermit2(
-  wallet: string,
+  _wallet: string,
   requirements: PaymentRequirements,
 ): EIP712Data & { nonce: string } {
   const chainId = getEvmChainId(requirements.network)

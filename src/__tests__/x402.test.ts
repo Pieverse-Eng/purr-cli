@@ -155,9 +155,9 @@ describe('parsePaymentRequired', () => {
   })
 
   it('throws on empty accepts', () => {
-    expect(() =>
-      parsePaymentRequired(JSON.stringify({ x402Version: 2, accepts: [] })),
-    ).toThrow('missing or empty accepts')
+    expect(() => parsePaymentRequired(JSON.stringify({ x402Version: 2, accepts: [] }))).toThrow(
+      'missing or empty accepts',
+    )
   })
 })
 
@@ -261,9 +261,7 @@ describe('buildEIP712ForEIP3009', () => {
 
   it('throws when name/version missing from extra', () => {
     const req = { ...SAMPLE_REQUIREMENTS, extra: {} }
-    expect(() => buildEIP712ForEIP3009('0xWallet', req)).toThrow(
-      'EIP-712 domain parameters',
-    )
+    expect(() => buildEIP712ForEIP3009('0xWallet', req)).toThrow('EIP-712 domain parameters')
   })
 })
 
@@ -291,12 +289,7 @@ describe('buildEIP712ForPermit2', () => {
 describe('assembleEIP3009PaymentPayload + encodePaymentPayload', () => {
   it('produces valid base64 payload', () => {
     const eip712 = buildEIP712ForEIP3009('0xWallet', SAMPLE_REQUIREMENTS)
-    const payload = assembleEIP3009PaymentPayload(
-      2,
-      SAMPLE_REQUIREMENTS,
-      eip712,
-      '0xSIGNATURE',
-    )
+    const payload = assembleEIP3009PaymentPayload(2, SAMPLE_REQUIREMENTS, eip712, '0xSIGNATURE')
 
     expect(payload.x402Version).toBe(2)
     expect(payload.accepted).toBe(SAMPLE_REQUIREMENTS)
@@ -422,8 +415,7 @@ describe('x402Sign', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () =>
-            Promise.resolve({ ok: true, data: { address: '0xWalletAddr' } }),
+          json: () => Promise.resolve({ ok: true, data: { address: '0xWalletAddr' } }),
           text: () =>
             Promise.resolve(JSON.stringify({ ok: true, data: { address: '0xWalletAddr' } })),
         })
@@ -490,8 +482,7 @@ describe('x402Sign', () => {
         return Promise.resolve({
           ok: true,
           status: 200,
-          json: () =>
-            Promise.resolve({ ok: true, data: { address: '0xWalletAddr' } }),
+          json: () => Promise.resolve({ ok: true, data: { address: '0xWalletAddr' } }),
           text: () =>
             Promise.resolve(JSON.stringify({ ok: true, data: { address: '0xWalletAddr' } })),
         })
@@ -577,9 +568,9 @@ describe('x402Sign', () => {
       ...SOLANA_PAYMENT_REQUIRED,
       accepts: [{ ...SOLANA_REQUIREMENTS, extra: { decimals: 6 } }],
     }
-    await expect(
-      x402Sign({ 'payment-required': toBase64(noFeePayerPr) }),
-    ).rejects.toThrow('feePayer is required')
+    await expect(x402Sign({ 'payment-required': toBase64(noFeePayerPr) })).rejects.toThrow(
+      'feePayer is required',
+    )
   })
 
   it('throws on unsupported chain', async () => {
@@ -587,14 +578,12 @@ describe('x402Sign', () => {
       ...SAMPLE_PAYMENT_REQUIRED,
       accepts: [{ ...SAMPLE_REQUIREMENTS, network: 'eip155:99999' }],
     }
-    await expect(
-      x402Sign({ 'payment-required': toBase64(unsupportedPr) }),
-    ).rejects.toThrow('No supported payment option found')
+    await expect(x402Sign({ 'payment-required': toBase64(unsupportedPr) })).rejects.toThrow(
+      'No supported payment option found',
+    )
   })
 
   it('throws on invalid payment-required input', async () => {
-    await expect(x402Sign({ 'payment-required': '{bad json' })).rejects.toThrow(
-      'not valid JSON',
-    )
+    await expect(x402Sign({ 'payment-required': '{bad json' })).rejects.toThrow('not valid JSON')
   })
 })

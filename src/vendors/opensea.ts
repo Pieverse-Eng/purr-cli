@@ -460,7 +460,7 @@ function ensureOfficialOpenSeaFulfillment(
   }
 
   const protocol = fulfillment.protocol?.trim().toLowerCase()
-  if (protocol && protocol !== 'seaport') {
+  if (protocol && !protocol.startsWith('seaport')) {
     throw new Error(`OpenSea ${action} fulfillment must use the Seaport protocol`)
   }
 

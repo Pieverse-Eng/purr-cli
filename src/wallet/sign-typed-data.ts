@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { apiPost, resolveCredentials } from '../api-client.js'
+import { requireAddress } from '../shared.js'
 
 interface WalletSignTypedDataResponse {
   ok: boolean
@@ -38,6 +39,7 @@ export async function walletSignTypedData(args: Record<string, string>): Promise
   if (!address) {
     throw new Error('Missing required argument: --address')
   }
+  const expectedAddress = requireAddress(address, 'address')
   const dataArg = args.data
   if (!dataArg) {
     throw new Error('Missing required argument: --data (JSON string or file path)')
@@ -66,6 +68,11 @@ export async function walletSignTypedData(args: Record<string, string>): Promise
 
   if (!res.ok) {
     throw new Error(res.error ?? 'Failed to sign typed data')
+  }
+  if (res.data.address.toLowerCase() !== expectedAddress.toLowerCase()) {
+    throw new Error(
+      `Typed data signature returned unexpected address ${res.data.address}; expected ${expectedAddress}`,
+    )
   }
 
   console.log(JSON.stringify(res.data))

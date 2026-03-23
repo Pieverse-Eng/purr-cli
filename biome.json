@@ -4,9 +4,22 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "recommended": true,
+      "style": {
+        "noNonNullAssertion": "warn"
+      }
     }
   },
+  "overrides": [{
+    "includes": ["src/__tests__/**"],
+    "linter": {
+      "rules": {
+        "style": {
+          "noNonNullAssertion": "off"
+        }
+      }
+    }
+  }],
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

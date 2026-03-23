@@ -12,7 +12,7 @@ import { buildApproveSteps } from './primitives/approve.js'
 import { buildRawStep } from './primitives/raw.js'
 import { buildTransferSteps } from './primitives/transfer.js'
 import { NATIVE_EVM, parseChainId } from './shared.js'
-import { inferChainId, resolveToken } from './token-registry.js'
+import { SOLANA_CHAIN_ID, inferChainId, resolveToken } from './token-registry.js'
 import type { StepOutput } from './types.js'
 import {
   createOrder,
@@ -56,6 +56,13 @@ import {
   getOkxSwapLiquidity,
   quoteOkxSwap,
 } from './vendors/okx.js'
+import {
+  buildOpenSeaBuySteps,
+  ensureOpenSeaExecutionWalletMatches,
+  buildOpenSeaSellSteps,
+  OpenSeaCliError,
+} from './vendors/opensea.js'
+import { parseOpenSeaFulfillmentInput } from './vendors/opensea-input.js'
 
 function parseArgs(argv: string[]): Record<string, string> {
   const result: Record<string, string> = {}
@@ -113,6 +120,15 @@ function parseIntegerArg(value: string | undefined, name: string): number | unde
   return parsed
 }
 
+function _parseFloatArg(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined
+  const parsed = Number.parseFloat(value)
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`Invalid --${name}: "${value}"`)
+  }
+  return parsed
+}
+
 function parseBooleanFlag(value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined
   const normalized = value.trim().toLowerCase()
@@ -127,6 +143,34 @@ function parseDeadline(value: string): number {
     throw new Error(`Invalid --deadline: "${value}" — must be a positive unix timestamp`)
   }
   return n
+}
+
+function formatOpenSeaError(err: unknown): string {
+  if (err instanceof OpenSeaCliError) {
+    return JSON.stringify(
+      {
+        error: {
+          code: err.code,
+          message: err.message,
+          ...(err.details ? { details: err.details } : {}),
+        },
+      },
+      null,
+      2,
+    )
+  }
+
+  const message = err instanceof Error ? err.message : String(err)
+  return JSON.stringify(
+    {
+      error: {
+        code: 'OPENSEA_ERROR',
+        message,
+      },
+    },
+    null,
+    2,
+  )
 }
 
 async function main(): Promise<void> {
@@ -201,6 +245,7 @@ Groups:
   dflow             DFlow Solana-only swap
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
   okx               OKX EVM swap adapter via onchainos
+  opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
@@ -222,6 +267,10 @@ Examples:
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
+  purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
+  purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
+  purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
+  purr opensea sell --wallet 0x... --fulfillment-file ./fulfillment.json
   purr binance-connect quote --fiat USD --crypto USDT --amount 50
   purr binance-connect buy --fiat USD --crypto USDT --amount 50 --network BSC --wallet 0x...
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -246,6 +295,8 @@ Examples:
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'
   purr wallet transfer --to 0x... --amount 0.01 --chain-id 56
   purr wallet transfer --to 0x... --amount 1000 --chain-id 56 --token 0x55d3...7955
+  purr wallet transfer --to FuQPd1q... --amount 0.5 --chain-type solana
+  purr wallet transfer --to FuQPd1q... --amount 100 --chain-type solana --token EPjFWdd5...
   purr execute --steps-file /tmp/purr_steps.json
   purr execute --steps-file /tmp/purr_steps.json --dedup-key my-swap-123
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
@@ -382,9 +433,12 @@ Examples:
     // DFlow swap is executed server-side — early return like wallet commands
     case 'dflow': {
       if (command !== 'swap') throw new Error(`Unknown dflow command: ${command}. Use: swap`)
+      if (executeFlag) {
+        console.error('Note: dflow swap always executes server-side, --execute is ignored')
+      }
       const dflowResult = await dflowSwap({
-        fromToken: resolveToken(requireArg(args, 'from-token'), -1),
-        toToken: resolveToken(requireArg(args, 'to-token'), -1),
+        fromToken: resolveToken(requireArg(args, 'from-token'), SOLANA_CHAIN_ID),
+        toToken: resolveToken(requireArg(args, 'to-token'), SOLANA_CHAIN_ID),
         amount: requireArg(args, 'amount'),
         wallet: requireArg(args, 'wallet'),
         slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
@@ -500,6 +554,26 @@ Examples:
       }
       console.log(JSON.stringify(result))
       return
+    }
+
+    case 'opensea': {
+      switch (command) {
+        case 'buy':
+          output = await buildOpenSeaBuySteps({
+            wallet: requireArg(args, 'wallet'),
+            fulfillment: parseOpenSeaFulfillmentInput(args),
+          })
+          break
+        case 'sell':
+          output = await buildOpenSeaSellSteps({
+            wallet: requireArg(args, 'wallet'),
+            fulfillment: parseOpenSeaFulfillmentInput(args),
+          })
+          break
+        default:
+          throw new Error(`Unknown opensea command: ${command}. Use: buy, sell`)
+      }
+      break
     }
 
     case 'pancake': {
@@ -728,11 +802,14 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, okx, pancake, lista, evm, wallet, execute, config, version`,
+        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, okx, opensea, pancake, lista, evm, wallet, execute, config, version`,
       )
   }
 
   if (executeFlag) {
+    if (group === 'opensea' && args.wallet && output && Array.isArray(output.steps)) {
+      await ensureOpenSeaExecutionWalletMatches(args.wallet, output.steps)
+    }
     const json = JSON.stringify(output)
     const result = await executeStepsFromJson(json, args['dedup-key'])
     console.log(JSON.stringify(result, null, 2))
@@ -742,6 +819,10 @@ Examples:
 }
 
 main().catch((err) => {
+  if (process.argv[2] === 'opensea') {
+    console.error(formatOpenSeaError(err))
+    process.exit(1)
+  }
   console.error(err.message)
   process.exit(1)
 })

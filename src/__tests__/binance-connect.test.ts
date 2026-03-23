@@ -7,6 +7,7 @@ import {
   getTradingPairs,
   queryOrder,
 } from '../vendors/binance-connect.js'
+import { mockFetch } from './helpers.js'
 
 // Generate a test RSA key pair for signing
 const { privateKey: TEST_PRIVATE_KEY } = generateKeyPairSync('rsa', {
@@ -14,15 +15,6 @@ const { privateKey: TEST_PRIVATE_KEY } = generateKeyPairSync('rsa', {
   privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   publicKeyEncoding: { type: 'spki', format: 'pem' },
 })
-
-function mockFetch(data: unknown, status = 200) {
-  return vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(data),
-    text: () => Promise.resolve(JSON.stringify(data)),
-  })
-}
 
 describe('binance-connect', () => {
   beforeEach(() => {

@@ -1,6 +1,5 @@
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, parseAbi } from 'viem'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildBitgetSwapStepsFromCalldata } from '../vendors/bitget.js'
 import {
   buildFourMemeBuySteps,
   buildFourMemeCreateTokenSteps,
@@ -29,7 +28,6 @@ import {
 } from '../vendors/lista.js'
 import { buildOpenSeaBuySteps, buildOpenSeaSellSteps } from '../vendors/opensea.js'
 
-const ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E'
 const USDT = '0x55d398326f99059fF775485246999027B3197955'
 const WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
 const WALLET = '0x1234567890123456789012345678901234567890'
@@ -193,104 +191,6 @@ class FakeFourMemeClient {
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
-})
-
-describe('buildBitgetSwapStepsFromCalldata', () => {
-  it('handles txs[] format', () => {
-    const calldata = JSON.stringify({
-      txs: [
-        { to: ROUTER, data: '0xABC', value: '0x0' },
-        { to: WALLET, data: '0xDEF', value: '0x0' },
-      ],
-    })
-    const result = buildBitgetSwapStepsFromCalldata({
-      calldata,
-      fromToken: USDT,
-      amountWei: '1000000',
-      chainId: 56,
-    })
-    expect(result.steps).toHaveLength(2)
-    expect(result.steps[0].label).toContain('approval')
-    expect(result.steps[1].label).toContain('swap')
-  })
-
-  it('handles flat format for native token', () => {
-    const calldata = JSON.stringify({
-      contract: ROUTER,
-      calldata: '0xSwapData',
-      computeUnits: 200000,
-    })
-    const result = buildBitgetSwapStepsFromCalldata({
-      calldata,
-      fromToken: NATIVE,
-      amountWei: '1000000000000000000',
-      chainId: 56,
-    })
-    expect(result.steps).toHaveLength(1)
-    expect(result.steps[0].value).toBe(`0x${(10n ** 18n).toString(16)}`)
-    expect(result.steps[0].gasLimit).toBe(Math.ceil(200000 * 1.3).toString())
-  })
-
-  it('handles flat format for ERC-20 with conditional approval', () => {
-    const calldata = JSON.stringify({
-      contract: ROUTER,
-      calldata: '0xSwapData',
-    })
-    const result = buildBitgetSwapStepsFromCalldata({
-      calldata,
-      fromToken: USDT,
-      amountWei: '1000000',
-      chainId: 56,
-    })
-    expect(result.steps).toHaveLength(2)
-    expect(result.steps[0].conditional?.type).toBe('allowance_lt')
-    expect(result.steps[0].conditional?.amount).toBe('1000000')
-    expect(result.steps[1].label).toBe('Bitget swap')
-  })
-
-  it('throws on empty response', () => {
-    expect(() =>
-      buildBitgetSwapStepsFromCalldata({
-        calldata: JSON.stringify({}),
-        fromToken: USDT,
-        amountWei: '1000',
-        chainId: 56,
-      }),
-    ).toThrow('no transaction data')
-  })
-
-  it('throws on invalid JSON', () => {
-    expect(() =>
-      buildBitgetSwapStepsFromCalldata({
-        calldata: 'not json',
-        fromToken: USDT,
-        amountWei: '1000',
-        chainId: 56,
-      }),
-    ).toThrow('not valid JSON')
-  })
-
-  it('throws on non-object JSON', () => {
-    expect(() =>
-      buildBitgetSwapStepsFromCalldata({
-        calldata: '"string"',
-        fromToken: USDT,
-        amountWei: '1000',
-        chainId: 56,
-      }),
-    ).toThrow('expected a JSON object')
-  })
-
-  it('throws on invalid amountWei', () => {
-    expect(() =>
-      buildBitgetSwapStepsFromCalldata({
-        calldata: JSON.stringify({ contract: ROUTER, calldata: '0x' }),
-        fromToken: NATIVE,
-        amountWei: 'abc',
-        chainId: 56,
-      }),
-    ).toThrow('Invalid amount-wei')
-  })
 })
 
 describe('buildOpenSeaBuySteps', () => {

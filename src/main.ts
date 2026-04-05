@@ -21,7 +21,7 @@ import {
   getTradingPairs,
   queryOrder,
 } from './vendors/binance-connect.js'
-import { bitgetSignTransaction } from './vendors/bitget-sign.js'
+import { walletSignTransaction } from './wallet/sign-transaction.js'
 import {
   buildFourMemeBuySteps,
   buildFourMemeCreateTokenSteps,
@@ -217,14 +217,13 @@ async function main(): Promise<void> {
 
 Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
-  bitget            Bitget multi-chain swap + Order Mode signing
   binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
   dflow             DFlow Solana-only swap
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
-  wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
+  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer)
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -234,7 +233,7 @@ Examples:
   purr dflow swap --from-token So111...1112 --to-token <mint> --amount 0.1 --wallet <addr>
   purr dflow swap --from-token So111...1112 --to-token <mint> --amount 0.1 --wallet <addr> --execute
   purr fourmeme login-challenge --wallet 0x...
-  purr bitget sign-transaction --order-json '{"orderId":"...","txs":[...]}'
+  purr wallet sign-transaction --txs-json '{"orderId":"...","txs":[...]}'
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
@@ -314,21 +313,6 @@ Examples:
           throw new Error(`Unknown aster command: ${command}. Use: api, deposit`)
       }
       break
-    }
-
-    case 'bitget': {
-      if (command !== 'sign-transaction') {
-        throw new Error(`Unknown bitget command: ${command}. Use: sign-transaction`)
-      }
-      // Sign unsigned txs from Bitget makeOrder via Privy — no broadcast.
-      // Usage: purr bitget sign-transaction --order-json '{"orderId":"...","txs":[...]}'
-      const orderJson = requireArg(args, 'order-json')
-      const result = await bitgetSignTransaction(
-        orderJson,
-        parseIntegerArg(args['chain-id'], 'chain-id'),
-      )
-      console.log(JSON.stringify(result, null, 2))
-      return
     }
 
     // DFlow swap is executed server-side — early return like wallet commands
@@ -691,19 +675,30 @@ Examples:
         case 'sign-typed-data':
           await walletSignTypedData(args)
           return
+        case 'sign-transaction': {
+          // Sign unsigned txs from a vendor API (Bitget makeOrder, Bulbaswap
+          // bridge makeSwapOrder, etc) via managed custody — no broadcast.
+          const txsJson = requireArg(args, 'txs-json')
+          const result = await walletSignTransaction(
+            txsJson,
+            parseIntegerArg(args['chain-id'], 'chain-id'),
+          )
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
         case 'transfer':
           await walletTransfer(args)
           return
         default:
           throw new Error(
-            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, transfer`,
+            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-transaction, transfer`,
           )
       }
     }
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
+        `Unknown group: ${group}. Use: aster, binance-connect, dflow, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
       )
   }
 

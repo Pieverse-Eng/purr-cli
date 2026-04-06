@@ -3,6 +3,7 @@ declare const PURR_VERSION: string
 import { configGet, configList, configSet } from './api-client.js'
 import { executeStepsFromFile, executeStepsFromJson } from './executor.js'
 import { requireArgOrFile } from './file-input.js'
+import { walletAbiCall } from './wallet/abi-call.js'
 import { walletAddress } from './wallet/address.js'
 import { walletBalance } from './wallet/balance.js'
 import { walletSign } from './wallet/sign.js'
@@ -223,7 +224,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
-  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer)
+  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call)
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -267,6 +268,7 @@ Examples:
   purr wallet transfer --to 0x... --amount 1000 --chain-id 56 --token 0x55d3...7955
   purr wallet transfer --to FuQPd1q... --amount 0.5 --chain-type solana
   purr wallet transfer --to FuQPd1q... --amount 100 --chain-type solana --token EPjFWdd5...
+  purr wallet abi-call --to 0x... --signature 'register(string)' --args '["https://example.com/agent.json"]' --chain-id 2818
   purr execute --steps-file /tmp/purr_steps.json
   purr execute --steps-file /tmp/purr_steps.json --dedup-key my-swap-123
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
@@ -689,9 +691,12 @@ Examples:
         case 'transfer':
           await walletTransfer(args)
           return
+        case 'abi-call':
+          await walletAbiCall(args)
+          return
         default:
           throw new Error(
-            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-transaction, transfer`,
+            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call`,
           )
       }
     }

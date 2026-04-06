@@ -261,9 +261,7 @@ describe('walletAbiCall', () => {
     })
 
     it('appendResponse(uint256,address,uint64,string,bytes32)', () => {
-      const abi = parseAbi([
-        'function appendResponse(uint256,address,uint64,string,bytes32)',
-      ])
+      const abi = parseAbi(['function appendResponse(uint256,address,uint64,string,bytes32)'])
       const data = encodeFunctionData({
         abi,
         functionName: 'appendResponse',
@@ -302,10 +300,7 @@ describe('walletAbiCall', () => {
     vi.stubGlobal('fetch', mock)
 
     const nameHex = `0x${Buffer.from('MorphBot', 'utf-8').toString('hex')}`
-    const argsJson = JSON.stringify([
-      'https://example.com/agent.json',
-      [['name', nameHex]],
-    ])
+    const argsJson = JSON.stringify(['https://example.com/agent.json', [['name', nameHex]]])
 
     await walletAbiCall({
       to: IDENTITY_REGISTRY,

@@ -12,7 +12,7 @@ import { buildApproveSteps } from './primitives/approve.js'
 import { buildRawStep } from './primitives/raw.js'
 import { buildTransferSteps } from './primitives/transfer.js'
 import { NATIVE_EVM, parseChainId } from './shared.js'
-import { SOLANA_CHAIN_ID, inferChainId, resolveToken } from './token-registry.js'
+import { SOLANA_CHAIN_ID, resolveToken } from './token-registry.js'
 import type { StepOutput } from './types.js'
 import {
   createOrder,
@@ -21,7 +21,7 @@ import {
   getTradingPairs,
   queryOrder,
 } from './vendors/binance-connect.js'
-import { buildBitgetSwapSteps, buildBitgetSwapStepsFromCalldata } from './vendors/bitget.js'
+import { walletSignTransaction } from './wallet/sign-transaction.js'
 import {
   buildFourMemeBuySteps,
   buildFourMemeCreateTokenSteps,
@@ -86,14 +86,6 @@ function requireArg(args: Record<string, string>, name: string): string {
     throw new Error(`Missing required argument: --${name}`)
   }
   return val
-}
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = []
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer)
-  }
-  return Buffer.concat(chunks).toString('utf-8')
 }
 
 function parseIntegerArg(value: string | undefined, name: string): number | undefined {
@@ -225,14 +217,13 @@ async function main(): Promise<void> {
 
 Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
-  bitget            Bitget multi-chain swap (quotes + encodes automatically)
   binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
   dflow             DFlow Solana-only swap
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
-  wallet            Wallet operations (address, balance, sign, sign-typed-data, transfer)
+  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer)
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -242,7 +233,7 @@ Examples:
   purr dflow swap --from-token So111...1112 --to-token <mint> --amount 0.1 --wallet <addr>
   purr dflow swap --from-token So111...1112 --to-token <mint> --amount 0.1 --wallet <addr> --execute
   purr fourmeme login-challenge --wallet 0x...
-  purr bitget swap --from-token 0x... --to-token 0x... --from-amount 0.05 --chain bnb --wallet 0x...
+  purr wallet sign-transaction --txs-json '{"orderId":"...","txs":[...]}'
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
@@ -320,36 +311,6 @@ Examples:
           break
         default:
           throw new Error(`Unknown aster command: ${command}. Use: api, deposit`)
-      }
-      break
-    }
-
-    case 'bitget': {
-      if (command !== 'swap') throw new Error(`Unknown bitget command: ${command}`)
-      const bitgetChainId = inferChainId(args)
-
-      if (args.calldata) {
-        // Legacy mode: pre-fetched calldata JSON
-        let calldata = args.calldata
-        if (calldata === '-') {
-          calldata = await readStdin()
-        }
-        output = buildBitgetSwapStepsFromCalldata({
-          calldata,
-          fromToken: resolveToken(requireArg(args, 'from-token'), bitgetChainId),
-          amountWei: requireArg(args, 'amount-wei'),
-          chainId: parseChainId(requireArg(args, 'chain-id')),
-        })
-      } else {
-        // Full flow: quote → calldata → steps
-        output = await buildBitgetSwapSteps({
-          fromToken: resolveToken(requireArg(args, 'from-token'), bitgetChainId),
-          toToken: resolveToken(requireArg(args, 'to-token'), bitgetChainId),
-          fromAmount: requireArg(args, 'from-amount'),
-          chain: requireArg(args, 'chain'),
-          wallet: requireArg(args, 'wallet'),
-          slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
-        })
       }
       break
     }
@@ -714,19 +675,30 @@ Examples:
         case 'sign-typed-data':
           await walletSignTypedData(args)
           return
+        case 'sign-transaction': {
+          // Sign unsigned txs from a vendor API (Bitget makeOrder, Bulbaswap
+          // bridge makeSwapOrder, etc) via managed custody — no broadcast.
+          const txsJson = requireArg(args, 'txs-json')
+          const result = await walletSignTransaction(
+            txsJson,
+            parseIntegerArg(args['chain-id'], 'chain-id'),
+          )
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
         case 'transfer':
           await walletTransfer(args)
           return
         default:
           throw new Error(
-            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, transfer`,
+            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-transaction, transfer`,
           )
       }
     }
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, bitget, binance-connect, dflow, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
+        `Unknown group: ${group}. Use: aster, binance-connect, dflow, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
       )
   }
 

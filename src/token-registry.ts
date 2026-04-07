@@ -88,6 +88,16 @@ const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
     OP: '0x4200000000000000000000000000000000000042',
     LINK: '0x350a791Bfc2C21F9Ed5d10980Dad2e2638ffa7f6',
   },
+  // Morph
+  2818: {
+    ETH: NATIVE,
+    WETH: '0x5300000000000000000000000000000000000011',
+    USDT: '0xe7cd86e13AC4309349F30B3435a9d337750fC82D',
+    'USDT.E': '0xc7D67A9cBB121b3b0b9c053DD9f469523243379A',
+    USDC: '0xCfb1186F4e93D60E60a8bDd997427D1F33bc372B',
+    'USDC.E': '0xe34c91815d7fc18A9e2148bcD4241d0a5848b693',
+    BGB: '0x389C08Bc23A7317000a1FD76c7c5B0cb0b4640b5',
+  },
 }
 
 // Solana uses base58 mint addresses, not 0x. Separate type.
@@ -115,6 +125,7 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   matic: 137,
   polygon: 137,
   optimism: 10,
+  morph: 2818,
   solana: SOLANA_CHAIN_ID,
   sol: SOLANA_CHAIN_ID,
 }

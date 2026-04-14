@@ -72,3 +72,24 @@ export function parseChainId(value: string): number {
   }
   return n
 }
+
+/**
+ * Normalize a gas limit / value / amount string to canonical 0x-prefixed hex.
+ * Accepts decimal ("500000") or hex ("0x7a120") input — agents pass either
+ * form, but step JSON consumers (api-server step-executor + ows-execute) both
+ * require hex. Returns undefined when input is undefined so callers can spread
+ * with `...rest`.
+ */
+export function normalizeHexInt(value: string | undefined, name: string): string | undefined {
+  if (value === undefined) return undefined
+  let n: bigint
+  try {
+    n = BigInt(value) // accepts both decimal and 0x-hex strings
+  } catch {
+    throw new Error(`Invalid ${name}: "${value}" — must be an integer (decimal or 0x-prefixed hex)`)
+  }
+  if (n < 0n) {
+    throw new Error(`${name} must be non-negative, got ${value}`)
+  }
+  return `0x${n.toString(16)}`
+}

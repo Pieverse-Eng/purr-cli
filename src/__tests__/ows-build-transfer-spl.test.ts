@@ -8,10 +8,7 @@
 import { PublicKey, TransactionInstruction } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 
-const mod = (await import('../wallet/ows-build-transfer.js')) as unknown as Record<
-  string,
-  unknown
->
+const mod = (await import('../wallet/ows-build-transfer.js')) as unknown as Record<string, unknown>
 
 // Helpers were not exported; re-implement locally to assert our on-disk code
 // matches the reference spec. If we ever change the real impl, these reference

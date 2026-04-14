@@ -62,25 +62,13 @@ vi.mock('@open-wallet-standard/core', () => {
         },
       ],
     })),
-    signTransaction: vi.fn(
-      (
-        wallet: string,
-        chain: string,
-        txHex: string,
-        passphrase?: string,
-      ) => {
-        owsCalls.signTransaction.push({ wallet, chain, txHex, passphrase })
-        // Solana chain returns 64-byte sig with null recoveryId; EVM returns 65-byte.
-        return chain === 'solana' ? nextSolanaResult : nextEvmResult
-      },
-    ),
+    signTransaction: vi.fn((wallet: string, chain: string, txHex: string, passphrase?: string) => {
+      owsCalls.signTransaction.push({ wallet, chain, txHex, passphrase })
+      // Solana chain returns 64-byte sig with null recoveryId; EVM returns 65-byte.
+      return chain === 'solana' ? nextSolanaResult : nextEvmResult
+    }),
     signTypedData: vi.fn(
-      (
-        wallet: string,
-        chain: string,
-        typedDataJson: string,
-        passphrase?: string,
-      ) => {
+      (wallet: string, chain: string, typedDataJson: string, passphrase?: string) => {
         owsCalls.signTypedData.push({ wallet, chain, typedDataJson, passphrase })
         return nextTypedResult
       },

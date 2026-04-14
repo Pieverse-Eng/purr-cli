@@ -100,7 +100,9 @@ function validateStep(step: TxStep, idx: number): void {
   }
   const value = step.value ?? '0x0'
   if (!isHex(value)) {
-    throw new Error(`Step ${idx}: 'value' must be a hex string (e.g. "0x0"), got ${JSON.stringify(step.value)}`)
+    throw new Error(
+      `Step ${idx}: 'value' must be a hex string (e.g. "0x0"), got ${JSON.stringify(step.value)}`,
+    )
   }
   if (step.gasLimit !== undefined && !isHex(step.gasLimit)) {
     throw new Error(
@@ -335,10 +337,7 @@ async function signAndBroadcastStep(args: {
   const dataHex = normalizeHex(step.data || '0x') as `0x${string}`
   const valueWei = BigInt(step.value || '0x0')
 
-  const [nonce, gasPrice] = await Promise.all([
-    getNonce(rpcUrl, fromAddress),
-    getGasPrice(rpcUrl),
-  ])
+  const [nonce, gasPrice] = await Promise.all([getNonce(rpcUrl, fromAddress), getGasPrice(rpcUrl)])
   const gas = step.gasLimit
     ? BigInt(step.gasLimit)
     : await estimateGas(rpcUrl, {
@@ -406,9 +405,7 @@ export function resolveRpcUrl(chainId: number, override?: string): string {
   return def
 }
 
-export async function owsExecuteSteps(
-  input: ExecuteStepsOwsInput,
-): Promise<ExecuteStepsOwsResult> {
+export async function owsExecuteSteps(input: ExecuteStepsOwsInput): Promise<ExecuteStepsOwsResult> {
   let parsed: { steps?: unknown }
   try {
     parsed = JSON.parse(input.stepsJson)

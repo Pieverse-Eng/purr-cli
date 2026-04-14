@@ -88,9 +88,7 @@ function isSolanaTxItem(txItem: Record<string, unknown>): boolean {
   const chain = String(txItem.chain ?? '').toLowerCase()
   if (chain === 'sol' || chain === 'solana') return true
   if (derive?.serializedTransaction) return true
-  const source = (txItem.source ?? derive?.source) as
-    | { serializedTransaction?: string }
-    | undefined
+  const source = (txItem.source ?? derive?.source) as { serializedTransaction?: string } | undefined
   if (source?.serializedTransaction) return true
   return false
 }
@@ -207,9 +205,9 @@ function buildEvmTxRequest(
   fallbackChainId: number,
 ): TransactionSerializable {
   const derive = txItem.deriveTransaction
-  const dataHex = (typeof txItem.data === 'string'
-    ? txItem.data
-    : (derive?.calldata ?? derive?.data ?? '0x')) as `0x${string}`
+  const dataHex = (
+    typeof txItem.data === 'string' ? txItem.data : (derive?.calldata ?? derive?.data ?? '0x')
+  ) as `0x${string}`
   const to = (txItem.to || derive?.to || '') as `0x${string}`
   const nonce = Number(derive?.nonce ?? txItem.nonce ?? 0)
   const gas = BigInt(derive?.gasLimit ?? txItem.gasLimit ?? 0)
@@ -251,7 +249,10 @@ function buildEvmTxRequest(
  * future SDK versions that might drop v from `signature` and rely on
  * recoveryId, accept both shapes.
  */
-function parseEvmSignature(sig: string, recoveryId: number | undefined | null): {
+function parseEvmSignature(
+  sig: string,
+  recoveryId: number | undefined | null,
+): {
   r: `0x${string}`
   s: `0x${string}`
   v: bigint
@@ -266,9 +267,7 @@ function parseEvmSignature(sig: string, recoveryId: number | undefined | null): 
   }
   if (raw.length === 128) {
     if (recoveryId == null) {
-      throw new Error(
-        'OWS returned a 64-byte EVM signature without recoveryId; cannot determine v',
-      )
+      throw new Error('OWS returned a 64-byte EVM signature without recoveryId; cannot determine v')
     }
     const r = `0x${raw.slice(0, 64)}` as `0x${string}`
     const s = `0x${raw.slice(64, 128)}` as `0x${string}`
@@ -397,9 +396,7 @@ function signSolanaTx(
   )
   const sigBytes = Buffer.from(result.signature.replace(/^0x/, ''), 'hex')
   if (sigBytes.length !== 64) {
-    throw new Error(
-      `Expected 64-byte Ed25519 signature from OWS, got ${sigBytes.length} bytes`,
-    )
+    throw new Error(`Expected 64-byte Ed25519 signature from OWS, got ${sigBytes.length} bytes`)
   }
   vtx.signatures[slotIdx] = new Uint8Array(sigBytes)
 
@@ -489,13 +486,7 @@ export async function owsWalletSignTransaction(
     }
 
     if (txItem.function === 'signTypeData') {
-      txItem.sig = signEip712(
-        opts.owsWallet,
-        token,
-        txItem,
-        fallbackChainId,
-        opts.vaultPath,
-      )
+      txItem.sig = signEip712(opts.owsWallet, token, txItem, fallbackChainId, opts.vaultPath)
       continue
     }
 

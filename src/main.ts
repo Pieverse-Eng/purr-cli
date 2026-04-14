@@ -799,9 +799,7 @@ Examples:
           })
           break
         default:
-          throw new Error(
-            `Unknown evm command: ${command}. Use: approve, transfer, raw, abi-call`,
-          )
+          throw new Error(`Unknown evm command: ${command}. Use: approve, transfer, raw, abi-call`)
       }
       break
     }

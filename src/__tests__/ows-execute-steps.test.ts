@@ -101,9 +101,7 @@ describe('parseEvmSig', () => {
 
 describe('OwsStepExecutionError', () => {
   it('carries partial results + failed index', () => {
-    const partial = [
-      { stepIndex: 0, label: 'approve', hash: '0xabc', status: 'success' as const },
-    ]
+    const partial = [{ stepIndex: 0, label: 'approve', hash: '0xabc', status: 'success' as const }]
     const err = new OwsStepExecutionError('boom', partial, 1)
     expect(err.partialResults).toEqual(partial)
     expect(err.failedStepIndex).toBe(1)
@@ -160,11 +158,15 @@ describe('validateStep', () => {
   })
 
   it('rejects non-hex value (Codex example: "1" instead of "0x1")', () => {
-    expect(() => validateStep({ ...baseStep, value: '1' } as never, 0)).toThrow(/'value' must be a hex/)
+    expect(() => validateStep({ ...baseStep, value: '1' } as never, 0)).toThrow(
+      /'value' must be a hex/,
+    )
   })
 
   it('rejects non-hex data', () => {
-    expect(() => validateStep({ ...baseStep, data: 'deadbeef' } as never, 0)).toThrow(/'data' must be a hex/)
+    expect(() => validateStep({ ...baseStep, data: 'deadbeef' } as never, 0)).toThrow(
+      /'data' must be a hex/,
+    )
   })
 
   it('accepts empty/missing data', () => {
@@ -188,7 +190,10 @@ describe('validateStep', () => {
   it('rejects unsupported conditional type', () => {
     expect(() =>
       validateStep(
-        { ...baseStep, conditional: { type: 'foo' as never, token: '0x1', spender: '0x2', amount: '1' } },
+        {
+          ...baseStep,
+          conditional: { type: 'foo' as never, token: '0x1', spender: '0x2', amount: '1' },
+        },
         0,
       ),
     ).toThrow(/conditional type/)
@@ -252,4 +257,3 @@ describe('SUPPORTED_CHAIN_IDS', () => {
     expect(SUPPORTED_CHAIN_IDS).toContain(46630)
   })
 })
-

@@ -56,9 +56,7 @@ const TX_FRESHNESS_SECONDS = 60
 // Classic SPL Token v1 (Token-2022 is a separate program; v1 covers
 // USDC / USDT / BONK / JUP / RAY / JITOSOL — all common tokens as of 2026).
 const SPL_TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
-const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey(
-  'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
-)
+const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 // TransferChecked (12) embeds expected decimals on-chain — wrong --decimals
 // fails cleanly instead of silently moving 1000× amount.
 const SPL_TRANSFER_CHECKED_OPCODE = 12
@@ -362,9 +360,7 @@ function buildNextStep(args: {
 // EVM build (native + ERC-20)
 // ---------------------------------------------------------------------------
 
-async function buildEvmUnsigned(
-  input: OwsBuildTransferInput,
-): Promise<OwsBuildTransferResult> {
+async function buildEvmUnsigned(input: OwsBuildTransferInput): Promise<OwsBuildTransferResult> {
   if (!isAddress(input.to)) {
     throw new Error(`Invalid EVM --to address: ${JSON.stringify(input.to)}`)
   }
@@ -516,9 +512,7 @@ async function buildSolanaNativeUnsigned(
   const lamports = parseUnits(input.amount, SOL_DECIMALS)
 
   const { blockhash } = await connection.getLatestBlockhash('confirmed')
-  const tx = new Transaction().add(
-    SystemProgram.transfer({ fromPubkey, toPubkey, lamports }),
-  )
+  const tx = new Transaction().add(SystemProgram.transfer({ fromPubkey, toPubkey, lamports }))
   tx.feePayer = fromPubkey
   tx.recentBlockhash = blockhash
 

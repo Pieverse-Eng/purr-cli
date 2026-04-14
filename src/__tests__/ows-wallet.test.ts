@@ -313,9 +313,9 @@ describe('extractSolanaSerializedTx', () => {
   })
 
   it('finds deriveTransaction.serializedTransaction', () => {
-    expect(
-      extractSolanaSerializedTx({ deriveTransaction: { serializedTransaction: 'r' } }),
-    ).toBe('r')
+    expect(extractSolanaSerializedTx({ deriveTransaction: { serializedTransaction: 'r' } })).toBe(
+      'r',
+    )
   })
 
   it('falls back to data as raw string', () => {

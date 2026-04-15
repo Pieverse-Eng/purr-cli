@@ -28,6 +28,8 @@ import { PublicKey, VersionedTransaction } from '@solana/web3.js'
 import bs58 from 'bs58'
 import { type TransactionSerializable, serializeTransaction } from 'viem'
 
+import { parseEvmSig } from '../shared.js'
+
 // OWS chain string for Solana. Per docs/sdk-cli.md + docs/07-supported-chains.md,
 // OWS accepts chain family names, shorthand aliases, bare EVM chain IDs, and
 // CAIP-2 identifiers. For EVM we build `eip155:<chainId>` per-call so that
@@ -240,45 +242,6 @@ function buildEvmTxRequest(
   }
 }
 
-/**
- * Parse OWS EVM signature result into viem-compatible {r, s, v}.
- *
- * The OWS Node SDK contract (docs/sdk-node.md) is: `SignResult { signature: string, recoveryId?: number }`.
- * The installed v1.2.4 returns signature = 65 bytes (r||s||v, v ∈ {0,1}) AND
- * recoveryId = v + 27 alongside — redundant but present. To be robust against
- * future SDK versions that might drop v from `signature` and rely on
- * recoveryId, accept both shapes.
- */
-function parseEvmSignature(
-  sig: string,
-  recoveryId: number | undefined | null,
-): {
-  r: `0x${string}`
-  s: `0x${string}`
-  v: bigint
-} {
-  const raw = sig.replace(/^0x/, '')
-  if (raw.length === 130) {
-    const r = `0x${raw.slice(0, 64)}` as `0x${string}`
-    const s = `0x${raw.slice(64, 128)}` as `0x${string}`
-    const vRaw = Number.parseInt(raw.slice(128, 130), 16)
-    const v = vRaw < 27 ? BigInt(vRaw + 27) : BigInt(vRaw)
-    return { r, s, v }
-  }
-  if (raw.length === 128) {
-    if (recoveryId == null) {
-      throw new Error('OWS returned a 64-byte EVM signature without recoveryId; cannot determine v')
-    }
-    const r = `0x${raw.slice(0, 64)}` as `0x${string}`
-    const s = `0x${raw.slice(64, 128)}` as `0x${string}`
-    const v = recoveryId < 27 ? BigInt(recoveryId + 27) : BigInt(recoveryId)
-    return { r, s, v }
-  }
-  throw new Error(
-    `Unexpected EVM signature length from OWS: ${raw.length / 2} bytes (expected 64 or 65)`,
-  )
-}
-
 function signEvmRawTx(
   walletName: string,
   token: string | undefined,
@@ -303,7 +266,7 @@ function signEvmRawTx(
     vaultPath,
   )
 
-  const { r, s, v } = parseEvmSignature(
+  const { r, s, v } = parseEvmSig(
     result.signature,
     (result as { recoveryId?: number | null }).recoveryId,
   )

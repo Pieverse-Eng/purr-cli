@@ -29,6 +29,8 @@ import {
   serializeTransaction,
 } from 'viem'
 
+import { parseEvmSig } from '../shared.js'
+
 import {
   getWallet as owsGetWallet,
   signAndSend as owsCoreSignAndSend,
@@ -288,32 +290,8 @@ async function waitForReceipt(rpcUrl: string, hash: string): Promise<RpcReceipt>
 }
 
 // ---------------------------------------------------------------------------
-// OWS signing — viem build → OWS signTransaction → re-serialize with sig
+// OWS signing — viem build → OWS signAndSend
 // ---------------------------------------------------------------------------
-
-function parseEvmSig(
-  sig: string,
-  recoveryId: number | undefined | null,
-): { r: `0x${string}`; s: `0x${string}`; v: bigint } {
-  const raw = sig.replace(/^0x/, '')
-  if (raw.length === 130) {
-    const r = `0x${raw.slice(0, 64)}` as `0x${string}`
-    const s = `0x${raw.slice(64, 128)}` as `0x${string}`
-    const vRaw = Number.parseInt(raw.slice(128, 130), 16)
-    const v = vRaw < 27 ? BigInt(vRaw + 27) : BigInt(vRaw)
-    return { r, s, v }
-  }
-  if (raw.length === 128) {
-    if (recoveryId == null) {
-      throw new Error('OWS returned 64-byte EVM sig without recoveryId; cannot determine v')
-    }
-    const r = `0x${raw.slice(0, 64)}` as `0x${string}`
-    const s = `0x${raw.slice(64, 128)}` as `0x${string}`
-    const v = recoveryId < 27 ? BigInt(recoveryId + 27) : BigInt(recoveryId)
-    return { r, s, v }
-  }
-  throw new Error(`Unexpected EVM sig length from OWS: ${raw.length / 2} bytes`)
-}
 
 /**
  * Build an unsigned EVM tx and hand it to OWS `signAndSend`, which signs

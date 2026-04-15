@@ -373,7 +373,7 @@ export async function dflowOwsSwap(input: DflowOwsSwapInput): Promise<DflowOwsSw
       : undefined,
     toTokenSymbol,
     toTokenDecimals: toDecimals,
-    chainId: 0,
+    chainId: SOLANA_CHAIN_ID,
     chainType: 'solana',
     provider: 'dflow',
     executionMode,

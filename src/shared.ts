@@ -80,6 +80,41 @@ export function parseChainId(value: string): number {
  * require hex. Returns undefined when input is undefined so callers can spread
  * with `...rest`.
  */
+/**
+ * Parse OWS EVM signature result into viem-compatible {r, s, v}.
+ *
+ * The OWS Node SDK contract (docs/sdk-node.md) is: `SignResult { signature: string, recoveryId?: number }`.
+ * The installed v1.2.4 returns signature = 65 bytes (r||s||v, v ∈ {0,1}) AND
+ * recoveryId = v + 27 alongside — redundant but present. To be robust against
+ * future SDK versions that might drop v from `signature` and rely on
+ * recoveryId, accept both shapes.
+ */
+export function parseEvmSig(
+  sig: string,
+  recoveryId: number | undefined | null,
+): { r: `0x${string}`; s: `0x${string}`; v: bigint } {
+  const raw = sig.replace(/^0x/, '')
+  if (raw.length === 130) {
+    const r = `0x${raw.slice(0, 64)}` as `0x${string}`
+    const s = `0x${raw.slice(64, 128)}` as `0x${string}`
+    const vRaw = Number.parseInt(raw.slice(128, 130), 16)
+    const v = vRaw < 27 ? BigInt(vRaw + 27) : BigInt(vRaw)
+    return { r, s, v }
+  }
+  if (raw.length === 128) {
+    if (recoveryId == null) {
+      throw new Error('OWS returned a 64-byte EVM signature without recoveryId; cannot determine v')
+    }
+    const r = `0x${raw.slice(0, 64)}` as `0x${string}`
+    const s = `0x${raw.slice(64, 128)}` as `0x${string}`
+    const v = recoveryId < 27 ? BigInt(recoveryId + 27) : BigInt(recoveryId)
+    return { r, s, v }
+  }
+  throw new Error(
+    `Unexpected EVM signature length from OWS: ${raw.length / 2} bytes (expected 64 or 65)`,
+  )
+}
+
 export function normalizeHexInt(value: string | undefined, name: string): string | undefined {
   if (value === undefined) return undefined
   let n: bigint

@@ -85,7 +85,7 @@ describe('parseEvmSig', () => {
   })
 
   it('rejects malformed sig length', () => {
-    expect(() => parseEvmSig('ab', undefined)).toThrow(/Unexpected EVM sig length/)
+    expect(() => parseEvmSig('ab', undefined)).toThrow(/Unexpected EVM sig/)
   })
 
   it('preserves v >= 27 (already EIP-155 form)', () => {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 declare const PURR_VERSION: string
+import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from './api-client.js'
 import { executeStepsFromFile, executeStepsFromJson } from './executor.js'
 import { requireArgOrFile } from './file-input.js'
@@ -9,6 +10,7 @@ import { walletBalance } from './wallet/balance.js'
 import { walletSign } from './wallet/sign.js'
 import { walletSignTypedData } from './wallet/sign-typed-data.js'
 import { walletTransfer } from './wallet/transfer.js'
+import { buildAbiCallStep } from './primitives/abi-call.js'
 import { buildApproveSteps } from './primitives/approve.js'
 import { buildRawStep } from './primitives/raw.js'
 import { buildTransferSteps } from './primitives/transfer.js'
@@ -30,6 +32,14 @@ import {
   buildFourMemeSellSteps,
 } from './vendors/fourmeme.js'
 import { asterApi, buildAsterDepositSteps } from './vendors/aster.js'
+import {
+  EXIT_CODE_GASPAYMASTER_UNSUPPORTED,
+  GasPayMasterUnsupportedError,
+  owsWalletSignTransaction,
+} from './wallet/ows-sign-transaction.js'
+import { OwsStepExecutionError, owsExecuteSteps } from './wallet/ows-execute-steps.js'
+import { owsBuildTransfer } from './wallet/ows-build-transfer.js'
+import { dflowOwsSwap, wrapDflowOwsResponse } from './vendors/dflow-ows.js'
 import { dflowSwap } from './vendors/dflow.js'
 import {
   buildListaDepositSteps,
@@ -98,9 +108,11 @@ function parseIntegerArg(value: string | undefined, name: string): number | unde
   return parsed
 }
 
-function _parseFloatArg(value: string | undefined, name: string): number | undefined {
+function parseFloatArg(value: string | undefined, name: string): number | undefined {
   if (value === undefined) return undefined
-  const parsed = Number.parseFloat(value)
+  // Use Number() (strict) instead of parseFloat() (lenient) — rejects trailing
+  // garbage like "0.01abc" which parseFloat would silently accept as 0.01.
+  const parsed = Number(value)
   if (!Number.isFinite(parsed)) {
     throw new Error(`Invalid --${name}: "${value}"`)
   }
@@ -170,6 +182,26 @@ async function main(): Promise<void> {
     return
   }
 
+  // OWS-local equivalent of `purr execute` — same flag surface, local signing.
+  if (group === 'ows-execute') {
+    const execArgs = parseArgs([command, ...rest].filter(Boolean))
+    const stepsFile = execArgs['steps-file']
+    if (!stepsFile) {
+      throw new Error(
+        'Usage: purr ows-execute --steps-file /tmp/purr_steps.json --ows-wallet <name> [--rpc-url <url>] [--ows-token <ows_key_...>]',
+      )
+    }
+    const stepsJson = readFileSync(stepsFile, 'utf-8')
+    const result = await owsExecuteSteps({
+      stepsJson,
+      owsWallet: requireArg(execArgs, 'ows-wallet'),
+      owsToken: execArgs['ows-token'] ?? process.env.OWS_PASSPHRASE,
+      rpcUrl: execArgs['rpc-url'],
+    })
+    console.log(JSON.stringify(result, null, 2))
+    return
+  }
+
   if (group === 'config') {
     switch (command) {
       case 'set': {
@@ -219,7 +251,10 @@ async function main(): Promise<void> {
 Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
   binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
+  ows-wallet        OWS-backed sign-transaction + build-transfer (drop-in for 'wallet sign-transaction'; build-transfer emits unsigned hex for 'ows sign send-tx')
+  ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
   dflow             DFlow Solana-only swap
+  dflow-ows         DFlow Solana swap with OWS local-custody signing (drop-in for 'dflow swap')
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
@@ -256,6 +291,14 @@ Examples:
   purr lista list-vaults --zone classic
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56 --execute
+  purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
+  OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
+  purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury
+  OWS_PASSPHRASE=ows_key_... purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury --rpc-url https://...
+  purr ows-wallet build-transfer --ows-wallet treasury --to 0x... --amount 0.01 --chain-id 56
+  purr ows-wallet build-transfer --ows-wallet treasury --to 0x... --amount 10 --chain-id 56 --token 0x<erc20-contract>
+  # then: ows sign send-tx --chain eip155:56 --wallet treasury --tx <unsignedTxHex from above>
+  purr dflow-ows swap --from-token So111...1112 --to-token <mint> --amount 0.1 --ows-wallet treasury --slippage 0.01
   purr aster api --endpoint /fapi/v3/balance --user 0x... --private-key 0x...
   purr aster api --method POST --endpoint /fapi/v3/order --user 0x... --private-key 0x... --symbol BTCUSDT --side BUY --type LIMIT --quantity 0.001 --price 50000 --timeInForce GTC
   purr aster deposit --token 0x... --amount-wei 1000 --wallet 0x... --chain-id 56
@@ -273,7 +316,8 @@ Examples:
   purr execute --steps-file /tmp/purr_steps.json --dedup-key my-swap-123
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
   purr evm approve --token 0x... --spender 0x... --amount 1000 --chain-id 56
-  purr evm raw --to 0x... --data 0xAbcDef --chain-id 56`)
+  purr evm raw --to 0x... --data 0xAbcDef --chain-id 56
+  purr evm abi-call --to 0x... --signature 'register(string)' --args '["uri"]' --chain-id 2818`)
     process.exit(0)
   }
 
@@ -282,6 +326,68 @@ Examples:
   let output: StepOutput
 
   switch (group) {
+    case 'ows-wallet': {
+      if (command === 'sign-transaction') {
+        // --txs-json inline or --txs-json-file <path>. File form is preferred
+        // when the envelope contains long hex calldata — `$(cat file)` inline
+        // echoes the whole payload to the agent's bash run-mode, which can
+        // cause the LLM to mangle the hex on later turns.
+        const txsJson = requireArgOrFile(args, 'txs-json', 'txs-json-file')
+        const result = await owsWalletSignTransaction(
+          txsJson,
+          parseIntegerArg(args['chain-id'], 'chain-id'),
+          {
+            owsWallet: requireArg(args, 'ows-wallet'),
+            owsToken: args['ows-token'] ?? process.env.OWS_PASSPHRASE,
+          },
+        )
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      if (command === 'build-transfer') {
+        // Pure builder — emits an unsigned tx hex on stdout. Agent then runs
+        // `ows sign send-tx --chain ... --wallet ... --tx <hex>` to sign and
+        // broadcast locally. Mirrors flag surface of `purr wallet transfer`.
+        const chainType = (args['chain-type'] ?? 'ethereum') as 'ethereum' | 'solana'
+        if (chainType !== 'ethereum' && chainType !== 'solana') {
+          throw new Error(`Invalid --chain-type: ${chainType}. Use 'ethereum' or 'solana'.`)
+        }
+        const chainId =
+          chainType === 'ethereum' ? parseIntegerArg(args['chain-id'], 'chain-id') : undefined
+        if (chainType === 'ethereum' && chainId === undefined) {
+          throw new Error('--chain-id is required for EVM transfers')
+        }
+        // `--token` may be a ticker ("USDT", "USDC", "BONK") or a raw address.
+        // If it resolves to the native sentinel (`--token BNB` / `ETH` on EVM,
+        // or wrapped-native on Solana), treat as native transfer — the builder
+        // accepts `undefined` as "native" and would otherwise try decimals()
+        // on the zero address.
+        let resolvedToken = args.token
+          ? resolveToken(args.token, chainType === 'solana' ? SOLANA_CHAIN_ID : (chainId as number))
+          : undefined
+        if (resolvedToken && resolvedToken.toLowerCase() === NATIVE_EVM.toLowerCase()) {
+          resolvedToken = undefined
+        }
+        const result = await owsBuildTransfer({
+          owsWallet: args['ows-wallet'],
+          from: args.from,
+          to: requireArg(args, 'to'),
+          amount: requireArg(args, 'amount'),
+          chainType,
+          chainId,
+          token: resolvedToken,
+          decimals: args.decimals ? parseIntegerArg(args.decimals, 'decimals') : undefined,
+          rpcUrl: args['rpc-url'],
+          gasLimit: args['gas-limit'],
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      throw new Error(
+        `Unknown ows-wallet command: ${command}. Use: sign-transaction, build-transfer`,
+      )
+    }
+
     case 'aster': {
       if (command === 'api') {
         const reserved = new Set(['method', 'endpoint', 'user', 'private-key', 'base-url'])
@@ -315,6 +421,27 @@ Examples:
           throw new Error(`Unknown aster command: ${command}. Use: api, deposit`)
       }
       break
+    }
+
+    // DFlow swap with OWS local custody — mirrors `dflow swap` interface,
+    // signs locally with OWS instead of the platform wallet.
+    case 'dflow-ows': {
+      if (command !== 'swap') {
+        throw new Error(`Unknown dflow-ows command: ${command}. Use: swap`)
+      }
+      const result = await dflowOwsSwap({
+        fromToken: resolveToken(requireArg(args, 'from-token'), SOLANA_CHAIN_ID),
+        toToken: resolveToken(requireArg(args, 'to-token'), SOLANA_CHAIN_ID),
+        amount: requireArg(args, 'amount'),
+        owsWallet: requireArg(args, 'ows-wallet'),
+        owsToken: args['ows-token'] ?? process.env.OWS_PASSPHRASE,
+        slippage: parseFloatArg(args.slippage, 'slippage'),
+        rpcUrl: args['rpc-url'],
+      })
+      // Wrap in the same `{ok, data}` envelope as `purr dflow swap` so agents
+      // can substitute one command for the other without re-parsing.
+      console.log(JSON.stringify(wrapDflowOwsResponse(result), null, 2))
+      return
     }
 
     // DFlow swap is executed server-side — early return like wallet commands
@@ -657,8 +784,22 @@ Examples:
             gasLimit: args['gas-limit'],
           })
           break
+        case 'abi-call':
+          // Builder twin of `purr wallet abi-call` — encodes calldata locally
+          // (viem) and emits steps[]. Pipe to `purr execute` (server-side
+          // Privy) or `purr ows-execute` (local OWS custody).
+          output = buildAbiCallStep({
+            to: requireArg(args, 'to'),
+            signature: requireArg(args, 'signature'),
+            argsJson: requireArg(args, 'args'),
+            chainId,
+            value: args.value,
+            gasLimit: args['gas-limit'],
+            label: args.label,
+          })
+          break
         default:
-          throw new Error(`Unknown evm command: ${command}. Use: approve, transfer, raw`)
+          throw new Error(`Unknown evm command: ${command}. Use: approve, transfer, raw, abi-call`)
       }
       break
     }
@@ -703,7 +844,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, dflow, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, dflow, dflow-ows, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
       )
   }
 
@@ -724,6 +865,24 @@ main().catch((err) => {
     console.error(formatOpenSeaError(err))
     process.exit(1)
   }
-  console.error(err.message)
+  if (err instanceof GasPayMasterUnsupportedError) {
+    console.error(`error: ${err.message}`)
+    process.exit(EXIT_CODE_GASPAYMASTER_UNSUPPORTED)
+  }
+  if (err instanceof OwsStepExecutionError) {
+    console.error(
+      `error: step ${err.failedStepIndex} failed — ${err.message}\n` +
+        `partial results: ${JSON.stringify(err.partialResults, null, 2)}`,
+    )
+    process.exit(1)
+  }
+  // Preserve err.code from OWS SDK (POLICY_DENIED, API_KEY_EXPIRED,
+  // INVALID_PASSPHRASE, etc.) so automation can react programmatically.
+  const code = (err as { code?: unknown })?.code
+  if (typeof code === 'string' && code.length > 0) {
+    console.error(`error [${code}]: ${err.message}`)
+  } else {
+    console.error(err.message)
+  }
   process.exit(1)
 })

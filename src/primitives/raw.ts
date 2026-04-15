@@ -1,3 +1,4 @@
+import { normalizeHexInt } from '../shared.js'
 import type { StepOutput } from '../types.js'
 
 export interface RawArgs {
@@ -15,10 +16,13 @@ export function buildRawStep(args: RawArgs): StepOutput {
       {
         to: args.to,
         data: args.data,
-        value: args.value ?? '0x0',
+        // Both `value` and `gasLimit` may arrive as decimal or 0x-hex from the
+        // CLI; normalize to canonical hex so downstream validators (api-server
+        // step-executor + purr ows-execute) accept it.
+        value: normalizeHexInt(args.value, 'value') ?? '0x0',
         chainId: args.chainId,
         label: args.label ?? 'Raw transaction',
-        gasLimit: args.gasLimit,
+        gasLimit: normalizeHexInt(args.gasLimit, 'gas-limit'),
       },
     ],
   }

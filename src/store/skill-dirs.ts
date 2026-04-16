@@ -45,6 +45,12 @@ const ADDITIONAL: [string, string, string, string][] = [
   ['Adal', '.adal/skills', join(home, '.adal/skills'), '.adal'],
 ]
 
+function replaceDir(srcDir: string, target: string): void {
+  rmSync(target, { recursive: true, force: true })
+  mkdirSync(target, { recursive: true })
+  cpSync(srcDir, target, { recursive: true, force: true })
+}
+
 export function installToAgents(
   slug: string,
   srcDir: string,
@@ -62,8 +68,7 @@ export function installToAgents(
 
   const universalPath = isGlobal ? join(UNIVERSAL_GLOBAL, slug) : join(cwd, UNIVERSAL_LOCAL, slug)
   try {
-    mkdirSync(universalPath, { recursive: true })
-    cpSync(srcDir, universalPath, { recursive: true, force: true })
+    replaceDir(srcDir, universalPath)
     installed.push({ agent: 'universal', path: universalPath })
     written.add(resolve(universalPath))
   } catch (err) {
@@ -85,8 +90,7 @@ export function installToAgents(
     const probe = isGlobal ? join(home, detectDir) : join(cwd, detectDir)
     if (existsSync(probe)) {
       try {
-        mkdirSync(target, { recursive: true })
-        cpSync(srcDir, target, { recursive: true, force: true })
+        replaceDir(srcDir, target)
         installed.push({ agent: name, path: target })
         written.add(resolved)
       } catch (err) {

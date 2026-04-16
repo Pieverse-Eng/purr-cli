@@ -46,6 +46,13 @@ export function findBySlug(bareSlug: string): (PluginRecord & { qualified: strin
     .map(([qualified, record]) => ({ qualified, ...record }))
 }
 
+export function findInstallConflict(
+  qualifiedSlug: string,
+  bareSlug: string,
+): (PluginRecord & { qualified: string }) | null {
+  return findBySlug(bareSlug).find((entry) => entry.qualified !== qualifiedSlug) ?? null
+}
+
 export function loadState(): { plugins: Record<string, PluginRecord> } {
   return load()
 }

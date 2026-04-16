@@ -37,6 +37,16 @@ describe('state', () => {
     expect(hits.map((h) => h.source).sort()).toEqual(['okx', 'pieverse'])
   })
 
+  it('findInstallConflict ignores same-source reinstall and reports other sources', async () => {
+    const { findInstallConflict, recordInstall } = await import('../../store/state.js')
+    recordInstall('okx:conflict-skill', { source: 'okx', version: '1.0.0' })
+    expect(findInstallConflict('okx:conflict-skill', 'conflict-skill')).toBeNull()
+
+    recordInstall('pieverse:conflict-skill', { source: 'pieverse', version: '2.0.0' })
+    const conflict = findInstallConflict('okx:conflict-skill', 'conflict-skill')
+    expect(conflict?.qualified).toBe('pieverse:conflict-skill')
+  })
+
   it('recordRemove deletes entry', async () => {
     const { recordRemove, getInstalled, findBySlug } = await import('../../store/state.js')
     recordRemove('okx:aave-v3-plugin')

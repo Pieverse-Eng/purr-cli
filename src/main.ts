@@ -67,7 +67,13 @@ import {
   OpenSeaCliError,
 } from './vendors/opensea.js'
 import { parseOpenSeaFulfillmentInput } from './vendors/opensea-input.js'
-import { findBySlug, getInstalled, recordInstall, recordRemove } from './store/state.js'
+import {
+  findBySlug,
+  findInstallConflict,
+  getInstalled,
+  recordInstall,
+  recordRemove,
+} from './store/state.js'
 import { resolveSlug, parseQualifiedSlug, SOURCES } from './store/resolve.js'
 import { removeFromAgents } from './store/skill-dirs.js'
 
@@ -900,11 +906,25 @@ Examples:
           console.error(`Unexpected resolution state for "${v.slug}"`)
           process.exit(1)
         }
+        const qualifiedSlug = `${source}:${slug}`
+        const conflict = findInstallConflict(qualifiedSlug, slug)
+        if (conflict) {
+          console.error(
+            `Skill "${slug}" is already installed from ${conflict.source}. Remove ${conflict.qualified} before installing ${qualifiedSlug}.`,
+          )
+          process.exit(1)
+        }
         try {
           const result = await SOURCES[source as 'pieverse' | 'okx'].install(slug, {
             isGlobal,
             meta,
           })
+          if ((result.skill?.installed?.length ?? 0) === 0) {
+            const detail = result.skill?.errors?.length
+              ? ` (${result.skill.errors.map((e) => `${e.agent}: ${e.reason}`).join('; ')})`
+              : ''
+            throw new Error(`Install failed: no agent directories were updated${detail}`)
+          }
           recordInstall(result.qualified_slug, {
             source,
             version: meta.version,

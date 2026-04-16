@@ -67,6 +67,9 @@ import {
   OpenSeaCliError,
 } from './vendors/opensea.js'
 import { parseOpenSeaFulfillmentInput } from './vendors/opensea-input.js'
+import { findBySlug, getInstalled, recordInstall, recordRemove } from './store/state.js'
+import { resolveSlug, parseQualifiedSlug, SOURCES } from './store/resolve.js'
+import { removeFromAgents } from './store/skill-dirs.js'
 
 function parseArgs(argv: string[]): Record<string, string> {
   const result: Record<string, string> = {}
@@ -97,6 +100,14 @@ function requireArg(args: Record<string, string>, name: string): string {
     throw new Error(`Missing required argument: --${name}`)
   }
   return val
+}
+
+const SLUG_RE = /^([a-z0-9-]+:)?[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/i
+function validatedSlug(raw: string): { slug: string } | { error: true; message: string } {
+  if (!SLUG_RE.test(raw)) {
+    return { error: true, message: `Invalid skill slug: "${raw}"` }
+  }
+  return { slug: raw }
 }
 
 function parseIntegerArg(value: string | undefined, name: string): number | undefined {
@@ -317,7 +328,13 @@ Examples:
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
   purr evm approve --token 0x... --spender 0x... --amount 1000 --chain-id 56
   purr evm raw --to 0x... --data 0xAbcDef --chain-id 56
-  purr evm abi-call --to 0x... --signature 'register(string)' --args '["uri"]' --chain-id 2818`)
+  purr evm abi-call --to 0x... --signature 'register(string)' --args '["uri"]' --chain-id 2818
+  purr store list
+  purr store list --search <keyword> --limit 10
+  purr store info <slug>
+  purr store install <slug>
+  purr store install <source>:<slug>
+  purr store remove <slug>`)
     process.exit(0)
   }
 
@@ -842,9 +859,222 @@ Examples:
       }
     }
 
+    case 'store': {
+      if (command === 'install') {
+        const slugInput = args.slug || (rest[0] && !rest[0].startsWith('--') ? rest[0] : '')
+        if (!slugInput) {
+          console.error('Missing required argument: <slug>')
+          process.exit(1)
+        }
+        const v = validatedSlug(slugInput)
+        if ('error' in v) {
+          console.error(v.message)
+          process.exit(1)
+        }
+        const isGlobal = args.global === 'true'
+        const resolved = await resolveSlug(v.slug)
+        if (resolved.status === 'not_found') {
+          console.error(`Skill "${v.slug}" not found in any source`)
+          process.exit(1)
+        }
+        if (resolved.status === 'ambiguous') {
+          process.exitCode = 2
+          console.log(JSON.stringify({
+            status: 'ambiguous',
+            slug: v.slug,
+            message: 'Found in multiple sources. Ask the user to choose one using its qualified_slug.',
+            candidates: resolved.candidates,
+            ...(resolved.warnings?.length ? { warnings: resolved.warnings } : {}),
+          }, null, 2))
+          return
+        }
+        const { source, slug, meta } = resolved
+        if (!source || !meta) {
+          console.error(`Unexpected resolution state for "${v.slug}"`)
+          process.exit(1)
+        }
+        try {
+          const result = await SOURCES[source as 'pieverse' | 'okx'].install(slug, { isGlobal, meta })
+          recordInstall(result.qualified_slug, {
+            source,
+            version: meta.version,
+            ...(result.commit ? { commit: result.commit } : {}),
+            skill: { installed: result.skill?.installed || [] },
+          })
+          console.log(JSON.stringify({
+            ...result,
+            ...(resolved.warnings?.length ? { warnings: resolved.warnings } : {}),
+          }, null, 2))
+        } catch (err) {
+          const e = err instanceof Error ? err : new Error(String(err))
+          console.error(e.message)
+          process.exit(1)
+        }
+        return
+      }
+
+      if (command === 'list') {
+        const search = args.search
+        const category = args.category
+        const limit = args.limit ? Number.parseInt(args.limit, 10) : 20
+        const offset = args.offset ? Number.parseInt(args.offset, 10) : 0
+        const sourceFilter = args.source || 'all'
+        const VALID_SOURCES = ['all', 'pieverse', 'okx']
+        if (!VALID_SOURCES.includes(sourceFilter)) {
+          console.error(`Invalid --source: "${sourceFilter}". Use: ${VALID_SOURCES.join(', ')}`)
+          process.exit(1)
+        }
+        const activeSources = sourceFilter === 'all' ? Object.keys(SOURCES) : [sourceFilter]
+
+        const settled = await Promise.allSettled(
+          activeSources.map((id) => SOURCES[id as 'pieverse' | 'okx'].list({ search, category, limit, offset })),
+        )
+
+        const warnings: string[] = []
+        const perSource: { slug: string; source: string; qualified_slug: string; name: string; version: string; category: string; description: string; components: string[] }[][] = []
+        // This is the raw sum of totals across all sources. Duplicates that exist
+        // in multiple sources are counted more than once, matching the original
+        // purr-store behavior.
+        let total = 0
+        settled.forEach((r, i) => {
+          const id = activeSources[i]
+          if (r.status === 'fulfilled') {
+            const rows = r.value.skills.slice()
+            perSource.push(rows)
+            total += r.value.total ?? rows.length
+          } else {
+            warnings.push(`source ${id} unavailable: ${r.reason?.message || r.reason}`)
+          }
+        })
+
+        const SOURCE_ORDER: Record<string, number> = { pieverse: 0, okx: 1 }
+        const cmpByOrder = (a: { source: string; slug: string }, b: { source: string; slug: string }) =>
+          (SOURCE_ORDER[a.source] ?? 9) - (SOURCE_ORDER[b.source] ?? 9) || a.slug.localeCompare(b.slug)
+
+        function interleave<T>(queues: T[][]): T[] {
+          const qs = queues.map((q) => [...q])
+          const out: T[] = []
+          while (qs.some((q) => q.length)) {
+            for (const q of qs) {
+              if (q.length) out.push(q.shift()!)
+            }
+          }
+          return out
+        }
+
+        const merged = activeSources.length > 1 ? interleave(perSource.map((rows) => rows.sort(cmpByOrder))) : (perSource[0] || [])
+        const sliced = merged.slice(0, limit)
+
+        console.log(JSON.stringify({
+          total,
+          skills: sliced.map((r) => ({
+            slug: r.slug,
+            source: r.source,
+            qualified_slug: r.qualified_slug,
+            name: r.name,
+            version: r.version,
+            category: r.category,
+            description: r.description,
+            components: r.components,
+          })),
+          ...(warnings.length ? { warnings } : {}),
+        }, null, 2))
+        return
+      }
+
+      if (command === 'info') {
+        const slugInput = args.slug || (rest[0] && !rest[0].startsWith('--') ? rest[0] : '')
+        if (!slugInput) {
+          console.error('Missing required argument: <slug>')
+          process.exit(1)
+        }
+        const v = validatedSlug(slugInput)
+        if ('error' in v) {
+          console.error(v.message)
+          process.exit(1)
+        }
+        const resolved = await resolveSlug(v.slug)
+        if (resolved.status === 'not_found') {
+          console.error(`Skill "${v.slug}" not found in any source`)
+          process.exit(1)
+        }
+        if (resolved.status === 'ambiguous') {
+          console.log(JSON.stringify({
+            status: 'ambiguous',
+            slug: v.slug,
+            message: 'Found in multiple sources. Use a qualified slug to pick one.',
+            candidates: resolved.candidates,
+            ...(resolved.warnings?.length ? { warnings: resolved.warnings } : {}),
+          }, null, 2))
+          return
+        }
+        console.log(JSON.stringify({
+          ...resolved.meta,
+          ...(resolved.warnings?.length ? { warnings: resolved.warnings } : {}),
+        }, null, 2))
+        return
+      }
+
+      if (command === 'remove') {
+        const slugInput = args.slug || (rest[0] && !rest[0].startsWith('--') ? rest[0] : '')
+        if (!slugInput) {
+          console.error('Missing required argument: <slug>')
+          process.exit(1)
+        }
+        const v = validatedSlug(slugInput)
+        if ('error' in v) {
+          console.error(v.message)
+          process.exit(1)
+        }
+        const isGlobal = args.global === 'true'
+        const { source: qualifiedSource, slug: bare } = parseQualifiedSlug(v.slug)
+        const entries = qualifiedSource
+          ? (() => {
+              const rec = getInstalled(`${qualifiedSource}:${bare}`)
+              return rec ? [{ qualified: `${qualifiedSource}:${bare}`, ...rec }] : []
+            })()
+          : findBySlug(bare)
+
+        if (entries.length === 0) {
+          const skill = removeFromAgents(bare, isGlobal)
+          if (skill.removed.length === 0) {
+            console.error(`Skill "${v.slug}" is not installed`)
+            process.exit(1)
+          }
+          console.log(JSON.stringify({ slug: bare, source: 'unknown', skill }, null, 2))
+          return
+        }
+
+        if (entries.length > 1) {
+          process.exitCode = 2
+          console.log(JSON.stringify({
+            status: 'ambiguous',
+            slug: v.slug,
+            message: 'Same slug installed from multiple sources. Use a qualified slug.',
+            candidates: entries.map((e) => ({
+              source: e.source,
+              qualified_slug: e.qualified,
+              version: e.version,
+              installed_at: e.installed_at,
+              remove_command: `purr store remove ${e.qualified}`,
+            })),
+          }, null, 2))
+          return
+        }
+
+        const entry = entries[0]
+        const result = await SOURCES[entry.source as 'pieverse' | 'okx'].remove(bare, entry, { isGlobal })
+        recordRemove(entry.qualified as string)
+        console.log(JSON.stringify({ slug: bare, qualified_slug: entry.qualified, source: entry.source, ...result }, null, 2))
+        return
+      }
+
+      throw new Error(`Unknown store command: ${command}. Use: install, list, info, remove`)
+    }
+
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, dflow, dflow-ows, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, dflow, dflow-ows, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version, store`,
       )
   }
 

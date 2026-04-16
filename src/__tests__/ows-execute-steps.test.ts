@@ -67,7 +67,7 @@ describe('resolveRpcUrl', () => {
 
 describe('parseEvmSig', () => {
   it('accepts 65-byte r||s||v signature', () => {
-    const sig = '1'.repeat(64) + '2'.repeat(64) + '00'
+    const sig = `${'1'.repeat(64) + '2'.repeat(64)}00`
     const { r, s, v } = parseEvmSig(sig, undefined)
     expect(r).toBe(`0x${'1'.repeat(64)}`)
     expect(s).toBe(`0x${'2'.repeat(64)}`)
@@ -89,7 +89,7 @@ describe('parseEvmSig', () => {
   })
 
   it('preserves v >= 27 (already EIP-155 form)', () => {
-    const sig = '1'.repeat(64) + '2'.repeat(64) + '93' // v=147 (BSC EIP-155)
+    const sig = `${'1'.repeat(64) + '2'.repeat(64)}93` // v=147 (BSC EIP-155)
     const { v } = parseEvmSig(sig, undefined)
     expect(v).toBe(147n)
   })

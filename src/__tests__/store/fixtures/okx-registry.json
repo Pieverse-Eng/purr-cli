@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "name": "fixture-skill-only",
+      "version": "1.0.0",
+      "description": "Fixture plugin with skill only",
+      "category": "test",
+      "tags": ["test", "fixture"],
+      "type": "official",
+      "components": {
+        "skill": { "dir": "." }
+      }
+    },
+    {
+      "name": "fixture-with-binary",
+      "version": "2.1.0",
+      "description": "Fixture plugin with skill + binary",
+      "category": "defi-protocol",
+      "tags": ["lending"],
+      "type": "community-developer",
+      "components": {
+        "skill": { "dir": "." },
+        "binary": {
+          "repo": "okx/plugin-store",
+          "asset_pattern": "fixture-with-binary-{target}",
+          "checksums_asset": "checksums.txt",
+          "release_tag": "plugins/fixture-with-binary@2.1.0"
+        }
+      }
+    },
+    {
+      "name": "fixture-with-mcp",
+      "version": "0.5.0",
+      "description": "Fixture plugin with skill + MCP",
+      "category": "productivity",
+      "type": "official",
+      "components": {
+        "skill": { "dir": "." },
+        "mcp": {
+          "mcpServers": {
+            "fixture-mcp": {
+              "command": "node",
+              "args": ["/path/to/server.mjs"],
+              "env": {}
+            }
+          }
+        }
+      }
+    }
+  ]
+}

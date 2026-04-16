@@ -1,6 +1,6 @@
 # purr-cli
 
-Calldata builder CLI for on-chain step construction. Encodes transaction steps for DeFi protocols (PancakeSwap, Bitget, four.meme, Lista DAO, Aster, Binance Connect) into a portable `TxStep[]` JSON format.
+Calldata builder CLI for on-chain step construction with support for the Pieverse skill store. Encodes transaction steps for DeFi protocols (PancakeSwap, Bitget, four.meme, Lista DAO, Aster, Binance Connect) into a portable `TxStep[]` JSON format.
 
 ## Install
 
@@ -31,6 +31,7 @@ purr <group> <command> [options]
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup |
 | `lista` | Lista DAO vault operations |
 | `evm` | EVM primitives (approve, transfer, raw) |
+| `store` | Browse and install agent skills from Pieverse + OKX stores |
 
 ### Examples
 
@@ -39,6 +40,10 @@ purr bitget swap --from-token 0x... --to-token 0x... --from-amount 0.05 --chain 
 purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
 purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
 purr evm approve --token 0x... --spender 0x... --amount 1000 --chain-id 56
+purr store list --search <keyword> --limit 10
+purr store info <slug>
+purr store install <slug>
+purr store remove <slug>
 ```
 
 ## Development

@@ -5,7 +5,7 @@
  * impl (ows-build-transfer.ts) surfaces as a test failure.
  */
 
-import { PublicKey, TransactionInstruction } from '@solana/web3.js'
+import { PublicKey } from '@solana/web3.js'
 import { describe, expect, it } from 'vitest'
 
 const mod = (await import('../wallet/ows-build-transfer.js')) as unknown as Record<string, unknown>

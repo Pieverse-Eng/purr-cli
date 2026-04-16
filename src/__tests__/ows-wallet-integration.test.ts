@@ -234,7 +234,7 @@ describe('chain string passed to OWS (CAIP-2)', () => {
 describe('signature format handling', () => {
   it('accepts 65-byte r||s||v signature (current SDK behavior)', async () => {
     nextEvmResult = {
-      signature: '1'.repeat(64) + '2'.repeat(64) + '00', // r=1s s=2s v=0
+      signature: `${'1'.repeat(64) + '2'.repeat(64)}00`, // r=1s s=2s v=0
       recoveryId: 27,
     }
     const result = await owsWalletSignTransaction(

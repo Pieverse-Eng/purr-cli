@@ -261,7 +261,7 @@ async function getErc20Allowance(
   return BigInt(hex)
 }
 
-async function sendRawTransaction(rpcUrl: string, signedHex: string): Promise<string> {
+async function _sendRawTransaction(rpcUrl: string, signedHex: string): Promise<string> {
   return evmRpc<string>(rpcUrl, 'eth_sendRawTransaction', [signedHex])
 }
 

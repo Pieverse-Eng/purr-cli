@@ -36,14 +36,25 @@ async function api(path: string): Promise<Response> {
     return await fetch(`${STORE}${path}`, { signal: AbortSignal.timeout(15000) })
   } catch (err) {
     const e = err instanceof Error ? err : new Error(String(err))
-    const msg = e.name === 'TimeoutError'
-      ? 'Store API request timed out (15s)'
-      : `Network error: ${e.message}`
+    const msg =
+      e.name === 'TimeoutError'
+        ? 'Store API request timed out (15s)'
+        : `Network error: ${e.message}`
     throw new Error(msg)
   }
 }
 
-export async function list({ search, category, limit = 20, offset = 0 }: { search?: string; category?: string; limit?: number; offset?: number } = {}): Promise<ListResult> {
+export async function list({
+  search,
+  category,
+  limit = 20,
+  offset = 0,
+}: {
+  search?: string
+  category?: string
+  limit?: number
+  offset?: number
+} = {}): Promise<ListResult> {
   const params = new URLSearchParams()
   if (search) params.set('search', search)
   if (category) params.set('category', category)
@@ -51,7 +62,7 @@ export async function list({ search, category, limit = 20, offset = 0 }: { searc
   if (offset) params.set('offset', String(offset))
   const res = await api(`/skills?${params}`)
   if (!res.ok) throw new Error(`Store API error: ${res.status}`)
-  const data = await res.json() as { total?: number; skills?: SkillMeta[] }
+  const data = (await res.json()) as { total?: number; skills?: SkillMeta[] }
   if (!Array.isArray(data.skills)) throw new Error('Unexpected API response shape')
 
   return {
@@ -69,11 +80,21 @@ export async function list({ search, category, limit = 20, offset = 0 }: { searc
   }
 }
 
-export async function info(slug: string): Promise<{ slug: string; source: string; qualified_slug: string; name: string; version: string; category: string; description: string; components: string[]; raw: SkillMeta } | null> {
+export async function info(slug: string): Promise<{
+  slug: string
+  source: string
+  qualified_slug: string
+  name: string
+  version: string
+  category: string
+  description: string
+  components: string[]
+  raw: SkillMeta
+} | null> {
   const res = await api(`/skills/${encodeURIComponent(slug)}`)
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`Store API error: ${res.status}`)
-  const meta = await res.json() as SkillMeta
+  const meta = (await res.json()) as SkillMeta
   return {
     slug: meta.slug,
     source: 'pieverse',
@@ -87,28 +108,42 @@ export async function info(slug: string): Promise<{ slug: string; source: string
   }
 }
 
-export async function install(slug: string, { isGlobal = false } = {}): Promise<{
+export async function install(
+  slug: string,
+  { isGlobal = false } = {},
+): Promise<{
   slug: string
   qualified_slug: string
   source: string
   name: string
   version: string
   sha256: string
-  skill: { installed: { agent: string; path: string }[]; skipped: string[]; errors: { agent: string; reason: string }[] }
+  skill: {
+    installed: { agent: string; path: string }[]
+    skipped: string[]
+    errors: { agent: string; reason: string }[]
+  }
 }> {
   const metaRes = await api(`/skills/${encodeURIComponent(slug)}`)
   if (metaRes.status === 404) {
-    throw Object.assign(new Error(`Skill "${slug}" not found in Pieverse store`), { code: 'NOT_FOUND' })
+    throw Object.assign(new Error(`Skill "${slug}" not found in Pieverse store`), {
+      code: 'NOT_FOUND',
+    })
   }
   if (!metaRes.ok) throw new Error(`Store API error: ${metaRes.status}`)
-  const meta = await metaRes.json() as SkillMeta
+  const meta = (await metaRes.json()) as SkillMeta
 
   const dlRes = await api(`/skills/${encodeURIComponent(slug)}/download`)
   if (!dlRes.ok) throw new Error(`Download failed: ${dlRes.status}`)
 
   const expectedSha = dlRes.headers.get('X-Skill-SHA256')
   if (!expectedSha) {
-    throw Object.assign(new Error('Server did not provide X-Skill-SHA256 header; refusing to install unverified archive'), { code: 'NO_CHECKSUM' })
+    throw Object.assign(
+      new Error(
+        'Server did not provide X-Skill-SHA256 header; refusing to install unverified archive',
+      ),
+      { code: 'NO_CHECKSUM' },
+    )
   }
 
   const contentLength = parseInt(dlRes.headers.get('content-length') || '0', 10)
@@ -122,7 +157,10 @@ export async function install(slug: string, { isGlobal = false } = {}): Promise<
 
   const sha256 = createHash('sha256').update(buffer).digest('hex')
   if (sha256 !== expectedSha) {
-    throw Object.assign(new Error(`Integrity check failed: expected ${expectedSha}, got ${sha256}`), { code: 'SHA256_MISMATCH' })
+    throw Object.assign(
+      new Error(`Integrity check failed: expected ${expectedSha}, got ${sha256}`),
+      { code: 'SHA256_MISMATCH' },
+    )
   }
 
   const tmp = mkdtempSync(join(tmpdir(), `purr-store-${slug}-`))
@@ -149,7 +187,11 @@ export async function install(slug: string, { isGlobal = false } = {}): Promise<
   }
 }
 
-export async function remove(slug: string, _record: object, { isGlobal = false } = {}): Promise<{ skill: { removed: { agent: string; path: string }[]; notFound: string[] } }> {
+export async function remove(
+  slug: string,
+  _record: object,
+  { isGlobal = false } = {},
+): Promise<{ skill: { removed: { agent: string; path: string }[]; notFound: string[] } }> {
   const { removed, notFound } = removeFromAgents(slug, isGlobal)
   return { skill: { removed, notFound } }
 }

@@ -7,7 +7,8 @@ import { installToAgents, removeFromAgents } from '../skill-dirs.js'
 
 const OWNER = 'okx'
 const REPO = 'plugin-store'
-const REGISTRY_URL = process.env.OKX_REGISTRY_URL ||
+const REGISTRY_URL =
+  process.env.OKX_REGISTRY_URL ||
   `https://raw.githubusercontent.com/${OWNER}/${REPO}/main/registry.json`
 const CACHE_KEY = 'okx-registry.json'
 const SHA_CACHE_KEY = 'okx-main-sha.json'
@@ -52,8 +53,13 @@ async function getRegistry(): Promise<Registry> {
   if (cached) return cached
   if (pendingRegistry) return pendingRegistry
   pendingRegistry = fetchJson<Registry>(REGISTRY_URL)
-    .then((r) => { writeCache(CACHE_KEY, r); return r })
-    .finally(() => { pendingRegistry = null })
+    .then((r) => {
+      writeCache(CACHE_KEY, r)
+      return r
+    })
+    .finally(() => {
+      pendingRegistry = null
+    })
   return pendingRegistry
 }
 
@@ -62,8 +68,13 @@ async function getHeadSha(): Promise<string> {
   if (cached?.sha) return cached.sha
   if (pendingSha) return pendingSha
   pendingSha = resolveCommitSha({ owner: OWNER, repo: REPO, ref: 'main' })
-    .then((sha) => { writeCache(SHA_CACHE_KEY, { sha, resolved_at: Date.now() }); return sha })
-    .finally(() => { pendingSha = null })
+    .then((sha) => {
+      writeCache(SHA_CACHE_KEY, { sha, resolved_at: Date.now() })
+      return sha
+    })
+    .finally(() => {
+      pendingSha = null
+    })
   return pendingSha
 }
 
@@ -87,13 +98,24 @@ function matchesSearch(p: Plugin, q: string): boolean {
   return hay.includes(q.toLowerCase())
 }
 
-export async function list({ search, category, limit = 20, offset = 0 }: { search?: string; category?: string; limit?: number; offset?: number } = {}) {
+export async function list({
+  search,
+  category,
+  limit = 20,
+  offset = 0,
+}: {
+  search?: string
+  category?: string
+  limit?: number
+  offset?: number
+} = {}) {
   const reg = await getRegistry()
   let plugins = reg.plugins || []
   if (search) plugins = plugins.filter((p) => matchesSearch(p, search))
   if (category) plugins = plugins.filter((p) => p.category === category)
   const total = plugins.length
-  const skills = plugins.slice(offset, offset + limit)
+  const skills = plugins
+    .slice(offset, offset + limit)
     .map(normalize)
     .map(({ raw, ...row }) => row)
   return { total, skills }
@@ -105,7 +127,10 @@ export async function info(slug: string): Promise<Normalized | null> {
   return p ? normalize(p) : null
 }
 
-export async function install(slug: string, { isGlobal = false, meta }: { isGlobal?: boolean; meta?: { raw?: Plugin } } = {}) {
+export async function install(
+  slug: string,
+  { isGlobal = false, meta }: { isGlobal?: boolean; meta?: { raw?: Plugin } } = {},
+) {
   const raw = meta?.raw
   let plugin = raw
   if (!plugin) {
@@ -113,7 +138,9 @@ export async function install(slug: string, { isGlobal = false, meta }: { isGlob
     plugin = (reg.plugins || []).find((p) => p.name === slug)
   }
   if (!plugin) {
-    throw Object.assign(new Error(`Plugin "${slug}" not found in OKX registry`), { code: 'NOT_FOUND' })
+    throw Object.assign(new Error(`Plugin "${slug}" not found in OKX registry`), {
+      code: 'NOT_FOUND',
+    })
   }
 
   const sha = await getHeadSha()

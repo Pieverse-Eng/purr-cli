@@ -438,9 +438,12 @@ export async function owsWalletSignTransaction(
   //   4. default          → signEvmRawTx
   for (const txItem of txs) {
     if (isSolanaTxItem(txItem)) {
+      if (!solanaAccount) {
+        throw new Error(`OWS wallet "${opts.owsWallet}" has no Solana account`)
+      }
       txItem.sig = signSolanaTx(
         opts.owsWallet,
-        solanaAccount!.address,
+        solanaAccount.address,
         token,
         txItem,
         opts.vaultPath,

@@ -50,7 +50,8 @@ export function assertNoPathEscape(baseDir: string): void {
   const real = realpathSync(baseDir)
   const stack = [real]
   while (stack.length) {
-    const dir = stack.pop()!
+    const dir = stack.pop()
+    if (dir === undefined) continue
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const full = realpathSync(join(dir, entry.name))
       if (full !== real && !full.startsWith(`${real}/`)) {
@@ -120,7 +121,8 @@ export async function fetchRepoSubpath({
     const rootName = entries.find(
       (name) => name.startsWith(`${repo}-`) && statSync(join(extractDir, name)).isDirectory(),
     )
-    if (!rootName) throw new Error(`Expected a ${repo}-* directory in the tarball; got: ${entries.join(', ')}`)
+    if (!rootName)
+      throw new Error(`Expected a ${repo}-* directory in the tarball; got: ${entries.join(', ')}`)
     const repoRoot = realpathSync(join(extractDir, rootName))
 
     const candidate = subpath === '.' || subpath === '' ? repoRoot : join(repoRoot, subpath)

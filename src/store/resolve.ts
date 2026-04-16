@@ -5,14 +5,24 @@ import type { SkillInfo, InstallResult, RemoveResult, ListResult } from './types
 export type SourceId = 'pieverse' | 'okx'
 
 export interface Source {
-  list: (opts?: { search?: string; category?: string; limit?: number; offset?: number }) => Promise<ListResult>
+  list: (opts?: {
+    search?: string
+    category?: string
+    limit?: number
+    offset?: number
+  }) => Promise<ListResult>
   info: (slug: string) => Promise<SkillInfo | null>
   install: (slug: string, opts?: { isGlobal?: boolean; meta?: SkillInfo }) => Promise<InstallResult>
   remove: (slug: string, record: object, opts?: { isGlobal?: boolean }) => Promise<RemoveResult>
 }
 
 export const SOURCES: Record<SourceId, Source> = {
-  pieverse: { list: pieverse.list, info: pieverse.info, install: pieverse.install, remove: pieverse.remove } as Source,
+  pieverse: {
+    list: pieverse.list,
+    info: pieverse.info,
+    install: pieverse.install,
+    remove: pieverse.remove,
+  } as Source,
   okx: { list: okx.list, info: okx.info, install: okx.install, remove: okx.remove } as Source,
 }
 
@@ -61,7 +71,14 @@ export async function resolveSlug(rawSlug: string): Promise<ResolveResult> {
   if (source) {
     const meta = await SOURCES[source].info(slug)
     if (!meta) return { status: 'not_found', slug: rawSlug, warnings: [] }
-    return { status: 'unique', slug, source, meta, candidates: [candidateFrom(source, meta)], warnings: [] }
+    return {
+      status: 'unique',
+      slug,
+      source,
+      meta,
+      candidates: [candidateFrom(source, meta)],
+      warnings: [],
+    }
   }
 
   const probes = await Promise.all(
@@ -72,22 +89,29 @@ export async function resolveSlug(rawSlug: string): Promise<ResolveResult> {
       } catch (err) {
         return { id, meta: null, error: err as Error }
       }
-    })
+    }),
   )
-  const hits = probes.filter((p) => p.meta)
+  const hits = probes.filter((p): p is typeof p & { meta: SkillInfo } => Boolean(p.meta))
   const warnings = probes
-    .filter((p) => p.error)
-    .map((p) => `source ${p.id} unavailable: ${p.error!.message || p.error!}`)
+    .filter((p): p is typeof p & { error: Error } => Boolean(p.error))
+    .map((p) => `source ${p.id} unavailable: ${p.error.message || p.error}`)
 
   if (hits.length === 0) return { status: 'not_found', slug: rawSlug, warnings }
   if (hits.length === 1) {
     const { id, meta } = hits[0]
-    return { status: 'unique', slug, source: id, meta: meta!, candidates: [candidateFrom(id, meta!)], warnings }
+    return {
+      status: 'unique',
+      slug,
+      source: id,
+      meta,
+      candidates: [candidateFrom(id, meta)],
+      warnings,
+    }
   }
   return {
     status: 'ambiguous',
     slug,
-    candidates: hits.map(({ id, meta }) => candidateFrom(id, meta!)),
+    candidates: hits.map(({ id, meta }) => candidateFrom(id, meta)),
     warnings,
   }
 }

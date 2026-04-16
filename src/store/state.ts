@@ -17,10 +17,13 @@ function load(): { plugins: Record<string, PluginRecord> } {
 }
 
 function save(state: { plugins: Record<string, PluginRecord> }): void {
-  writeAtomic(STATE_PATH, JSON.stringify(state, null, 2) + '\n')
+  writeAtomic(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`)
 }
 
-export function recordInstall(qualifiedSlug: string, record: Omit<PluginRecord, 'installed_at'>): void {
+export function recordInstall(
+  qualifiedSlug: string,
+  record: Omit<PluginRecord, 'installed_at'>,
+): void {
   const state = load()
   state.plugins[qualifiedSlug] = { ...record, installed_at: new Date().toISOString() }
   save(state)

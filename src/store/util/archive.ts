@@ -18,13 +18,30 @@ function runCandidates(candidates: [string, string[]][]): void {
 export function extractArchive(archivePath: string, targetDir: string): void {
   const lower = archivePath.toLowerCase()
   if (lower.endsWith('.tar.gz') || lower.endsWith('.tgz')) {
-    return runCandidates([
+    runCandidates([
       ['tar', ['-xzf', archivePath, '-C', targetDir]],
-      ['python3', ['-c', 'import tarfile,sys;tarfile.open(sys.argv[1]).extractall(sys.argv[2])', archivePath, targetDir]],
+      [
+        'python3',
+        [
+          '-c',
+          'import tarfile,sys;tarfile.open(sys.argv[1]).extractall(sys.argv[2])',
+          archivePath,
+          targetDir,
+        ],
+      ],
     ])
+    return
   }
-  return runCandidates([
+  runCandidates([
     ['unzip', ['-o', archivePath, '-d', targetDir]],
-    ['python3', ['-c', 'import zipfile,sys;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])', archivePath, targetDir]],
+    [
+      'python3',
+      [
+        '-c',
+        'import zipfile,sys;zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])',
+        archivePath,
+        targetDir,
+      ],
+    ],
   ])
 }

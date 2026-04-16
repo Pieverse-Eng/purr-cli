@@ -11,45 +11,49 @@ export const UNIVERSAL_GLOBAL = join(configHome, 'agents/skills')
 
 // [name, localSkillsDir, globalSkillsDir, detectDir]
 const ADDITIONAL: [string, string, string, string][] = [
-  ['Augment',       '.augment/skills',     join(home, '.augment/skills'),              '.augment'],
-  ['IBM Bob',       '.bob/skills',         join(home, '.bob/skills'),                  '.bob'],
-  ['Claude Code',   '.claude/skills',      join(claudeHome, 'skills'),                 '.claude'],
-  ['OpenClaw',      'skills',              join(home, '.openclaw/skills'),              '.openclaw'],
-  ['CodeBuddy',     '.codebuddy/skills',   join(home, '.codebuddy/skills'),             '.codebuddy'],
-  ['Command Code',  '.commandcode/skills', join(home, '.commandcode/skills'),           '.commandcode'],
-  ['Continue',      '.continue/skills',    join(home, '.continue/skills'),              '.continue'],
-  ['Cortex',        '.cortex/skills',      join(home, '.snowflake/cortex/skills'),      '.cortex'],
-  ['Crush',         '.crush/skills',       join(home, '.config/crush/skills'),          '.crush'],
-  ['Droid',         '.factory/skills',     join(home, '.factory/skills'),               '.factory'],
-  ['Goose',         '.goose/skills',       join(configHome, 'goose/skills'),            '.goose'],
-  ['Junie',         '.junie/skills',       join(home, '.junie/skills'),                 '.junie'],
-  ['iFlow CLI',     '.iflow/skills',       join(home, '.iflow/skills'),                 '.iflow'],
-  ['Kilo',          '.kilocode/skills',    join(home, '.kilocode/skills'),              '.kilocode'],
-  ['Kiro CLI',      '.kiro/skills',        join(home, '.kiro/skills'),                  '.kiro'],
-  ['Kode',          '.kode/skills',        join(home, '.kode/skills'),                  '.kode'],
-  ['MCPJam',        '.mcpjam/skills',      join(home, '.mcpjam/skills'),               '.mcpjam'],
-  ['Mistral Vibe',  '.vibe/skills',        join(home, '.vibe/skills'),                  '.vibe'],
-  ['Mux',           '.mux/skills',         join(home, '.mux/skills'),                   '.mux'],
-  ['OpenHands',     '.openhands/skills',   join(home, '.openhands/skills'),             '.openhands'],
-  ['Pi',            '.pi/skills',          join(home, '.pi/agent/skills'),              '.pi'],
-  ['Qoder',         '.qoder/skills',       join(home, '.qoder/skills'),                 '.qoder'],
-  ['Qwen Code',     '.qwen/skills',        join(home, '.qwen/skills'),                  '.qwen'],
-  ['Replit',        '.agents/skills',      join(configHome, 'agents/skills'),           '.replit'],
-  ['Roo',           '.roo/skills',         join(home, '.roo/skills'),                   '.roo'],
-  ['Trae',          '.trae/skills',        join(home, '.trae/skills'),                  '.trae'],
-  ['Trae CN',       '.trae-cn/skills',     join(home, '.trae-cn/skills'),               '.trae-cn'],
-  ['Windsurf',      '.windsurf/skills',    join(home, '.codeium/windsurf/skills'),      '.windsurf'],
-  ['Zencoder',      '.zencoder/skills',    join(home, '.zencoder/skills'),              '.zencoder'],
-  ['Neovate',       '.neovate/skills',     join(home, '.neovate/skills'),               '.neovate'],
-  ['Pochi',         '.pochi/skills',       join(home, '.pochi/skills'),                 '.pochi'],
-  ['Adal',          '.adal/skills',        join(home, '.adal/skills'),                  '.adal'],
+  ['Augment', '.augment/skills', join(home, '.augment/skills'), '.augment'],
+  ['IBM Bob', '.bob/skills', join(home, '.bob/skills'), '.bob'],
+  ['Claude Code', '.claude/skills', join(claudeHome, 'skills'), '.claude'],
+  ['OpenClaw', 'skills', join(home, '.openclaw/skills'), '.openclaw'],
+  ['CodeBuddy', '.codebuddy/skills', join(home, '.codebuddy/skills'), '.codebuddy'],
+  ['Command Code', '.commandcode/skills', join(home, '.commandcode/skills'), '.commandcode'],
+  ['Continue', '.continue/skills', join(home, '.continue/skills'), '.continue'],
+  ['Cortex', '.cortex/skills', join(home, '.snowflake/cortex/skills'), '.cortex'],
+  ['Crush', '.crush/skills', join(home, '.config/crush/skills'), '.crush'],
+  ['Droid', '.factory/skills', join(home, '.factory/skills'), '.factory'],
+  ['Goose', '.goose/skills', join(configHome, 'goose/skills'), '.goose'],
+  ['Junie', '.junie/skills', join(home, '.junie/skills'), '.junie'],
+  ['iFlow CLI', '.iflow/skills', join(home, '.iflow/skills'), '.iflow'],
+  ['Kilo', '.kilocode/skills', join(home, '.kilocode/skills'), '.kilocode'],
+  ['Kiro CLI', '.kiro/skills', join(home, '.kiro/skills'), '.kiro'],
+  ['Kode', '.kode/skills', join(home, '.kode/skills'), '.kode'],
+  ['MCPJam', '.mcpjam/skills', join(home, '.mcpjam/skills'), '.mcpjam'],
+  ['Mistral Vibe', '.vibe/skills', join(home, '.vibe/skills'), '.vibe'],
+  ['Mux', '.mux/skills', join(home, '.mux/skills'), '.mux'],
+  ['OpenHands', '.openhands/skills', join(home, '.openhands/skills'), '.openhands'],
+  ['Pi', '.pi/skills', join(home, '.pi/agent/skills'), '.pi'],
+  ['Qoder', '.qoder/skills', join(home, '.qoder/skills'), '.qoder'],
+  ['Qwen Code', '.qwen/skills', join(home, '.qwen/skills'), '.qwen'],
+  ['Replit', '.agents/skills', join(configHome, 'agents/skills'), '.replit'],
+  ['Roo', '.roo/skills', join(home, '.roo/skills'), '.roo'],
+  ['Trae', '.trae/skills', join(home, '.trae/skills'), '.trae'],
+  ['Trae CN', '.trae-cn/skills', join(home, '.trae-cn/skills'), '.trae-cn'],
+  ['Windsurf', '.windsurf/skills', join(home, '.codeium/windsurf/skills'), '.windsurf'],
+  ['Zencoder', '.zencoder/skills', join(home, '.zencoder/skills'), '.zencoder'],
+  ['Neovate', '.neovate/skills', join(home, '.neovate/skills'), '.neovate'],
+  ['Pochi', '.pochi/skills', join(home, '.pochi/skills'), '.pochi'],
+  ['Adal', '.adal/skills', join(home, '.adal/skills'), '.adal'],
 ]
 
 export function installToAgents(
   slug: string,
   srcDir: string,
   isGlobal: boolean,
-): { installed: { agent: string; path: string }[]; skipped: string[]; errors: { agent: string; reason: string }[] } {
+): {
+  installed: { agent: string; path: string }[]
+  skipped: string[]
+  errors: { agent: string; reason: string }[]
+} {
   const cwd = process.cwd()
   const installed: { agent: string; path: string }[] = []
   const skipped: string[] = []

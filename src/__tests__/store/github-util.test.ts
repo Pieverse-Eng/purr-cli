@@ -24,8 +24,12 @@ describe('github util', () => {
 
   it('resolveCommitSha rejects unsafe refs', async () => {
     const { resolveCommitSha } = await import('../../store/util/github.js')
-    await expect(resolveCommitSha({ owner: 'x', repo: 'y', ref: 'main; rm -rf /' })).rejects.toThrow(/Unsafe ref/)
-    await expect(resolveCommitSha({ owner: 'x', repo: 'y', ref: '../../etc/passwd' })).rejects.toThrow(/Unsafe ref/)
+    await expect(
+      resolveCommitSha({ owner: 'x', repo: 'y', ref: 'main; rm -rf /' }),
+    ).rejects.toThrow(/Unsafe ref/)
+    await expect(
+      resolveCommitSha({ owner: 'x', repo: 'y', ref: '../../etc/passwd' }),
+    ).rejects.toThrow(/Unsafe ref/)
   })
 
   it('assertNoPathEscape passes for a clean tree', async () => {
@@ -46,7 +50,13 @@ describe('github util', () => {
     const dir = mkdtempSync(join(tmpdir(), 'purr-escape-'))
     const outside = mkdtempSync(join(tmpdir(), 'purr-outside-'))
     try {
-      execFileSync('ln', ['-s', outside, join(dir, 'escape')])
+      try {
+        execFileSync('ln', ['-s', outside, join(dir, 'escape')])
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.includes('EPERM') || message.includes('operation not permitted')) return
+        throw error
+      }
       expect(() => assertNoPathEscape(dir)).toThrow(/Path traversal/)
     } finally {
       rmSync(dir, { recursive: true, force: true })

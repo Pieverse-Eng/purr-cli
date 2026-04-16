@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeAll, afterAll } from 'vitest'
+import { describe, expect, it, beforeAll, afterAll } from 'vitest'
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,7 +23,10 @@ describe('resolve', () => {
     expect(parseQualifiedSlug('okx:foo')).toEqual({ source: 'okx', slug: 'foo' })
     expect(parseQualifiedSlug('pieverse:bar')).toEqual({ source: 'pieverse', slug: 'bar' })
     expect(parseQualifiedSlug('bare-slug')).toEqual({ source: null, slug: 'bare-slug' })
-    expect(parseQualifiedSlug('unknown-source:foo')).toEqual({ source: null, slug: 'unknown-source:foo' })
+    expect(parseQualifiedSlug('unknown-source:foo')).toEqual({
+      source: null,
+      slug: 'unknown-source:foo',
+    })
   })
 
   it('resolveSlug returns unique when qualified slug is explicit', async () => {
@@ -51,7 +54,14 @@ describe('resolve', () => {
     const origPieverseInfo = SOURCES.pieverse.info
     SOURCES.pieverse.info = async (slug: string) =>
       slug === 'fixture-skill-only'
-        ? { slug, source: 'pieverse', qualified_slug: `pieverse:${slug}`, version: '9.9.9', description: 'stub', components: ['skill'] }
+        ? {
+            slug,
+            source: 'pieverse',
+            qualified_slug: `pieverse:${slug}`,
+            version: '9.9.9',
+            description: 'stub',
+            components: ['skill'],
+          }
         : null
     try {
       const r = await resolveSlug('fixture-skill-only')

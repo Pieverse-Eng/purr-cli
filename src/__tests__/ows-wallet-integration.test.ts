@@ -149,6 +149,58 @@ describe('chain string passed to OWS (CAIP-2)', () => {
     expect(owsCalls.signTransaction[0].chain).toBe('eip155:8453')
   })
 
+  it('Kaia (chainId 8217) → eip155:8217', async () => {
+    await owsWalletSignTransaction(
+      JSON.stringify({
+        txs: [
+          {
+            chainId: 8217,
+            deriveTransaction: {
+              to: '0x0000000000000000000000000000000000000001',
+              calldata: '0x',
+              value: '0',
+              gasLimit: '21000',
+              maxFeePerGas: '1000000000',
+              maxPriorityFeePerGas: '100000000',
+              nonce: 0,
+              chainId: 8217,
+              supportEIP1559: true,
+            },
+          },
+        ],
+      }),
+      undefined,
+      { owsWallet: 'w' },
+    )
+    expect(owsCalls.signTransaction[0].chain).toBe('eip155:8217')
+  })
+
+  it('Kairos (chainId 1001) → eip155:1001', async () => {
+    await owsWalletSignTransaction(
+      JSON.stringify({
+        txs: [
+          {
+            chainId: 1001,
+            deriveTransaction: {
+              to: '0x0000000000000000000000000000000000000001',
+              calldata: '0x',
+              value: '0',
+              gasLimit: '21000',
+              maxFeePerGas: '1000000000',
+              maxPriorityFeePerGas: '100000000',
+              nonce: 0,
+              chainId: 1001,
+              supportEIP1559: true,
+            },
+          },
+        ],
+      }),
+      undefined,
+      { owsWallet: 'w' },
+    )
+    expect(owsCalls.signTransaction[0].chain).toBe('eip155:1001')
+  })
+
   it('EIP-712 uses domain.chainId (not fallback)', async () => {
     await owsWalletSignTransaction(
       JSON.stringify({

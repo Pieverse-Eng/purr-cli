@@ -76,6 +76,12 @@ const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
     LINK: '0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39',
     AAVE: '0xD6DF932A45C0f255f85145f286eA0b292B21C90B',
   },
+  // Kairos
+  1001: {
+    KAIA: NATIVE,
+    // Legacy Klaytn alias: accept on input, prefer KAIA in output.
+    KLAY: NATIVE,
+  },
   // Optimism
   10: {
     ETH: NATIVE,
@@ -97,6 +103,12 @@ const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
     USDC: '0xCfb1186F4e93D60E60a8bDd997427D1F33bc372B',
     'USDC.E': '0xe34c91815d7fc18A9e2148bcD4241d0a5848b693',
     BGB: '0x389C08Bc23A7317000a1FD76c7c5B0cb0b4640b5',
+  },
+  // Kaia
+  8217: {
+    KAIA: NATIVE,
+    // Legacy Klaytn alias: accept on input, prefer KAIA in output.
+    KLAY: NATIVE,
   },
 }
 
@@ -126,6 +138,8 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   polygon: 137,
   optimism: 10,
   morph: 2818,
+  kaia: 8217,
+  kairos: 1001,
   solana: SOLANA_CHAIN_ID,
   sol: SOLANA_CHAIN_ID,
 }

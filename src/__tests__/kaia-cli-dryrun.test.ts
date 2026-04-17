@@ -38,7 +38,11 @@ function readBody(req: Parameters<typeof createServer>[0]): Promise<JsonObject> 
   })
 }
 
-function writeJson(res: Parameters<typeof createServer>[1], statusCode: number, body: unknown): void {
+function writeJson(
+  res: Parameters<typeof createServer>[1],
+  statusCode: number,
+  body: unknown,
+): void {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(body))
 }
@@ -196,7 +200,10 @@ describe('Kaia CLI dry-run', () => {
         return
       }
 
-      if (req.method === 'POST' && url.pathname === `/v1/instances/${INSTANCE_ID}/wallet/sign-typed-data`) {
+      if (
+        req.method === 'POST' &&
+        url.pathname === `/v1/instances/${INSTANCE_ID}/wallet/sign-typed-data`
+      ) {
         const body = await readBody(req)
         assert.equal((body.domain as JsonObject)?.chainId, 8217)
         assert.equal(body.primaryType, 'Mail')
@@ -210,7 +217,10 @@ describe('Kaia CLI dry-run', () => {
         return
       }
 
-      if (req.method === 'POST' && url.pathname === `/v1/instances/${INSTANCE_ID}/wallet/sign-transaction`) {
+      if (
+        req.method === 'POST' &&
+        url.pathname === `/v1/instances/${INSTANCE_ID}/wallet/sign-transaction`
+      ) {
         const body = await readBody(req)
         assert.equal(body.chainId, 8217)
         const txs = body.txs as Array<JsonObject>
@@ -226,7 +236,10 @@ describe('Kaia CLI dry-run', () => {
         return
       }
 
-      if (req.method === 'POST' && url.pathname === `/v1/instances/${INSTANCE_ID}/wallet/transfer`) {
+      if (
+        req.method === 'POST' &&
+        url.pathname === `/v1/instances/${INSTANCE_ID}/wallet/transfer`
+      ) {
         const body = await readBody(req)
         assert.equal(body.chainType, 'ethereum')
         assert.equal(body.chainId, 8217)
@@ -335,14 +348,10 @@ describe('Kaia CLI dry-run', () => {
       }),
     )
 
-    const ethAddress = await runJson<{ address: string; chainId: number; chainType: string }>(port, [
-      'wallet',
-      'address',
-      '--chain-type',
-      'ethereum',
-      '--chain-id',
-      '8217',
-    ])
+    const ethAddress = await runJson<{ address: string; chainId: number; chainType: string }>(
+      port,
+      ['wallet', 'address', '--chain-type', 'ethereum', '--chain-id', '8217'],
+    )
     expect(ethAddress).toMatchObject({
       address: EVM_ADDRESS,
       chainId: 8217,
@@ -378,16 +387,19 @@ describe('Kaia CLI dry-run', () => {
     ])
     expect(tokenBalance).toMatchObject({ tokenAddress: TOKEN_ADDRESS, symbol: 'MOCK' })
 
-    const signResult = await runJson<{ address: string; chainType: string; message: string }>(port, [
-      'wallet',
-      'sign',
-      '--address',
-      EVM_ADDRESS,
-      '--message',
-      'Kaia dryrun sign test',
-      '--chain-type',
-      'ethereum',
-    ])
+    const signResult = await runJson<{ address: string; chainType: string; message: string }>(
+      port,
+      [
+        'wallet',
+        'sign',
+        '--address',
+        EVM_ADDRESS,
+        '--message',
+        'Kaia dryrun sign test',
+        '--chain-type',
+        'ethereum',
+      ],
+    )
     expect(signResult).toMatchObject({
       address: EVM_ADDRESS,
       chainType: 'ethereum',
@@ -547,13 +559,10 @@ describe('Kaia CLI dry-run', () => {
       }),
     )
 
-    const executeResult = await runJson<{ chainId: number; results: Array<{ status: string }> }>(port, [
-      'execute',
-      '--steps-file',
-      stepsFile,
-      '--dedup-key',
-      'kaia-dryrun-001',
-    ])
+    const executeResult = await runJson<{ chainId: number; results: Array<{ status: string }> }>(
+      port,
+      ['execute', '--steps-file', stepsFile, '--dedup-key', 'kaia-dryrun-001'],
+    )
     expect(executeResult.chainId).toBe(8217)
     expect(executeResult.results).toHaveLength(5)
     expect(executeResult.results.every((r) => r.status === 'success')).toBe(true)

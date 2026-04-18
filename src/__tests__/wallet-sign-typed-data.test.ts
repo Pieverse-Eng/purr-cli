@@ -3,6 +3,7 @@ import { walletSignTypedData } from '../wallet/sign-typed-data.js'
 
 const WALLET = '0x1234567890123456789012345678901234567890'
 const OTHER = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const originalFetch = globalThis.fetch
 
 describe('walletSignTypedData', () => {
   beforeEach(() => {
@@ -16,12 +17,16 @@ describe('walletSignTypedData', () => {
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
     vi.restoreAllMocks()
+    Object.defineProperty(globalThis, 'fetch', {
+      value: originalFetch,
+      configurable: true,
+      writable: true,
+    })
   })
 
   it('rejects when the platform returns a different signing address', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async () => ({
         ok: true,
         status: 200,
         json: async () =>
@@ -34,7 +39,9 @@ describe('walletSignTypedData', () => {
           }) as const,
         text: async () => 'ok',
       })),
-    )
+      configurable: true,
+      writable: true,
+    })
 
     await expect(
       walletSignTypedData({

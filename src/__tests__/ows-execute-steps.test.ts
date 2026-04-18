@@ -52,6 +52,8 @@ describe('resolveRpcUrl', () => {
 
   it('falls back to hardcoded default for known chains', () => {
     expect(resolveRpcUrl(56)).toMatch(/bsc-rpc/)
+    expect(resolveRpcUrl(8217)).toMatch(/kaia/)
+    expect(resolveRpcUrl(1001)).toMatch(/kairos/)
     expect(resolveRpcUrl(8453)).toMatch(/base-rpc/)
     expect(resolveRpcUrl(1)).toMatch(/ethereum-rpc/)
   })
@@ -245,15 +247,17 @@ describe('validateStep', () => {
 // ---------------------------------------------------------------------------
 
 describe('SUPPORTED_CHAIN_IDS', () => {
-  it('includes all 9 server-supported chains', () => {
+  it('includes all 11 server-supported chains', () => {
     // From api-server services/evm.ts CHAIN_CONFIG
-    const expected = [1, 10, 56, 97, 137, 2818, 8453, 42161, 46630]
+    const expected = [1, 10, 56, 97, 137, 1001, 2818, 8217, 8453, 42161, 46630]
     expect(SUPPORTED_CHAIN_IDS).toEqual(expected)
   })
 
-  it('contains BSC testnet 97, Morph 2818, Robinhood 46630 (Codex flagged missing)', () => {
+  it('contains Kaia mainnet/testnet alongside existing extended chains', () => {
     expect(SUPPORTED_CHAIN_IDS).toContain(97)
+    expect(SUPPORTED_CHAIN_IDS).toContain(1001)
     expect(SUPPORTED_CHAIN_IDS).toContain(2818)
+    expect(SUPPORTED_CHAIN_IDS).toContain(8217)
     expect(SUPPORTED_CHAIN_IDS).toContain(46630)
   })
 })

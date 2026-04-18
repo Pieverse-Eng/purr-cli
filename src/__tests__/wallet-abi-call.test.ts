@@ -5,6 +5,7 @@ import { mockFetch } from './helpers.js'
 
 const IDENTITY_REGISTRY = '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'
 const REPUTATION_REGISTRY = '0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'
+const originalFetch = globalThis.fetch
 
 const OK_RESPONSE = {
   ok: true,
@@ -29,6 +30,11 @@ describe('walletAbiCall', () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
+    Object.defineProperty(globalThis, 'fetch', {
+      value: originalFetch,
+      configurable: true,
+      writable: true,
+    })
   })
 
   // ── Argument validation ──
@@ -94,7 +100,11 @@ describe('walletAbiCall', () => {
 
   it('sends {to, abi, functionName, args, chainId} to /wallet/execute', async () => {
     const mock = mockFetch(OK_RESPONSE)
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     await walletAbiCall({
       to: IDENTITY_REGISTRY,
@@ -118,7 +128,11 @@ describe('walletAbiCall', () => {
 
   it('extracts functionName even when signature already starts with "function "', async () => {
     const mock = mockFetch(OK_RESPONSE)
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     await walletAbiCall({
       to: IDENTITY_REGISTRY,
@@ -134,7 +148,11 @@ describe('walletAbiCall', () => {
 
   it('forwards optional --value as hex', async () => {
     const mock = mockFetch(OK_RESPONSE)
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     await walletAbiCall({
       to: IDENTITY_REGISTRY,
@@ -150,7 +168,11 @@ describe('walletAbiCall', () => {
 
   it('forwards optional --gas-limit', async () => {
     const mock = mockFetch(OK_RESPONSE)
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     await walletAbiCall({
       to: IDENTITY_REGISTRY,
@@ -297,7 +319,11 @@ describe('walletAbiCall', () => {
 
   it('CLI body is consumable by server-side viem pipeline (register with metadata)', async () => {
     const mock = mockFetch(OK_RESPONSE)
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     const nameHex = `0x${Buffer.from('MorphBot', 'utf-8').toString('hex')}`
     const argsJson = JSON.stringify(['https://example.com/agent.json', [['name', nameHex]]])
@@ -327,7 +353,11 @@ describe('walletAbiCall', () => {
 
   it('CLI body is consumable by server-side viem pipeline (agent-feedback)', async () => {
     const mock = mockFetch(OK_RESPONSE)
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     await walletAbiCall({
       to: REPUTATION_REGISTRY,
@@ -359,7 +389,11 @@ describe('walletAbiCall', () => {
 
   it('throws on API error response', async () => {
     const mock = mockFetch({ ok: false, error: 'Insufficient gas' })
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     await expect(
       walletAbiCall({
@@ -373,7 +407,11 @@ describe('walletAbiCall', () => {
 
   it('sends Authorization header', async () => {
     const mock = mockFetch(OK_RESPONSE)
-    vi.stubGlobal('fetch', mock)
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
 
     await walletAbiCall({
       to: IDENTITY_REGISTRY,

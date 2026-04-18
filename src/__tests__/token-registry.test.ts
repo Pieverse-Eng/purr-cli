@@ -61,6 +61,14 @@ describe('resolveToken', () => {
     expect(resolveToken('POL', 137)).toBe(NATIVE_EVM)
   })
 
+  it('resolves KAIA to native on Kaia mainnet', () => {
+    expect(resolveToken('KAIA', 8217)).toBe(NATIVE_EVM)
+  })
+
+  it('resolves KLAY legacy alias to native on Kairos', () => {
+    expect(resolveToken('KLAY', 1001)).toBe(NATIVE_EVM)
+  })
+
   // --- BNB Chain tokens ---
   it('resolves WBNB on BSC', () => {
     expect(resolveToken('WBNB', 56)).toBe('0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c')
@@ -159,6 +167,8 @@ describe('inferChainId', () => {
     expect(inferChainId({ chain: 'matic' })).toBe(137)
     expect(inferChainId({ chain: 'polygon' })).toBe(137)
     expect(inferChainId({ chain: 'optimism' })).toBe(10)
+    expect(inferChainId({ chain: 'kaia' })).toBe(8217)
+    expect(inferChainId({ chain: 'kairos' })).toBe(1001)
   })
 
   it('is case-insensitive for chain names', () => {

@@ -1,0 +1,19 @@
+{
+  "name": "@pieverseio/purr-core",
+  "version": "0.2.2",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./api-client": "./src/api-client.ts",
+    "./executor": "./src/executor.ts",
+    "./file-input": "./src/file-input.ts",
+    "./json-input": "./src/json-input.ts",
+    "./shared": "./src/shared.ts",
+    "./token-registry": "./src/token-registry.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": {
+    "viem": "^2.46.0"
+  }
+}

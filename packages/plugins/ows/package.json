@@ -1,0 +1,19 @@
+{
+  "name": "@pieverseio/purr-plugin-ows",
+  "version": "0.2.2",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./build-transfer": "./src/build-transfer.ts",
+    "./execute-steps": "./src/execute-steps.ts",
+    "./sign-transaction": "./src/sign-transaction.ts"
+  },
+  "dependencies": {
+    "@open-wallet-standard/core": "1.2.4",
+    "@pieverseio/purr-core": "workspace:*",
+    "@solana/web3.js": "^1.95.0",
+    "bs58": "^6.0.0",
+    "viem": "^2.46.0"
+  }
+}

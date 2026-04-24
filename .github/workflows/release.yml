@@ -22,15 +22,28 @@ jobs:
           - os: ubuntu-latest
             target: bun-linux-x64
             artifact: purr-linux-x64
+            entrypoint: packages/cli/src/linux-macos.ts
+            external: ''
           - os: ubuntu-latest
             target: bun-linux-arm64
             artifact: purr-linux-arm64
+            entrypoint: packages/cli/src/linux-macos.ts
+            external: ''
           - os: macos-latest
             target: bun-darwin-x64
             artifact: purr-darwin-x64
+            entrypoint: packages/cli/src/linux-macos.ts
+            external: ''
           - os: macos-latest
             target: bun-darwin-arm64
             artifact: purr-darwin-arm64
+            entrypoint: packages/cli/src/linux-macos.ts
+            external: ''
+          - os: ubuntu-latest
+            target: bun-windows-x64-baseline
+            artifact: purr-windows-x64.exe
+            entrypoint: packages/cli/src/windows.ts
+            external: '--external @pieverseio/purr-plugin-ows'
 
     runs-on: ${{ matrix.os }}
 
@@ -52,7 +65,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="dev-$(git rev-parse --short HEAD)"
           fi
-          bun build src/main.ts --compile --target=${{ matrix.target }} --outfile ${{ matrix.artifact }} --define "PURR_VERSION='${VERSION}'"
+          bun build ${{ matrix.entrypoint }} --compile --target=${{ matrix.target }} --outfile ${{ matrix.artifact }} --define "PURR_VERSION='${VERSION}'" ${{ matrix.external }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -79,3 +92,4 @@ jobs:
             artifacts/purr-darwin-arm64
             artifacts/purr-linux-x64
             artifacts/purr-linux-arm64
+            artifacts/purr-windows-x64.exe

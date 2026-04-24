@@ -1,0 +1,16 @@
+{
+  "name": "@pieverseio/purr-plugin-evm",
+  "version": "0.2.2",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./abi-call": "./src/abi-call.ts",
+    "./approve": "./src/approve.ts",
+    "./raw": "./src/raw.ts",
+    "./transfer": "./src/transfer.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*",
+    "viem": "^2.46.0"
+  }
+}

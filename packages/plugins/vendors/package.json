@@ -1,0 +1,21 @@
+{
+  "name": "@pieverseio/purr-plugin-vendors",
+  "version": "0.2.2",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./aster": "./src/aster.ts",
+    "./binance-connect": "./src/binance-connect.ts",
+    "./fourmeme": "./src/fourmeme.ts",
+    "./fourmeme-api": "./src/fourmeme-api.ts",
+    "./lista": "./src/lista.ts",
+    "./opensea": "./src/opensea.ts",
+    "./opensea-api": "./src/opensea-api.ts",
+    "./opensea-input": "./src/opensea-input.ts",
+    "./pancake": "./src/pancake.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*",
+    "viem": "^2.46.0"
+  }
+}

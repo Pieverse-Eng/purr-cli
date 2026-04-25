@@ -1,27 +1,28 @@
 {
-	"name": "@pieverseio/purr-cli",
-	"version": "0.2.2",
-	"description": "Calldata builder CLI for on-chain step construction",
-	"type": "module",
-	"bin": {
-		"purr": "./dist/purr.js"
-	},
-	"scripts": {
-		"build": "tsc",
-		"bundle": "esbuild src/main.ts --bundle --platform=node --target=node18 --format=cjs --outfile=dist/purr.bundle.cjs",
-		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
-	},
-	"dependencies": {
-		"@open-wallet-standard/core": "1.2.4",
-		"@solana/web3.js": "^1.95.0",
-		"bs58": "^6.0.0",
-		"viem": "^2.46.0"
-	},
-	"devDependencies": {
-		"@types/node": "^22.0.0",
-		"esbuild": "^0.24.0",
-		"typescript": "^5.7.3",
-		"vitest": "^3.0.0"
-	}
+  "name": "@pieverseio/purr-cli",
+  "version": "0.2.2",
+  "description": "Calldata builder CLI for on-chain step construction",
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/cli",
+    "packages/plugins/*"
+  ],
+  "scripts": {
+    "build": "bun run typecheck && bun run build:linux-macos && bun run build:windows",
+    "build:linux-macos": "bun scripts/build-binary.js linux-macos",
+    "build:windows": "bun scripts/build-binary.js windows",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@open-wallet-standard/core": "1.2.4",
+    "@solana/web3.js": "^1.95.0",
+    "@types/node": "^22.0.0",
+    "bs58": "^6.0.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.3",
+    "viem": "^2.46.0",
+    "vitest": "^3.0.0"
+  }
 }

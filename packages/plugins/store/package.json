@@ -1,0 +1,18 @@
+{
+  "name": "@pieverseio/purr-plugin-store",
+  "version": "0.2.2",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./resolve": "./src/resolve.ts",
+    "./skill-dirs": "./src/skill-dirs.ts",
+    "./state": "./src/state.ts",
+    "./types": "./src/types.ts",
+    "./sources/okx": "./src/sources/okx.ts",
+    "./sources/pieverse": "./src/sources/pieverse.ts",
+    "./util/archive": "./src/util/archive.ts",
+    "./util/cache": "./src/util/cache.ts",
+    "./util/fs": "./src/util/fs.ts",
+    "./util/github": "./src/util/github.ts"
+  }
+}

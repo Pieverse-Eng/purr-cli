@@ -19,7 +19,7 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Lint & format
-        run: bunx @biomejs/biome check src/
+        run: bunx @biomejs/biome check packages/ tests/ scripts/
 
       - name: Typecheck
         run: bun run typecheck

@@ -1,0 +1,20 @@
+{
+  "name": "@pieverseio/purr-cli-internal",
+  "version": "0.2.2",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./linux-macos": "./src/linux-macos.ts",
+    "./windows": "./src/windows.ts",
+    "./run": "./src/run.ts",
+    "./types": "./src/types.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*",
+    "@pieverseio/purr-plugin-evm": "workspace:*",
+    "@pieverseio/purr-plugin-ows": "workspace:*",
+    "@pieverseio/purr-plugin-store": "workspace:*",
+    "@pieverseio/purr-plugin-vendors": "workspace:*",
+    "@pieverseio/purr-plugin-wallet": "workspace:*"
+  }
+}

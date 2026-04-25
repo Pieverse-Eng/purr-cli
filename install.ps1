@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 # Usage:
 #   irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 # Pin a version:
-#   $env:PURR_VERSION="v0.2.2"; irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
+#   $env:PURR_VERSION="v0.2.3"; irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 
 $Repo = "Pieverse-Eng/purr-cli"
 $InstallDir = Join-Path $HOME ".purrfectclaw\bin"

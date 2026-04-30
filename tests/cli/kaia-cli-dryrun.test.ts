@@ -59,10 +59,21 @@ async function listen(server: ReturnType<typeof createServer>): Promise<number> 
 
 async function runPurr(port: number, args: string[]): Promise<string> {
   return await new Promise((resolve, reject) => {
+    const {
+      HTTP_PROXY,
+      http_proxy,
+      HTTPS_PROXY,
+      https_proxy,
+      ALL_PROXY,
+      all_proxy,
+      ...cleanEnv
+    } = process.env
     const child = spawn('bun', ['packages/cli/src/linux-macos.ts', ...args], {
       cwd: join(process.cwd()),
       env: {
-        ...process.env,
+        ...cleanEnv,
+        NO_PROXY: '*',
+        no_proxy: '*',
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: API_TOKEN,
         INSTANCE_ID,

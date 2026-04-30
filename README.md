@@ -50,6 +50,7 @@ purr <group> <command> [options]
 | `ows-wallet` | OWS local custody operations; not available in the Windows build |
 | `ows-execute` | OWS local step execution; not available in the Windows build |
 | `evm` | EVM primitives (approve, transfer, raw) |
+| `instance` | Instance billing status and trusted-wallet renewal |
 | `store` | Browse and install agent skills from Pieverse + OKX stores |
 
 ### Examples
@@ -58,6 +59,8 @@ purr <group> <command> [options]
 purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
 purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
 purr evm approve --token 0x... --spender 0x... --amount 1000 --chain-id 56
+purr instance status
+purr instance renew --chain-id 56 --token-address 0x55d3...7955
 purr store list --search <keyword> --limit 10
 purr store info <slug>
 purr store install <slug>

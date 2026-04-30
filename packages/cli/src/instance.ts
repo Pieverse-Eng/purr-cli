@@ -1,6 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { createInterface } from 'node:readline/promises'
-import { apiGet, apiPost, resolveCredentials, ApiClientError } from '@pieverseio/purr-core/api-client'
+import {
+  apiGet,
+  apiPost,
+  resolveCredentials,
+  ApiClientError,
+} from '@pieverseio/purr-core/api-client'
 
 type JsonRecord = Record<string, unknown>
 
@@ -123,7 +128,7 @@ function unwrapPlatformResponse<T>(response: unknown): T {
       const message = extractErrorMessageFromBody(response) ?? 'Platform request failed'
       throw new PlatformResponseError(message, response)
     }
-    return (Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response) as T
+    return (Object.hasOwn(response, 'data') ? response.data : response) as T
   }
   return response as T
 }

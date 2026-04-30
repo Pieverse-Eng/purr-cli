@@ -959,9 +959,7 @@ Examples:
           sourceFilter === 'all' ? (Object.keys(SOURCES) as SourceId[]) : [sourceFilter as SourceId]
 
         const settled = await Promise.allSettled(
-          activeSources.map((id) =>
-            SOURCES[id].list({ search, category, limit, offset }),
-          ),
+          activeSources.map((id) => SOURCES[id].list({ search, category, limit, offset })),
         )
 
         const warnings: string[] = []

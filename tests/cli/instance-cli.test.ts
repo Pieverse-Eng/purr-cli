@@ -8,7 +8,12 @@ const API_TOKEN = 'test-token'
 const TOKEN_ADDRESS = '0x55d398326f99059fF775485246999027B3197955'
 const WALLET_ADDRESS = '0x82320000000000000000000000000000000066b2'
 
-type JsonObject = Record<string, unknown>
+type JsonPrimitive = string | number | boolean | null
+type JsonValue = JsonPrimitive | JsonValue[] | JsonObject
+
+interface JsonObject {
+  [key: string]: JsonValue
+}
 
 interface CommandResult {
   code: number | null
@@ -50,7 +55,11 @@ function readBody(req: IncomingMessage): Promise<JsonObject> {
   })
 }
 
-function writeJson(res: ServerResponse<IncomingMessage>, statusCode: number, body: unknown): void {
+function writeJson(
+  res: ServerResponse<IncomingMessage>,
+  statusCode: number,
+  body: JsonValue,
+): void {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(body))
 }
@@ -80,15 +89,8 @@ async function closeServer(server: ReturnType<typeof createServer>): Promise<voi
 
 async function runPurr(port: number, args: string[], input = ''): Promise<CommandResult> {
   return await new Promise((resolve, reject) => {
-    const {
-      HTTP_PROXY,
-      http_proxy,
-      HTTPS_PROXY,
-      https_proxy,
-      ALL_PROXY,
-      all_proxy,
-      ...cleanEnv
-    } = process.env
+    const { HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy, ALL_PROXY, all_proxy, ...cleanEnv } =
+      process.env
     const child = spawn('bun', ['packages/cli/src/linux-macos.ts', ...args], {
       cwd: process.cwd(),
       env: {
@@ -125,9 +127,10 @@ async function withServer(
       assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
       await handler(req, res)
     } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
       writeJson(res, 500, {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: 'Mock server error',
       })
     }
   })

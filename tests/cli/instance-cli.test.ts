@@ -126,8 +126,7 @@ async function withServer(
     try {
       assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
       await handler(req, res)
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error))
+    } catch {
       writeJson(res, 500, {
         ok: false,
         error: 'Mock server error',

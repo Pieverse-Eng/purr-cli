@@ -58,7 +58,12 @@ import {
   recordInstall,
   recordRemove,
 } from '@pieverseio/purr-plugin-store/state'
-import { resolveSlug, parseQualifiedSlug, SOURCES } from '@pieverseio/purr-plugin-store/resolve'
+import {
+  resolveSlug,
+  parseQualifiedSlug,
+  SOURCES,
+  type SourceId,
+} from '@pieverseio/purr-plugin-store/resolve'
 import { removeFromAgents } from '@pieverseio/purr-plugin-store/skill-dirs'
 import { walletAbiCall } from '@pieverseio/purr-plugin-wallet/abi-call'
 import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
@@ -67,6 +72,7 @@ import { walletSign } from '@pieverseio/purr-plugin-wallet/sign'
 import { walletSignTransaction } from '@pieverseio/purr-plugin-wallet/sign-transaction'
 import { walletSignTypedData } from '@pieverseio/purr-plugin-wallet/sign-typed-data'
 import { walletTransfer } from '@pieverseio/purr-plugin-wallet/transfer'
+import { handleInstanceCommand } from './instance.js'
 import type { PluginId, PluginRuntimeMap, PurrCliOptions } from './types.js'
 
 const pluginLoaders: { [K in PluginId]: () => Promise<PluginRuntimeMap[K]> } = {
@@ -112,7 +118,9 @@ function parseArgs(argv: string[]): Record<string, string> {
   const result: Record<string, string> = {}
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (arg.startsWith('--')) {
+    if (arg === '-h') {
+      result.h = 'true'
+    } else if (arg.startsWith('--')) {
       const raw = arg.slice(2)
       const eqIdx = raw.indexOf('=')
       if (eqIdx > 0) {
@@ -296,6 +304,7 @@ Groups:
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call)
+  instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -338,6 +347,8 @@ Examples:
   purr wallet address --chain-type ethereum
   purr wallet balance --chain-type ethereum --chain-id 56
   purr wallet balance --token 0x55d3...7955 --chain-id 56
+  purr instance status
+  purr instance renew --chain-id 56 --token-address 0x55d3...7955 --yes
   purr wallet sign --address 0x... --message "Hello"
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'
   purr wallet transfer --to 0x... --amount 0.01 --chain-id 56
@@ -365,6 +376,11 @@ Examples:
   let output: StepOutput
 
   switch (group) {
+    case 'instance': {
+      await handleInstanceCommand(command, args)
+      return
+    }
+
     case 'ows-wallet': {
       const ows = await requirePlugin(options, 'ows')
       if (command === 'sign-transaction') {
@@ -894,7 +910,7 @@ Examples:
           process.exit(1)
         }
         try {
-          const result = await SOURCES[source as 'pieverse' | 'okx'].install(slug, {
+          const result = await SOURCES[source as SourceId].install(slug, {
             isGlobal,
             meta,
           })
@@ -934,17 +950,16 @@ Examples:
         const limit = args.limit ? Number.parseInt(args.limit, 10) : 20
         const offset = args.offset ? Number.parseInt(args.offset, 10) : 0
         const sourceFilter = args.source || 'all'
-        const VALID_SOURCES = ['all', 'pieverse', 'okx']
+        const VALID_SOURCES = ['all', ...Object.keys(SOURCES)]
         if (!VALID_SOURCES.includes(sourceFilter)) {
           console.error(`Invalid --source: "${sourceFilter}". Use: ${VALID_SOURCES.join(', ')}`)
           process.exit(1)
         }
-        const activeSources = sourceFilter === 'all' ? Object.keys(SOURCES) : [sourceFilter]
+        const activeSources =
+          sourceFilter === 'all' ? (Object.keys(SOURCES) as SourceId[]) : [sourceFilter as SourceId]
 
         const settled = await Promise.allSettled(
-          activeSources.map((id) =>
-            SOURCES[id as 'pieverse' | 'okx'].list({ search, category, limit, offset }),
-          ),
+          activeSources.map((id) => SOURCES[id].list({ search, category, limit, offset })),
         )
 
         const warnings: string[] = []
@@ -1123,7 +1138,7 @@ Examples:
         }
 
         const entry = entries[0]
-        const result = await SOURCES[entry.source as 'pieverse' | 'okx'].remove(bare, entry, {
+        const result = await SOURCES[entry.source as SourceId].remove(bare, entry, {
           isGlobal,
         })
         recordRemove(entry.qualified as string)
@@ -1142,7 +1157,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, evm, wallet, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, evm, wallet, instance, execute, config, version, store`,
       )
   }
 
@@ -1181,11 +1196,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
   // Preserve err.code from OWS SDK (POLICY_DENIED, API_KEY_EXPIRED,
   // INVALID_PASSPHRASE, etc.) so automation can react programmatically.
   const code = (err as { code?: unknown })?.code
+  const exitCode = (err as { exitCode?: unknown })?.exitCode
   const message = err instanceof Error ? err.message : String(err)
   if (typeof code === 'string' && code.length > 0) {
     console.error(`error [${code}]: ${message}`)
   } else {
     console.error(message)
   }
-  process.exit(1)
+  process.exit(typeof exitCode === 'number' ? exitCode : 1)
 }

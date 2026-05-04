@@ -63,6 +63,49 @@ export interface Credentials {
   instanceId: string
 }
 
+export interface ApiRequestOptions {
+  headers?: Record<string, string>
+}
+
+export class ApiClientError extends Error {
+  readonly status: number
+  readonly method: string
+  readonly path: string
+  readonly bodyText: string
+  readonly body: unknown
+
+  constructor({
+    status,
+    method,
+    path,
+    bodyText,
+    body,
+  }: {
+    status: number
+    method: string
+    path: string
+    bodyText: string
+    body: unknown
+  }) {
+    super(`API error ${status} ${method} ${path}: ${bodyText}`)
+    this.name = 'ApiClientError'
+    this.status = status
+    this.method = method
+    this.path = path
+    this.bodyText = bodyText
+    this.body = body
+  }
+}
+
+function parseErrorBody(bodyText: string): unknown {
+  if (bodyText.trim().length === 0) return undefined
+  try {
+    return JSON.parse(bodyText)
+  } catch {
+    return undefined
+  }
+}
+
 export function resolveCredentials(): Credentials {
   const config = readConfigFile()
 
@@ -102,13 +145,23 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text()
-    throw new Error(`API error ${res.status} GET ${path}: ${body}`)
+    throw new ApiClientError({
+      status: res.status,
+      method: 'GET',
+      path,
+      bodyText: body,
+      body: parseErrorBody(body),
+    })
   }
 
   return (await res.json()) as T
 }
 
-export async function apiPost<T = unknown>(path: string, body: unknown): Promise<T> {
+export async function apiPost<T = unknown>(
+  path: string,
+  body: unknown,
+  options: ApiRequestOptions = {},
+): Promise<T> {
   const { apiUrl, apiToken } = resolveCredentials()
   const url = `${apiUrl.replace(/\/$/, '')}${path}`
 
@@ -117,13 +170,20 @@ export async function apiPost<T = unknown>(path: string, body: unknown): Promise
     headers: {
       Authorization: `Bearer ${apiToken}`,
       'Content-Type': 'application/json',
+      ...options.headers,
     },
     body: JSON.stringify(body),
   })
 
   if (!res.ok) {
     const respBody = await res.text()
-    throw new Error(`API error ${res.status} POST ${path}: ${respBody}`)
+    throw new ApiClientError({
+      status: res.status,
+      method: 'POST',
+      path,
+      bodyText: respBody,
+      body: parseErrorBody(respBody),
+    })
   }
 
   return (await res.json()) as T

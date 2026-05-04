@@ -16,7 +16,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 ```
 
-Pin a version by setting `PURR_VERSION`, for example `v0.2.3`.
+Pin a version by setting `PURR_VERSION`, for example `v0.2.4`.
 
 ## Development Install
 

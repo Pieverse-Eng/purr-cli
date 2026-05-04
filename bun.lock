@@ -17,7 +17,7 @@
     },
     "packages/cli": {
       "name": "@pieverseio/purr-cli-internal",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
@@ -29,14 +29,14 @@
     },
     "packages/core": {
       "name": "@pieverseio/purr-core",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "viem": "^2.46.0",
       },
     },
     "packages/plugins/evm": {
       "name": "@pieverseio/purr-plugin-evm",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -44,7 +44,7 @@
     },
     "packages/plugins/ows": {
       "name": "@pieverseio/purr-plugin-ows",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "@open-wallet-standard/core": "1.2.4",
         "@pieverseio/purr-core": "workspace:*",
@@ -55,11 +55,11 @@
     },
     "packages/plugins/store": {
       "name": "@pieverseio/purr-plugin-store",
-      "version": "0.2.3",
+      "version": "0.2.4",
     },
     "packages/plugins/vendors": {
       "name": "@pieverseio/purr-plugin-vendors",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -67,7 +67,7 @@
     },
     "packages/plugins/wallet": {
       "name": "@pieverseio/purr-plugin-wallet",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },

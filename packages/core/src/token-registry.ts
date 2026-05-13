@@ -110,6 +110,14 @@ const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
     // Legacy Klaytn alias: accept on input, prefer KAIA in output.
     KLAY: NATIVE,
   },
+  // X Layer (OKX zkEVM L2)
+  196: {
+    OKB: NATIVE,
+    USDC: '0x74b7F16337b8972027F6196A17a631aC6dE26d22',
+    USDT: '0x1E4a5963aBFD975d8c9021ce480b42188849D41d',
+    XETH: '0xe7B000003a45145dECF8a28FC755aD5EC5Ea025A',
+    XBTC: '0xb7c00000bcDEEf966B20B3D884b98e64d2b06b4f',
+  },
 }
 
 // Solana uses base58 mint addresses, not 0x. Separate type.
@@ -140,6 +148,9 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   morph: 2818,
   kaia: 8217,
   kairos: 1001,
+  xlayer: 196,
+  'x-layer': 196,
+  okx: 196,
   solana: SOLANA_CHAIN_ID,
   sol: SOLANA_CHAIN_ID,
 }

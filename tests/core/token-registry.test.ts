@@ -69,6 +69,18 @@ describe('resolveToken', () => {
     expect(resolveToken('KLAY', 1001)).toBe(NATIVE_EVM)
   })
 
+  it('resolves OKB to native on X Layer', () => {
+    expect(resolveToken('OKB', 196)).toBe(NATIVE_EVM)
+  })
+
+  it('resolves USDC on X Layer (6 decimals, OKX-bridged)', () => {
+    expect(resolveToken('USDC', 196)).toBe('0x74b7F16337b8972027F6196A17a631aC6dE26d22')
+  })
+
+  it('resolves USDT on X Layer', () => {
+    expect(resolveToken('USDT', 196)).toBe('0x1E4a5963aBFD975d8c9021ce480b42188849D41d')
+  })
+
   // --- BNB Chain tokens ---
   it('resolves WBNB on BSC', () => {
     expect(resolveToken('WBNB', 56)).toBe('0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c')
@@ -169,6 +181,9 @@ describe('inferChainId', () => {
     expect(inferChainId({ chain: 'optimism' })).toBe(10)
     expect(inferChainId({ chain: 'kaia' })).toBe(8217)
     expect(inferChainId({ chain: 'kairos' })).toBe(1001)
+    expect(inferChainId({ chain: 'xlayer' })).toBe(196)
+    expect(inferChainId({ chain: 'x-layer' })).toBe(196)
+    expect(inferChainId({ chain: 'okx' })).toBe(196)
   })
 
   it('is case-insensitive for chain names', () => {

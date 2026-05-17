@@ -11,6 +11,7 @@ import { buildAbiCallStep } from '@pieverseio/purr-plugin-evm/abi-call'
 import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
+import { erc8183BuyCard } from '@pieverseio/purr-plugin-erc8183/buy-card'
 import {
   createOrder,
   getNetworks,
@@ -303,6 +304,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
+  erc8183           Pieverse ERC-8183 campaign card purchase
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call)
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
@@ -334,6 +336,7 @@ Examples:
   purr lista list-vaults --zone classic
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56 --execute
+  purr erc8183 buy-card
   purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury
@@ -822,6 +825,16 @@ Examples:
       break
     }
 
+    case 'erc8183': {
+      switch (command) {
+        case 'buy-card':
+          await erc8183BuyCard(args)
+          return
+        default:
+          throw new Error(`Unknown erc8183 command: ${command}. Use: buy-card`)
+      }
+    }
+
     case 'wallet': {
       switch (command) {
         case 'address':
@@ -1157,7 +1170,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, evm, wallet, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, erc8183, evm, wallet, instance, execute, config, version, store`,
       )
   }
 

@@ -1,0 +1,13 @@
+{
+  "name": "@pieverseio/purr-plugin-erc8183",
+  "version": "0.2.5",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./buy-card": "./src/buy-card.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*",
+    "viem": "^2.46.0"
+  }
+}

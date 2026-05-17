@@ -16,6 +16,10 @@ export default defineConfig({
         replacement: fromRoot('./packages/plugins/evm/src/$1.ts'),
       },
       {
+        find: /^@pieverseio\/purr-plugin-erc8183\/(.+)$/,
+        replacement: fromRoot('./packages/plugins/erc8183/src/$1.ts'),
+      },
+      {
         find: /^@pieverseio\/purr-plugin-ows$/,
         replacement: fromRoot('./packages/plugins/ows/src/index.ts'),
       },

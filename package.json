@@ -13,7 +13,8 @@
     "build:linux-macos": "bun scripts/build-binary.js linux-macos",
     "build:windows": "bun scripts/build-binary.js windows",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e:erc8183-local": "bun scripts/erc8183-buy-card-local-e2e.ts"
   },
   "devDependencies": {
     "@open-wallet-standard/core": "1.2.4",

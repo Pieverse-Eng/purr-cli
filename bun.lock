@@ -17,9 +17,10 @@
     },
     "packages/cli": {
       "name": "@pieverseio/purr-cli-internal",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
+        "@pieverseio/purr-plugin-erc8183": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
         "@pieverseio/purr-plugin-ows": "workspace:*",
         "@pieverseio/purr-plugin-store": "workspace:*",
@@ -29,14 +30,22 @@
     },
     "packages/core": {
       "name": "@pieverseio/purr-core",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
+        "viem": "^2.46.0",
+      },
+    },
+    "packages/plugins/erc8183": {
+      "name": "@pieverseio/purr-plugin-erc8183",
+      "version": "0.2.5",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
       },
     },
     "packages/plugins/evm": {
       "name": "@pieverseio/purr-plugin-evm",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -44,7 +53,7 @@
     },
     "packages/plugins/ows": {
       "name": "@pieverseio/purr-plugin-ows",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@open-wallet-standard/core": "1.2.4",
         "@pieverseio/purr-core": "workspace:*",
@@ -55,11 +64,11 @@
     },
     "packages/plugins/store": {
       "name": "@pieverseio/purr-plugin-store",
-      "version": "0.2.4",
+      "version": "0.2.5",
     },
     "packages/plugins/vendors": {
       "name": "@pieverseio/purr-plugin-vendors",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -67,7 +76,7 @@
     },
     "packages/plugins/wallet": {
       "name": "@pieverseio/purr-plugin-wallet",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
@@ -151,6 +160,8 @@
     "@pieverseio/purr-cli-internal": ["@pieverseio/purr-cli-internal@workspace:packages/cli"],
 
     "@pieverseio/purr-core": ["@pieverseio/purr-core@workspace:packages/core"],
+
+    "@pieverseio/purr-plugin-erc8183": ["@pieverseio/purr-plugin-erc8183@workspace:packages/plugins/erc8183"],
 
     "@pieverseio/purr-plugin-evm": ["@pieverseio/purr-plugin-evm@workspace:packages/plugins/evm"],
 

@@ -6,7 +6,9 @@ import {
   encodeComplete,
   encodeCreateJob,
   encodeFund,
+  encodeReject,
   encodeSetBudget,
+  encodeSubmit,
 } from '@pieverseio/purr-plugin-erc8183/calldata'
 import { executeOne, firstHash } from '@pieverseio/purr-plugin-erc8183/execute'
 
@@ -75,6 +77,27 @@ describe('erc8183 calldata builders', () => {
     })
     expect(refund.functionName).toBe('claimRefund')
     expect(refund.args).toEqual([42n])
+  })
+
+  it('encodes submit with a bytes32 deliverable reference', () => {
+    const deliverable = `0x${'cd'.repeat(32)}` as `0x${string}`
+    const decoded = decodeFunctionData({
+      abi: ERC8183_ABI,
+      data: encodeSubmit({ jobId: '42', deliverable }),
+    })
+    expect(decoded.functionName).toBe('submit')
+    expect(decoded.args[0]).toBe(42n)
+    expect(decoded.args[1]).toBe(deliverable)
+  })
+
+  it('encodes reject with the same shape as complete', () => {
+    const reason = `0xef${'00'.repeat(31)}` as `0x${string}`
+    const decoded = decodeFunctionData({
+      abi: ERC8183_ABI,
+      data: encodeReject({ jobId: '42', reason }),
+    })
+    expect(decoded.functionName).toBe('reject')
+    expect(decoded.args[1]).toBe(reason)
   })
 
   it('rejects malformed addresses with a helpful message', () => {

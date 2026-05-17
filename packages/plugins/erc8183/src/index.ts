@@ -17,7 +17,9 @@ import {
   encodeComplete,
   encodeCreateJob,
   encodeFund,
+  encodeReject,
   encodeSetBudget,
+  encodeSubmit,
 } from './calldata.js'
 import { executeOne, firstHash } from './execute.js'
 
@@ -154,7 +156,8 @@ const group = Cli.create('erc8183', {
         { txHash: firstHash(result), chainId: c.options.chainId },
         {
           cta: {
-            description: 'After the provider submits the deliverable on-chain, complete the job:',
+            description:
+              'Wait for the provider to call submit (off-chain artifact delivered via IPFS / agreed channel; bytes32 hash posted on-chain). Then as evaluator:',
             commands: [
               {
                 command: 'erc8183 complete',
@@ -163,7 +166,69 @@ const group = Cli.create('erc8183', {
                   chainId: c.options.chainId,
                   jobId: c.options.jobId,
                 },
-                description: 'Settle escrow as the evaluator',
+                description: 'Accept and settle escrow',
+              },
+              {
+                command: 'erc8183 reject',
+                options: {
+                  contract: c.options.contract,
+                  chainId: c.options.chainId,
+                  jobId: c.options.jobId,
+                },
+                description: 'Reject and refund',
+              },
+            ],
+          },
+        },
+      )
+    },
+  })
+  .command('submit', {
+    description:
+      'Wrap submit(jobId, deliverable, optParams) — provider posts the off-chain artifact reference',
+    options: contractOpts.extend({
+      jobId: jobId.describe('On-chain ERC-8183 job id'),
+      deliverable: bytes32Hex.describe(
+        'bytes32 reference to the off-chain deliverable (sha256 hash, IPFS CID encoded to 32 bytes, etc.) — the artifact itself is delivered via the agreed off-chain channel',
+      ),
+      optParams: optionalHex.describe('Optional ABI-encoded params (0x-prefixed hex)'),
+    }),
+    output: z.object({ txHash: z.string(), chainId: z.number() }),
+    async run(c) {
+      const result = await executeOne({
+        to: c.options.contract,
+        data: encodeSubmit({
+          jobId: c.options.jobId,
+          deliverable: c.options.deliverable as Hex,
+          optParams: c.options.optParams as Hex | undefined,
+        }),
+        value: '0x0',
+        chainId: c.options.chainId,
+        label: 'ERC-8183 submit',
+      })
+      return c.ok(
+        { txHash: firstHash(result), chainId: c.options.chainId },
+        {
+          cta: {
+            description: 'Evaluator decides next:',
+            commands: [
+              {
+                command: 'erc8183 complete',
+                options: {
+                  contract: c.options.contract,
+                  chainId: c.options.chainId,
+                  jobId: c.options.jobId,
+                },
+                description: 'Accept the deliverable and release escrow to the provider',
+              },
+              {
+                command: 'erc8183 reject',
+                options: {
+                  contract: c.options.contract,
+                  chainId: c.options.chainId,
+                  jobId: c.options.jobId,
+                },
+                description: 'Reject the deliverable and refund the client',
               },
             ],
           },
@@ -192,6 +257,48 @@ const group = Cli.create('erc8183', {
         label: 'ERC-8183 complete',
       })
       return c.ok({ txHash: firstHash(result), chainId: c.options.chainId })
+    },
+  })
+  .command('reject', {
+    description:
+      'Wrap reject(jobId, reason, optParams) — evaluator rejects deliverable; refunds client',
+    options: contractOpts.extend({
+      jobId: jobId.describe('On-chain ERC-8183 job id'),
+      reason: bytes32Hex.describe('Reason hash (bytes32) — caller-defined'),
+      optParams: optionalHex.describe('Optional ABI-encoded params (0x-prefixed hex)'),
+    }),
+    output: z.object({ txHash: z.string(), chainId: z.number() }),
+    async run(c) {
+      const result = await executeOne({
+        to: c.options.contract,
+        data: encodeReject({
+          jobId: c.options.jobId,
+          reason: c.options.reason as Hex,
+          optParams: c.options.optParams as Hex | undefined,
+        }),
+        value: '0x0',
+        chainId: c.options.chainId,
+        label: 'ERC-8183 reject',
+      })
+      return c.ok(
+        { txHash: firstHash(result), chainId: c.options.chainId },
+        {
+          cta: {
+            description: 'Client may recover escrow:',
+            commands: [
+              {
+                command: 'erc8183 claim-refund',
+                options: {
+                  contract: c.options.contract,
+                  chainId: c.options.chainId,
+                  jobId: c.options.jobId,
+                },
+                description: 'Claim the refunded budget',
+              },
+            ],
+          },
+        },
+      )
     },
   })
   .command('claim-refund', {

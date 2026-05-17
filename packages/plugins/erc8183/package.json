@@ -5,11 +5,8 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./api": "./src/api.ts",
-    "./buy-card": "./src/buy-card.ts",
     "./calldata": "./src/calldata.ts",
-    "./complete-card": "./src/complete-card.ts",
-    "./fund-card": "./src/fund-card.ts"
+    "./execute": "./src/execute.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",

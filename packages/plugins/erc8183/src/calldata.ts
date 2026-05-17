@@ -1,23 +1,6 @@
-// ERC-8183 calldata builders. Pure functions — no I/O.
-// Server returns the intent; these encode the next on-chain action.
+// Pure ERC-8183 calldata builders. No I/O, no plugin awareness.
 
-import { createHash } from 'node:crypto'
 import { type Hex, encodeFunctionData, getAddress, isAddress, parseAbi } from 'viem'
-import type { TxStep } from '@pieverseio/purr-core/types'
-import { isNative } from '@pieverseio/purr-core/shared'
-import type { Intent } from './api.js'
-
-export const LABELS = {
-  createJob: 'ERC-8183 createJob',
-  setBudget: 'ERC-8183 setBudget',
-  approve: 'ERC-8183 approve payment token',
-  fund: 'ERC-8183 fund',
-  complete: 'ERC-8183 complete',
-  claimRefund: 'ERC-8183 claimRefund',
-} as const
-
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
-const EMPTY_BYTES: Hex = '0x'
 
 export const ERC8183_ABI = parseAbi([
   'function createJob(address provider,address evaluator,uint256 expiredAt,string description,address hook) returns (uint256)',
@@ -25,112 +8,82 @@ export const ERC8183_ABI = parseAbi([
   'function fund(uint256 jobId,uint256 expectedBudget,bytes optParams)',
   'function complete(uint256 jobId,bytes32 reason,bytes optParams)',
   'function claimRefund(uint256 jobId)',
+  'function getJob(uint256 jobId) view returns ((uint256 id,address client,address provider,address evaluator,string description,uint256 budget,uint256 expiredAt,uint8 status,address hook))',
   'event JobCreated(uint256 indexed jobId,address indexed client,address indexed provider,address evaluator,uint256 expiredAt,address hook)',
 ])
 
-const ERC20_ABI = parseAbi(['function approve(address spender,uint256 amount) returns (bool)'])
+const ZERO: Hex = '0x0000000000000000000000000000000000000000'
+const EMPTY: Hex = '0x'
 
-export function createJobStep(intent: Intent): TxStep {
-  const expiredAt = Math.floor(Date.now() / 1000) + intent.jobExpirationSeconds
-  return {
-    to: addr(intent.contractAddress, 'contractAddress'),
-    data: encodeFunctionData({
-      abi: ERC8183_ABI,
-      functionName: 'createJob',
-      args: [
-        addr(intent.providerWalletAddress, 'providerWalletAddress'),
-        addr(intent.evaluatorWalletAddress, 'evaluatorWalletAddress'),
-        BigInt(expiredAt),
-        intent.jobUri,
-        addr(intent.hookAddress || ZERO_ADDRESS, 'hookAddress'),
-      ],
-    }),
-    value: '0x0',
-    chainId: intent.chainId,
-    label: LABELS.createJob,
-  }
+export interface CreateJobArgs {
+  provider: string
+  evaluator: string
+  expiredAt: number
+  description: string
+  hook?: string
 }
 
-export function fundJobSteps(intent: Intent, jobId: string): TxStep[] {
-  const budget = requireBudget(intent)
-  const contract = addr(intent.contractAddress, 'contractAddress')
-  const steps: TxStep[] = [
-    {
-      to: contract,
-      data: encodeFunctionData({
-        abi: ERC8183_ABI,
-        functionName: 'setBudget',
-        args: [BigInt(jobId), budget, EMPTY_BYTES],
-      }),
-      value: '0x0',
-      chainId: intent.chainId,
-      label: LABELS.setBudget,
-    },
-  ]
+export interface JobIdArg {
+  jobId: string
+}
 
-  if (intent.paymentTokenAddress && !isNative(intent.paymentTokenAddress) && budget > 0n) {
-    const token = addr(intent.paymentTokenAddress, 'paymentTokenAddress')
-    steps.push({
-      to: token,
-      data: encodeFunctionData({
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [contract, budget],
-      }),
-      value: '0x0',
-      chainId: intent.chainId,
-      label: LABELS.approve,
-      conditional: {
-        type: 'allowance_lt',
-        token,
-        spender: contract,
-        amount: budget.toString(),
-      },
-    })
-  }
+export interface BudgetArgs extends JobIdArg {
+  amountWei: string
+  optParams?: Hex
+}
 
-  steps.push({
-    to: contract,
-    data: encodeFunctionData({
-      abi: ERC8183_ABI,
-      functionName: 'fund',
-      args: [BigInt(jobId), budget, EMPTY_BYTES],
-    }),
-    value: '0x0',
-    chainId: intent.chainId,
-    label: LABELS.fund,
+export interface CompleteArgs extends JobIdArg {
+  reason: Hex
+  optParams?: Hex
+}
+
+export function encodeCreateJob(a: CreateJobArgs): Hex {
+  return encodeFunctionData({
+    abi: ERC8183_ABI,
+    functionName: 'createJob',
+    args: [
+      address(a.provider, 'provider'),
+      address(a.evaluator, 'evaluator'),
+      BigInt(a.expiredAt),
+      a.description,
+      address(a.hook ?? ZERO, 'hook'),
+    ],
   })
-  return steps
 }
 
-export function completeJobStep(intent: Intent, jobId: string, reasonSeed: string): TxStep {
-  return {
-    to: addr(intent.contractAddress, 'contractAddress'),
-    data: encodeFunctionData({
-      abi: ERC8183_ABI,
-      functionName: 'complete',
-      args: [BigInt(jobId), bytes32(reasonSeed), EMPTY_BYTES],
-    }),
-    value: '0x0',
-    chainId: intent.chainId,
-    label: LABELS.complete,
-  }
+export function encodeSetBudget(a: BudgetArgs): Hex {
+  return encodeFunctionData({
+    abi: ERC8183_ABI,
+    functionName: 'setBudget',
+    args: [BigInt(a.jobId), BigInt(a.amountWei), a.optParams ?? EMPTY],
+  })
 }
 
-function requireBudget(intent: Intent): bigint {
-  if (intent.budgetAmount === null || intent.budgetAmount === '') {
-    throw new Error('ERC-8183 budgetAmount is missing')
-  }
-  const amount = BigInt(intent.budgetAmount)
-  if (amount < 0n) throw new Error('ERC-8183 budgetAmount must be non-negative')
-  return amount
+export function encodeFund(a: BudgetArgs): Hex {
+  return encodeFunctionData({
+    abi: ERC8183_ABI,
+    functionName: 'fund',
+    args: [BigInt(a.jobId), BigInt(a.amountWei), a.optParams ?? EMPTY],
+  })
 }
 
-function addr(value: string, field: string): `0x${string}` {
-  if (!isAddress(value)) throw new Error(`erc8183.${field} must be an EVM address`)
+export function encodeComplete(a: CompleteArgs): Hex {
+  return encodeFunctionData({
+    abi: ERC8183_ABI,
+    functionName: 'complete',
+    args: [BigInt(a.jobId), a.reason, a.optParams ?? EMPTY],
+  })
+}
+
+export function encodeClaimRefund(a: JobIdArg): Hex {
+  return encodeFunctionData({
+    abi: ERC8183_ABI,
+    functionName: 'claimRefund',
+    args: [BigInt(a.jobId)],
+  })
+}
+
+function address(value: string, field: string): `0x${string}` {
+  if (!isAddress(value)) throw new Error(`${field} must be an EVM address: ${value}`)
   return getAddress(value) as `0x${string}`
-}
-
-function bytes32(seed: string): Hex {
-  return `0x${createHash('sha256').update(seed).digest('hex')}` as Hex
 }

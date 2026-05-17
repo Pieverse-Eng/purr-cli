@@ -70,7 +70,8 @@ function purchase(status: string, overrides: Partial<Record<string, unknown>> = 
       paymentTokenSymbol: 'USDT',
       budgetAmount: '1000000',
       jobUri: 'https://purr.example/jobs/job.json',
-      deliverableUri: status === 'submitted' || status === 'completed' ? 'https://purr.example/card.json' : null,
+      deliverableUri:
+        status === 'submitted' || status === 'completed' ? 'https://purr.example/card.json' : null,
       jobExpirationSeconds: 86400,
       onChainJobId: status === 'initiated' ? null : '42',
       status,
@@ -92,7 +93,9 @@ function ok<T>(data: T) {
   return { ok: true, data }
 }
 
-function walletResult(results: Array<{ label: string; hash: string; status?: 'success' | 'skipped' }>) {
+function walletResult(
+  results: Array<{ label: string; hash: string; status?: 'success' | 'skipped' }>,
+) {
   return ok({
     results: results.map((result, stepIndex) => ({
       stepIndex,
@@ -300,7 +303,7 @@ describe('erc8183 buy-card', () => {
       erc8183: {
         ...(purchase('initiated').erc8183 as Record<string, unknown>),
         txHashes: {
-          ...((purchase('initiated').erc8183 as { txHashes: Record<string, unknown> }).txHashes),
+          ...(purchase('initiated').erc8183 as { txHashes: Record<string, unknown> }).txHashes,
           create: HASHES.create,
         },
       },
@@ -439,13 +442,15 @@ describe('erc8183 buy-card', () => {
       },
     })
     const mock = mockFetchSequence([
-      ok(purchase('created', {
-        erc8183: {
-          ...(purchase('created').erc8183 as Record<string, unknown>),
-          paymentTokenAddress: ZERO,
-          paymentTokenSymbol: 'BNB',
-        },
-      })),
+      ok(
+        purchase('created', {
+          erc8183: {
+            ...(purchase('created').erc8183 as Record<string, unknown>),
+            paymentTokenAddress: ZERO,
+            paymentTokenSymbol: 'BNB',
+          },
+        }),
+      ),
       walletResult([
         { label: 'ERC-8183 setBudget', hash: HASHES.setBudget },
         { label: 'ERC-8183 fund', hash: HASHES.fund },

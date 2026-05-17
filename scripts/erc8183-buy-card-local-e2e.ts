@@ -108,11 +108,14 @@ async function runHappyPathScenario(tempStateDir: string) {
     assert(result.xIntentUrl?.startsWith('https://x.com/intent/tweet?text='))
 
     assert.deepEqual(state.progressCalls, ['created', 'funded', 'completed'])
-    assert.deepEqual(state.walletCalls.map((call) => call.labels), [
-      ['ERC-8183 createJob'],
-      ['ERC-8183 setBudget', 'ERC-8183 approve payment token', 'ERC-8183 fund'],
-      ['ERC-8183 complete'],
-    ])
+    assert.deepEqual(
+      state.walletCalls.map((call) => call.labels),
+      [
+        ['ERC-8183 createJob'],
+        ['ERC-8183 setBudget', 'ERC-8183 approve payment token', 'ERC-8183 fund'],
+        ['ERC-8183 complete'],
+      ],
+    )
 
     console.log('[erc8183-local-e2e] happy-path PASS')
     console.log(
@@ -151,7 +154,10 @@ async function runRejectedRefundScenario(tempStateDir: string) {
       assert.match(error.message, new RegExp(`rejectTxHash=${HASHES.reject}`))
       assert.match(error.message, new RegExp(`refundTxHash=${HASHES.refund}`))
       assert.deepEqual(state.progressCalls, [])
-      assert.deepEqual(state.walletCalls.map((call) => call.labels), [['ERC-8183 claimRefund']])
+      assert.deepEqual(
+        state.walletCalls.map((call) => call.labels),
+        [['ERC-8183 claimRefund']],
+      )
 
       console.log('[erc8183-local-e2e] rejected-refund PASS')
     },
@@ -181,7 +187,10 @@ async function runExpiredRefundScenario(tempStateDir: string) {
       assert.match(error.message, /ERC-8183 buy-card expired/)
       assert.match(error.message, new RegExp(`refundTxHash=${HASHES.refund}`))
       assert.deepEqual(state.progressCalls, [])
-      assert.deepEqual(state.walletCalls.map((call) => call.labels), [['ERC-8183 claimRefund']])
+      assert.deepEqual(
+        state.walletCalls.map((call) => call.labels),
+        [['ERC-8183 claimRefund']],
+      )
 
       console.log('[erc8183-local-e2e] expired-refund PASS')
     },
@@ -486,7 +495,8 @@ function baseReceipt(hash: string, logs: unknown[] = []) {
 function purchase(status: PurchaseStatus) {
   const hasCreate = status !== 'initiated'
   const hasFunding = hasCreate && status !== 'created'
-  const hasProviderResult = status === 'submitted' || status === 'completed' || status === 'rejected'
+  const hasProviderResult =
+    status === 'submitted' || status === 'completed' || status === 'rejected'
   return {
     serviceSlug: 'agent-self-intro',
     serviceId: 'pieverse-card-generation-v1',
@@ -498,7 +508,8 @@ function purchase(status: PurchaseStatus) {
     templateId: 'cat-card-001',
     imageUrl: 'https://local.purr.test/cards/card.png',
     shareUrl: 'https://local.purr.test/cards/card',
-    suggestedTweetText: 'Pie name: local-test.pie\n@pieverse @purrfectagent0\nhttps://local.purr.test/cards/card',
+    suggestedTweetText:
+      'Pie name: local-test.pie\n@pieverse @purrfectagent0\nhttps://local.purr.test/cards/card',
     completedAt: status === 'completed' ? new Date().toISOString() : null,
     idempotent: false,
     erc8183: {
@@ -551,10 +562,10 @@ async function startJsonServer(
       const bodyText = await readBody(req)
       const body = bodyText ? JSON.parse(bodyText) : undefined
       await handler(req, res, body)
-    } catch (error) {
+    } catch {
       sendJson(res, 500, {
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: 'local e2e server handler failed',
       })
     }
   })

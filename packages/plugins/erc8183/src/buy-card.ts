@@ -1,11 +1,5 @@
 import { createHash } from 'node:crypto'
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import {
@@ -31,11 +25,7 @@ const RECEIPT_TIMEOUT_MS = 120_000
 const SUBMITTED_POLL_MS = 2_000
 const SUBMITTED_TIMEOUT_MS = 120_000
 const RECOVERY_STATE_FILE_ENV = 'PURR_ERC8183_STATE_FILE'
-const DEFAULT_RECOVERY_STATE_FILE = join(
-  homedir(),
-  '.purrfectclaw',
-  'erc8183-buy-card-state.json',
-)
+const DEFAULT_RECOVERY_STATE_FILE = join(homedir(), '.purrfectclaw', 'erc8183-buy-card-state.json')
 
 const DEFAULT_RPCS: Record<number, string> = {
   1: 'https://ethereum-rpc.publicnode.com',
@@ -262,7 +252,10 @@ async function purchaseCard(instanceId: string): Promise<AgentSelfIntroPurchase>
   return unwrap(res)
 }
 
-async function getPurchase(instanceId: string, purchaseId: string): Promise<AgentSelfIntroPurchase> {
+async function getPurchase(
+  instanceId: string,
+  purchaseId: string,
+): Promise<AgentSelfIntroPurchase> {
   const res = await apiGet<ApiEnvelope<AgentSelfIntroPurchase>>(
     `${basePath(instanceId)}/purchases/${purchaseId}`,
   )
@@ -281,10 +274,7 @@ async function recordProgress(
   return unwrap(res)
 }
 
-async function executeSteps(
-  instanceId: string,
-  steps: TxStep[],
-): Promise<WalletExecuteResult> {
+async function executeSteps(instanceId: string, steps: TxStep[]): Promise<WalletExecuteResult> {
   const res = await apiPost<ApiEnvelope<WalletExecuteResult>>(
     `/v1/instances/${instanceId}/wallet/execute`,
     { steps },
@@ -498,10 +488,7 @@ async function completeJob(
     chainId: intent.chainId,
     label: 'ERC-8183 complete',
   }
-  const executed = await executeSteps(
-    instanceId,
-    [completeStep],
-  )
+  const executed = await executeSteps(instanceId, [completeStep])
   const completeTxHash = requiredStepHash(executed, 'ERC-8183 complete')
   updateRecoveryEntry(instanceId, purchase.purchaseId, {
     txHashes: { complete: completeTxHash },

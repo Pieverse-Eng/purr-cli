@@ -9,11 +9,13 @@
     "./executor": "./src/executor.ts",
     "./file-input": "./src/file-input.ts",
     "./json-input": "./src/json-input.ts",
+    "./plugin": "./src/plugin.ts",
     "./shared": "./src/shared.ts",
     "./token-registry": "./src/token-registry.ts",
     "./types": "./src/types.ts"
   },
   "dependencies": {
+    "incur": "^0.4.6",
     "viem": "^2.46.0"
   }
 }

@@ -12,6 +12,14 @@ export default defineConfig({
         replacement: fromRoot('./packages/core/src/$1.ts'),
       },
       {
+        find: /^@pieverseio\/purr-plugin-erc8183$/,
+        replacement: fromRoot('./packages/plugins/erc8183/src/index.ts'),
+      },
+      {
+        find: /^@pieverseio\/purr-plugin-erc8183\/(.+)$/,
+        replacement: fromRoot('./packages/plugins/erc8183/src/$1.ts'),
+      },
+      {
         find: /^@pieverseio\/purr-plugin-evm\/(.+)$/,
         replacement: fromRoot('./packages/plugins/evm/src/$1.ts'),
       },

@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 declare const PURR_VERSION: string
 import { readFileSync } from 'node:fs'
+import { Cli } from 'incur'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
+import type { PurrPlugin } from '@pieverseio/purr-core/plugin'
 import { NATIVE_EVM, parseChainId } from '@pieverseio/purr-core/shared'
 import { SOLANA_CHAIN_ID, resolveToken } from '@pieverseio/purr-core/token-registry'
 import type { StepOutput } from '@pieverseio/purr-core/types'
+import erc8183Plugin from '@pieverseio/purr-plugin-erc8183'
 import { buildAbiCallStep } from '@pieverseio/purr-plugin-evm/abi-call'
 import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
@@ -208,11 +211,25 @@ function formatOpenSeaError(err: unknown): string {
   )
 }
 
+// Experimental plugin registry. Plugins listed here own their entire command
+// group (arg parsing, help, output formatting) via incur. Adding a plugin
+// means appending to this array — no other run.ts changes. Existing groups
+// (fourmeme, pancake, wallet, ...) still flow through the hand-rolled switch
+// below; each can migrate to a PurrPlugin in a follow-up PR.
+const plugins: PurrPlugin[] = [erc8183Plugin]
+
 export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
   const [group, command, ...rest] = process.argv.slice(2)
 
   if (group === 'version' || group === '--version' || group === '-v') {
     console.log(`purr ${currentVersion()}`)
+    return
+  }
+
+  if (group && plugins.some((p) => p.name === group)) {
+    const root = Cli.create('purr', { description: 'Purr CLI' })
+    for (const p of plugins) p.mount(root)
+    await root.serve(process.argv.slice(2))
     return
   }
 
@@ -306,6 +323,7 @@ Groups:
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call)
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
+  erc8183           Pieverse ERC-8183 campaign card purchase (experimental incur plugin)
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
   version           Print version
@@ -1157,7 +1175,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, evm, wallet, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, erc8183, evm, wallet, instance, execute, config, version, store`,
       )
   }
 

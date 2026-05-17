@@ -11,10 +11,12 @@
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",
+    "@pieverseio/purr-plugin-erc8183": "workspace:*",
     "@pieverseio/purr-plugin-evm": "workspace:*",
     "@pieverseio/purr-plugin-ows": "workspace:*",
     "@pieverseio/purr-plugin-store": "workspace:*",
     "@pieverseio/purr-plugin-vendors": "workspace:*",
-    "@pieverseio/purr-plugin-wallet": "workspace:*"
+    "@pieverseio/purr-plugin-wallet": "workspace:*",
+    "incur": "^0.4.6"
   }
 }

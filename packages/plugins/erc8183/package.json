@@ -1,0 +1,16 @@
+{
+  "name": "@pieverseio/purr-plugin-erc8183",
+  "version": "0.2.5",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./calldata": "./src/calldata.ts",
+    "./execute": "./src/execute.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*",
+    "incur": "^0.4.6",
+    "viem": "^2.46.0"
+  }
+}

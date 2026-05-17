@@ -43,6 +43,7 @@
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "incur": "^0.4.6",
+        "viem": "^2.46.0",
       },
     },
     "packages/plugins/evm": {

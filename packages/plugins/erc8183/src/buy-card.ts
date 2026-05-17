@@ -1,63 +1,46 @@
-// ERC-8183 buy-card — thin client.
+// `buy-card` — wraps the ERC-8183 createJob call.
 //
-// Purchase state lives in api-server (campaign_card_service_purchases table)
-// and the source of truth for on-chain progress is the chain itself. The CLI
-// must not replicate either. It calls the campaign purchase endpoint and
-// returns whatever the server hands back. If the server needs another round
-// trip (e.g. a deliverable hasn't been submitted yet), the operator re-runs
-// — server endpoints are idempotent on (instance, purchase).
+// 1. Server creates (or returns) the campaign purchase + ERC-8183 intent.
+// 2. CLI encodes createJob from the intent and submits via /wallet/execute.
+// 3. CLI tells the server the job is created; server observes the receipt,
+//    decodes JobCreated, and persists the on-chain jobId. The CLI never
+//    parses receipts — that's the server's job.
 //
-// If a future server contract requires the CLI to broadcast calldata between
-// status transitions, that flow should be expressed by the server returning a
-// "next steps" envelope that the CLI executes via the generic /wallet/execute
-// surface. The CLI still doesn't carry a state machine — it just follows
-// instructions the server provides on each round trip.
+// Caller orchestrates: follow the returned CTA to run `fund-card` next.
 
-import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
-
-const SERVICE_SLUG = 'agent-self-intro'
+import {
+  type Purchase,
+  createPurchase,
+  executeSteps,
+  recordProgress,
+  requireIntent,
+  stepHash,
+} from './api.js'
+import { LABELS, createJobStep } from './calldata.js'
 
 export interface BuyCardResult {
   purchaseId: string
-  status: string
-  imageUrl: string | null
-  shareUrl: string | null
-  suggestedTweetText: string | null
-  xIntentUrl: string | null
-  // Server-provided campaign payload — passed through so the agent can show
-  // template / handle / completion data without the CLI knowing the shape.
-  // biome-ignore lint/suspicious/noExplicitAny: server-owned envelope
-  raw: any
+  status: Purchase['status']
+  createTxHash: string
+  onChainJobId: string | null
 }
 
-interface ApiEnvelope<T> {
-  ok: boolean
-  data?: T
-  error?: string
-  code?: string
-}
+export async function buyCard(): Promise<BuyCardResult> {
+  const purchase = await createPurchase()
+  const intent = requireIntent(purchase)
 
-// biome-ignore lint/suspicious/noExplicitAny: server-owned shape; kept untyped on purpose
-type PurchasePayload = any
+  const executed = await executeSteps([createJobStep(intent)])
+  const createTxHash = stepHash(executed, LABELS.createJob) as string
 
-export async function buyErc8183Card(): Promise<BuyCardResult> {
-  const { instanceId } = resolveCredentials()
-  const envelope = await apiPost<ApiEnvelope<PurchasePayload>>(
-    `/v1/instances/${instanceId}/erc8183/services/${SERVICE_SLUG}/card/purchase`,
-    {},
-  )
-  if (!envelope.ok || envelope.data === undefined) {
-    throw new Error(envelope.error ?? envelope.code ?? 'API request failed')
-  }
-  const purchase = envelope.data
-  const tweet = purchase.suggestedTweetText ?? null
+  const updated = await recordProgress(purchase.purchaseId, {
+    status: 'created',
+    createTxHash,
+  })
+
   return {
-    purchaseId: purchase.purchaseId,
-    status: purchase.status,
-    imageUrl: purchase.imageUrl ?? null,
-    shareUrl: purchase.shareUrl ?? null,
-    suggestedTweetText: tweet,
-    xIntentUrl: tweet ? `https://x.com/intent/tweet?text=${encodeURIComponent(tweet)}` : null,
-    raw: purchase,
+    purchaseId: updated.purchaseId,
+    status: updated.status,
+    createTxHash,
+    onChainJobId: updated.erc8183?.onChainJobId ?? null,
   }
 }

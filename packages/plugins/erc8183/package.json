@@ -5,10 +5,15 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./buy-card": "./src/buy-card.ts"
+    "./api": "./src/api.ts",
+    "./buy-card": "./src/buy-card.ts",
+    "./calldata": "./src/calldata.ts",
+    "./complete-card": "./src/complete-card.ts",
+    "./fund-card": "./src/fund-card.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",
-    "incur": "^0.4.6"
+    "incur": "^0.4.6",
+    "viem": "^2.46.0"
   }
 }

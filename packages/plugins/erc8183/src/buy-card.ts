@@ -226,7 +226,10 @@ export async function buyErc8183Card(
 
   if (purchase.status === 'submitted') {
     const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'expired', options)
-    if (refundTxHash) throw purchaseError(purchase, 'expired', refundTxHash)
+    if (refundTxHash) {
+      purchase = await markExpiredPurchaseFailed(instanceId, purchase, refundTxHash)
+      throw purchaseError(purchase, 'expired', refundTxHash)
+    }
     purchase = await completeJob(instanceId, purchase, options)
   }
 
@@ -449,7 +452,10 @@ async function waitForSubmitted(
   }
 
   const refundTxHash = await claimRefundIfNeeded(instanceId, current, 'expired', options)
-  if (refundTxHash) throw purchaseError(current, 'expired', refundTxHash)
+  if (refundTxHash) {
+    current = await markExpiredPurchaseFailed(instanceId, current, refundTxHash)
+    throw purchaseError(current, 'expired', refundTxHash)
+  }
 
   throw new Error(
     `Timed out waiting for ERC-8183 provider submit for purchase ${purchase.purchaseId}; last status=${current.status}`,
@@ -540,6 +546,19 @@ async function claimRefundIfNeeded(
   })
   await waitForReceipt(intent.chainId, refundTxHash, options)
   return refundTxHash
+}
+
+async function markExpiredPurchaseFailed(
+  instanceId: string,
+  purchase: AgentSelfIntroPurchase,
+  refundTxHash?: string,
+): Promise<AgentSelfIntroPurchase> {
+  return recordProgress(instanceId, purchase.purchaseId, {
+    status: 'failed',
+    errorMessage: refundTxHash
+      ? `ERC-8183 job expired; refund claimed: ${refundTxHash}`
+      : 'ERC-8183 job expired',
+  })
 }
 
 function unwrap<T>(envelope: ApiEnvelope<T>): T {
@@ -639,7 +658,11 @@ function isRefundCandidatePurchase(
   reason: 'expired' | 'rejected',
 ): boolean {
   if (reason === 'rejected') return purchase.status === 'rejected'
-  return purchase.status === 'funded' || purchase.status === 'submitted'
+  if (purchase.status === 'funded' || purchase.status === 'submitted') return true
+  return (
+    purchase.status === 'failed' &&
+    Boolean(purchase.erc8183?.onChainJobId && purchase.erc8183.txHashes.fund)
+  )
 }
 
 function shouldClaimRefundForJob(job: OnChainJob, reason: 'expired' | 'rejected'): boolean {
@@ -777,13 +800,23 @@ async function throwIfTerminal(
 ): Promise<void> {
   if (purchase.erc8183?.status === 'expired') {
     const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'expired', options)
-    throw purchaseError(purchase, 'expired', refundTxHash ?? undefined)
+    const failedPurchase = await markExpiredPurchaseFailed(
+      instanceId,
+      purchase,
+      refundTxHash ?? undefined,
+    )
+    throw purchaseError(failedPurchase, 'expired', refundTxHash ?? undefined)
   }
   if (purchase.status === 'rejected') {
     const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'rejected', options)
     throw purchaseError(purchase, 'rejected', refundTxHash ?? undefined)
   }
   if (purchase.status === 'failed') {
+    const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'expired', options)
+    if (refundTxHash) {
+      const failedPurchase = await markExpiredPurchaseFailed(instanceId, purchase, refundTxHash)
+      throw purchaseError(failedPurchase, undefined, refundTxHash)
+    }
     throw purchaseError(purchase)
   }
 }

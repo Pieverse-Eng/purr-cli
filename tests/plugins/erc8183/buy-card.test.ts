@@ -490,6 +490,14 @@ describe('erc8183 buy-card', () => {
       getJobResult(1, 1n),
       walletResult([{ label: 'ERC-8183 claimRefund', hash: refundHash }]),
       rpcReceipt(refundHash),
+      ok(
+        purchase('failed', {
+          erc8183: {
+            ...(purchase('funded').erc8183 as Record<string, unknown>),
+            status: 'failed',
+          },
+        }),
+      ),
     ])
     Object.defineProperty(globalThis, 'fetch', {
       value: mock,
@@ -508,6 +516,11 @@ describe('erc8183 buy-card', () => {
     const refundBody = JSON.parse(String(mock.mock.calls[2][1]?.body))
     expect(refundBody).not.toHaveProperty('dedupKey')
     expect(refundBody.steps[0].label).toBe('ERC-8183 claimRefund')
+    const failedProgressBody = JSON.parse(String(mock.mock.calls[4][1]?.body))
+    expect(failedProgressBody).toMatchObject({
+      status: 'failed',
+      errorMessage: `ERC-8183 job expired; refund claimed: ${refundHash}`,
+    })
   })
 
   it('claims refund when a submitted job has expired before completion', async () => {
@@ -518,6 +531,14 @@ describe('erc8183 buy-card', () => {
       getJobResult(2, 1n),
       walletResult([{ label: 'ERC-8183 claimRefund', hash: refundHash }]),
       rpcReceipt(refundHash),
+      ok(
+        purchase('failed', {
+          erc8183: {
+            ...(purchase('submitted').erc8183 as Record<string, unknown>),
+            status: 'failed',
+          },
+        }),
+      ),
     ])
     Object.defineProperty(globalThis, 'fetch', {
       value: mock,
@@ -534,6 +555,11 @@ describe('erc8183 buy-card', () => {
 
     const refundBody = JSON.parse(String(mock.mock.calls[2][1]?.body))
     expect(refundBody.steps[0].label).toBe('ERC-8183 claimRefund')
+    const failedProgressBody = JSON.parse(String(mock.mock.calls[4][1]?.body))
+    expect(failedProgressBody).toMatchObject({
+      status: 'failed',
+      errorMessage: `ERC-8183 job expired; refund claimed: ${refundHash}`,
+    })
   })
 
   it('claims refund when the purchase is rejected and the on-chain job is rejected', async () => {
@@ -562,8 +588,51 @@ describe('erc8183 buy-card', () => {
     expect(refundBody.steps[0].label).toBe('ERC-8183 claimRefund')
   })
 
-  it('surfaces failed purchases without attempting refund', async () => {
-    const mock = mockFetchSequence([ok(purchase('failed'))])
+  it('claims refund when a failed purchase still has an expired funded on-chain job', async () => {
+    process.env.EVM_RPC_56 = 'https://rpc.test'
+    const refundHash = `0x${'11'.repeat(32)}`
+    const mock = mockFetchSequence([
+      ok(purchase('failed')),
+      getJobResult(1, 1n),
+      walletResult([{ label: 'ERC-8183 claimRefund', hash: refundHash }]),
+      rpcReceipt(refundHash),
+      ok(purchase('failed')),
+    ])
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
+
+    await expect(
+      buyErc8183Card({
+        receiptPollMs: 1,
+        submittedPollMs: 1,
+      }),
+    ).rejects.toThrow(
+      `ERC-8183 buy-card failed for purchase ${PURCHASE_ID} refundTxHash=${refundHash}`,
+    )
+
+    const refundBody = JSON.parse(String(mock.mock.calls[2][1]?.body))
+    expect(refundBody.steps[0].label).toBe('ERC-8183 claimRefund')
+    const failedProgressBody = JSON.parse(String(mock.mock.calls[4][1]?.body))
+    expect(failedProgressBody).toMatchObject({
+      status: 'failed',
+      errorMessage: `ERC-8183 job expired; refund claimed: ${refundHash}`,
+    })
+  })
+
+  it('surfaces failed purchases without attempting refund when no fund tx exists', async () => {
+    const failedBeforeFunding = purchase('failed', {
+      erc8183: {
+        ...(purchase('failed').erc8183 as Record<string, unknown>),
+        txHashes: {
+          ...(purchase('failed').erc8183 as { txHashes: Record<string, unknown> }).txHashes,
+          fund: null,
+        },
+      },
+    })
+    const mock = mockFetchSequence([ok(failedBeforeFunding)])
     Object.defineProperty(globalThis, 'fetch', {
       value: mock,
       configurable: true,

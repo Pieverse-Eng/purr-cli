@@ -11,7 +11,7 @@ import { buildAbiCallStep } from '@pieverseio/purr-plugin-evm/abi-call'
 import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
-import { erc8183BuyCard } from '@pieverseio/purr-plugin-erc8183/buy-card'
+import { erc8183Card } from '@pieverseio/purr-plugin-erc8183/card'
 import {
   createOrder,
   getNetworks,
@@ -304,7 +304,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
-  erc8183           Pieverse ERC-8183 campaign card purchase
+  erc8183           Pieverse ERC-8183 campaign card flow
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call)
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
@@ -336,7 +336,11 @@ Examples:
   purr lista list-vaults --zone classic
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56 --execute
-  purr erc8183 buy-card
+  purr erc8183 card purchase
+  purr erc8183 card create-job --purchase-id 00000000-0000-0000-0000-000000000000
+  purr erc8183 card fund --purchase-id 00000000-0000-0000-0000-000000000000
+  purr erc8183 card deliverable --purchase-id 00000000-0000-0000-0000-000000000000 --wait
+  purr erc8183 card accept --purchase-id 00000000-0000-0000-0000-000000000000
   purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury
@@ -827,11 +831,13 @@ Examples:
 
     case 'erc8183': {
       switch (command) {
-        case 'buy-card':
-          await erc8183BuyCard(args)
+        case 'card': {
+          const [cardCommand, ...cardRest] = rest
+          await erc8183Card(cardCommand, parseArgs(cardRest))
           return
+        }
         default:
-          throw new Error(`Unknown erc8183 command: ${command}. Use: buy-card`)
+          throw new Error(`Unknown erc8183 command: ${command}. Use: card`)
       }
     }
 

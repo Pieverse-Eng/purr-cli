@@ -1,7 +1,3 @@
-import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
 import {
   decodeFunctionResult,
   type Hex,
@@ -24,34 +20,38 @@ const RECEIPT_POLL_MS = 2_000
 const RECEIPT_TIMEOUT_MS = 120_000
 const SUBMITTED_POLL_MS = 2_000
 const SUBMITTED_TIMEOUT_MS = 120_000
-const RECOVERY_STATE_FILE_ENV = 'PURR_ERC8183_STATE_FILE'
-const DEFAULT_RECOVERY_STATE_FILE = join(homedir(), '.purrfectclaw', 'erc8183-buy-card-state.json')
 
 const DEFAULT_RPCS: Record<number, string> = {
-  1: 'https://ethereum-rpc.publicnode.com',
-  10: 'https://optimism-rpc.publicnode.com',
   56: 'https://bsc-rpc.publicnode.com',
-  97: 'https://bsc-testnet-rpc.publicnode.com',
-  137: 'https://polygon-bor-rpc.publicnode.com',
-  1001: 'https://public-en-kairos.node.kaia.io',
-  2818: 'https://rpc.morph.network',
-  8217: 'https://public-en.node.kaia.io',
-  8453: 'https://base-rpc.publicnode.com',
-  42161: 'https://arbitrum-one-rpc.publicnode.com',
-  46630: 'https://rpc.testnet.chain.robinhood.com',
 }
 
 const ERC8183_ABI = parseAbi([
   'function createJob(address provider,address evaluator,uint256 expiredAt,string description,address hook) returns (uint256)',
   'function setBudget(uint256 jobId,uint256 amount,bytes optParams)',
   'function fund(uint256 jobId,uint256 expectedBudget,bytes optParams)',
-  'function complete(uint256 jobId,bytes32 reason,bytes optParams)',
   'function claimRefund(uint256 jobId)',
   'function getJob(uint256 jobId) view returns ((uint256 id,address client,address provider,address evaluator,string description,uint256 budget,uint256 expiredAt,uint8 status,address hook))',
   'event JobCreated(uint256 indexed jobId,address indexed client,address indexed provider,address evaluator,uint256 expiredAt,address hook)',
 ])
 
+const ERC8183_ROUTER_ABI = parseAbi([
+  'function registerJob(uint256 jobId,address policy)',
+  'function settle(uint256 jobId,bytes evidence)',
+  'event JobRegistered(uint256 indexed jobId,address indexed policy,address indexed client)',
+  'event JobSettled(uint256 indexed jobId,address indexed policy,uint8 indexed verdict,bytes32 reason)',
+])
+
 const ERC20_ABI = parseAbi(['function approve(address spender,uint256 amount) returns (bool)'])
+
+const ERC8183_JOB_STATUS = {
+  NONE: 0,
+  CREATED: 1,
+  FUNDED: 2,
+  SUBMITTED: 3,
+  COMPLETED: 4,
+  REJECTED: 5,
+  REFUNDED: 6,
+} as const
 
 type PurchaseStatus =
   | 'initiated'
@@ -81,7 +81,7 @@ interface WalletExecuteResult {
   chainType: string
 }
 
-interface AgentSelfIntroPurchase {
+export interface AgentSelfIntroPurchase {
   serviceSlug: string
   serviceId: string
   purchaseId: string
@@ -97,7 +97,9 @@ interface AgentSelfIntroPurchase {
   idempotent?: boolean
   erc8183: {
     chainId: number
-    contractAddress: string
+    commerceAddress: string
+    routerAddress: string
+    policyAddress: string
     clientWalletAddress: string
     providerWalletAddress: string
     evaluatorWalletAddress: string
@@ -122,21 +124,23 @@ interface AgentSelfIntroPurchase {
   } | null
 }
 
-export interface Erc8183BuyCardOptions {
+export interface Erc8183CardOptions {
+  purchaseId?: string
   receiptTimeoutMs?: number
   receiptPollMs?: number
   submittedTimeoutMs?: number
   submittedPollMs?: number
+  wait?: boolean
+  createTxHash?: string
+  registerTxHash?: string
+  setBudgetTxHash?: string
+  approveTxHash?: string | null
+  fundTxHash?: string
+  completeTxHash?: string
 }
 
-export interface Erc8183BuyCardResult {
-  purchaseId: string
-  status: PurchaseStatus
-  imageUrl: string | null
-  shareUrl: string | null
-  suggestedTweetText: string | null
-  xIntentUrl: string | null
-  erc8183: AgentSelfIntroPurchase['erc8183']
+export type Erc8183CardResult = AgentSelfIntroPurchase & {
+  refundTxHash?: string
 }
 
 interface RpcReceipt {
@@ -160,87 +164,146 @@ interface OnChainJob {
   status: number
 }
 
-interface RecoveryTxHashes {
-  create?: string | null
-  setBudget?: string | null
-  approve?: string | null
-  fund?: string | null
-  complete?: string | null
-  refund?: string | null
-}
-
-interface RecoveryEntry {
-  purchaseId: string
-  updatedAt: string
-  onChainJobId?: string | null
-  txHashes: RecoveryTxHashes
-}
-
-type RecoveryState = Record<string, RecoveryEntry>
-
 let rpcReqId = 1
 
-export async function erc8183BuyCard(args: Record<string, string>): Promise<void> {
+export async function erc8183Card(
+  command: string | undefined,
+  args: Record<string, string>,
+): Promise<void> {
   if (args['rpc-url']) {
     throw new Error(
-      'purr erc8183 buy-card does not accept --rpc-url. Set EVM_RPC_56 or EVM_RPC_URL if an RPC override is needed.',
+      'purr erc8183 card commands do not accept --rpc-url. Set EVM_RPC_56 or EVM_RPC_URL if an RPC override is needed.',
     )
   }
-  const result = await buyErc8183Card({
-    receiptTimeoutMs: parseOptionalPositiveInt(args['receipt-timeout-ms'], 'receipt-timeout-ms'),
-    receiptPollMs: parseOptionalPositiveInt(args['receipt-poll-ms'], 'receipt-poll-ms'),
-    submittedTimeoutMs: parseOptionalPositiveInt(
-      args['submitted-timeout-ms'],
-      'submitted-timeout-ms',
-    ),
-    submittedPollMs: parseOptionalPositiveInt(args['submitted-poll-ms'], 'submitted-poll-ms'),
-  })
+
+  const options = parseCardOptions(args)
+  let result: Erc8183CardResult
+
+  switch (command) {
+    case 'purchase':
+      result = await purchaseErc8183Card()
+      break
+    case 'create-job':
+      result = await createErc8183CardJob(options)
+      break
+    case 'fund':
+      result = await fundErc8183Card(options)
+      break
+    case 'deliverable':
+      result = await getErc8183CardDeliverable(options)
+      break
+    case 'accept':
+      result = await acceptErc8183Card(options)
+      break
+    case 'refund':
+      result = await refundErc8183Card(options)
+      break
+    case 'status':
+      result = await getErc8183CardStatus(options)
+      break
+    default:
+      throw new Error(
+        'Unknown erc8183 card command. Use: purchase, create-job, fund, deliverable, accept, refund, status',
+      )
+  }
+
   console.log(JSON.stringify(result, null, 2))
 }
 
-export async function buyErc8183Card(
-  options: Erc8183BuyCardOptions = {},
-): Promise<Erc8183BuyCardResult> {
+export async function purchaseErc8183Card(): Promise<Erc8183CardResult> {
   const { instanceId } = resolveCredentials()
-  let purchase = await purchaseCard(instanceId)
+  return purchaseCard(instanceId)
+}
 
-  await throwIfTerminal(instanceId, purchase, options)
+export async function getErc8183CardStatus(
+  options: Erc8183CardOptions,
+): Promise<Erc8183CardResult> {
+  const { instanceId } = resolveCredentials()
+  return getPurchase(instanceId, requirePurchaseId(options))
+}
+
+export async function createErc8183CardJob(
+  options: Erc8183CardOptions,
+): Promise<Erc8183CardResult> {
+  const { instanceId } = resolveCredentials()
+  const purchase = await getPurchase(instanceId, requirePurchaseId(options))
+  assertNotTerminal(purchase)
+
+  if (purchase.status !== 'initiated') {
+    return purchase
+  }
+
+  return createJob(instanceId, purchase, options)
+}
+
+export async function fundErc8183Card(options: Erc8183CardOptions): Promise<Erc8183CardResult> {
+  const { instanceId } = resolveCredentials()
+  const purchase = await getPurchase(instanceId, requirePurchaseId(options))
+  assertNotTerminal(purchase)
 
   if (purchase.status === 'initiated') {
-    purchase = await createJob(instanceId, purchase, options)
+    throw new Error(`Purchase ${purchase.purchaseId} must be created before funding`)
+  }
+  if (purchase.status !== 'created') {
+    return purchase
   }
 
-  await throwIfTerminal(instanceId, purchase, options)
+  return fundJob(instanceId, purchase, options)
+}
 
-  if (purchase.status === 'created') {
-    purchase = await fundJob(instanceId, purchase, options)
+export async function getErc8183CardDeliverable(
+  options: Erc8183CardOptions,
+): Promise<Erc8183CardResult> {
+  const { instanceId } = resolveCredentials()
+  const purchase = await getPurchase(instanceId, requirePurchaseId(options))
+  assertNotTerminal(purchase)
+
+  if (purchase.status === 'submitted' || purchase.status === 'completed' || !options.wait) {
+    return purchase
   }
 
-  await throwIfTerminal(instanceId, purchase, options)
+  return waitForSubmitted(instanceId, purchase, options)
+}
 
-  if (purchase.status === 'funded') {
-    purchase = await waitForSubmitted(instanceId, purchase, options)
+export async function acceptErc8183Card(options: Erc8183CardOptions): Promise<Erc8183CardResult> {
+  const { instanceId } = resolveCredentials()
+  const purchase = await getPurchase(instanceId, requirePurchaseId(options))
+  assertNotTerminal(purchase)
+
+  if (purchase.status === 'completed') return purchase
+  if (purchase.status !== 'submitted') {
+    throw new Error(`Purchase ${purchase.purchaseId} must be submitted before accept`)
   }
 
-  await throwIfTerminal(instanceId, purchase, options)
+  return completeJob(instanceId, purchase, options)
+}
 
-  if (purchase.status === 'submitted') {
-    const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'expired', options)
-    if (refundTxHash) {
-      purchase = await markExpiredPurchaseFailed(instanceId, purchase, refundTxHash)
-      throw purchaseError(purchase, 'expired', refundTxHash)
+export async function refundErc8183Card(options: Erc8183CardOptions): Promise<Erc8183CardResult> {
+  const { instanceId } = resolveCredentials()
+  const purchase = await getPurchase(instanceId, requirePurchaseId(options))
+  const refundTxHash = await claimRefundIfEligible(instanceId, purchase, options)
+  if (!refundTxHash) {
+    throw new Error(`Purchase ${purchase.purchaseId} is not refundable yet`)
+  }
+
+  if (purchase.status === 'rejected') {
+    const rejectTxHash = purchase.erc8183?.txHashes.reject
+    if (!rejectTxHash) {
+      return { ...purchase, refundTxHash }
     }
-    purchase = await completeJob(instanceId, purchase, options)
+    const updated = await recordProgress(instanceId, purchase.purchaseId, {
+      status: 'rejected',
+      rejectTxHash,
+      errorMessage: `ERC-8183 refund claimed: ${refundTxHash}`,
+    })
+    return { ...updated, refundTxHash }
   }
 
-  await throwIfTerminal(instanceId, purchase, options)
-
-  if (purchase.status !== 'completed') {
-    throw new Error(`ERC-8183 buy-card stopped at unsupported status: ${purchase.status}`)
-  }
-
-  clearRecoveryEntry(instanceId, purchase.purchaseId)
-  return toBuyCardResult(purchase)
+  const updated = await recordProgress(instanceId, purchase.purchaseId, {
+    status: 'failed',
+    errorMessage: `ERC-8183 refund claimed: ${refundTxHash}`,
+  })
+  return { ...updated, refundTxHash }
 }
 
 function basePath(instanceId: string): string {
@@ -288,91 +351,100 @@ async function executeSteps(instanceId: string, steps: TxStep[]): Promise<Wallet
 async function createJob(
   instanceId: string,
   purchase: AgentSelfIntroPurchase,
-  options: Erc8183BuyCardOptions,
+  options: Erc8183CardOptions,
 ): Promise<AgentSelfIntroPurchase> {
   const intent = requireIntent(purchase)
-  const recovery = readRecoveryEntry(instanceId, purchase.purchaseId)
-  const existingCreateTxHash = intent.txHashes.create ?? recovery?.txHashes.create
-  if (existingCreateTxHash) {
-    const receipt = await waitForReceipt(intent.chainId, existingCreateTxHash, options)
-    const onChainJobId = parseCreatedJobId(receipt, purchase)
-    updateRecoveryEntry(instanceId, purchase.purchaseId, {
-      onChainJobId,
-      txHashes: { create: existingCreateTxHash },
-    })
-    return recordProgress(instanceId, purchase.purchaseId, {
-      status: 'created',
-      onChainJobId,
-      createTxHash: existingCreateTxHash,
-    })
+  const createTxHash = options.createTxHash ?? intent.txHashes.create ?? null
+  let createdJobId: string
+  let resolvedCreateTxHash: string
+
+  if (createTxHash) {
+    const receipt = await waitForReceipt(intent.chainId, createTxHash, options)
+    createdJobId = parseCreatedJobId(receipt, purchase)
+    resolvedCreateTxHash = createTxHash
+  } else {
+    const expiredAt = Math.floor(Date.now() / 1000) + intent.jobExpirationSeconds
+    const step: TxStep = {
+      to: requireAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
+      data: encodeFunctionData({
+        abi: ERC8183_ABI,
+        functionName: 'createJob',
+        args: [
+          requireAddress(intent.providerWalletAddress, 'erc8183.providerWalletAddress'),
+          requireAddress(intent.evaluatorWalletAddress, 'erc8183.evaluatorWalletAddress'),
+          BigInt(expiredAt),
+          intent.jobUri,
+          requireAddress(intent.hookAddress || ZERO_ADDRESS, 'erc8183.hookAddress'),
+        ],
+      }),
+      value: '0x0',
+      chainId: intent.chainId,
+      label: 'ERC-8183 createJob',
+    }
+    const executed = await executeSteps(instanceId, [step])
+    resolvedCreateTxHash = requiredStepHash(executed, 'ERC-8183 createJob')
+    const receipt = await waitForReceipt(intent.chainId, resolvedCreateTxHash, options)
+    createdJobId = parseCreatedJobId(receipt, purchase)
   }
 
-  const expiredAt = Math.floor(Date.now() / 1000) + intent.jobExpirationSeconds
-  const step: TxStep = {
-    to: requireAddress(intent.contractAddress, 'erc8183.contractAddress'),
-    data: encodeFunctionData({
-      abi: ERC8183_ABI,
-      functionName: 'createJob',
-      args: [
-        requireAddress(intent.providerWalletAddress, 'erc8183.providerWalletAddress'),
-        requireAddress(intent.evaluatorWalletAddress, 'erc8183.evaluatorWalletAddress'),
-        BigInt(expiredAt),
-        intent.jobUri,
-        requireAddress(intent.hookAddress || ZERO_ADDRESS, 'erc8183.hookAddress'),
-      ],
-    }),
-    value: '0x0',
-    chainId: intent.chainId,
-    label: 'ERC-8183 createJob',
+  const registerTxHash = options.registerTxHash ?? null
+  if (registerTxHash) {
+    const receipt = await waitForReceipt(intent.chainId, registerTxHash, options)
+    assertRegisteredJob(receipt, purchase, createdJobId)
+  } else {
+    const registerStep: TxStep = {
+      to: requireAddress(intent.routerAddress, 'erc8183.routerAddress'),
+      data: encodeFunctionData({
+        abi: ERC8183_ROUTER_ABI,
+        functionName: 'registerJob',
+        args: [BigInt(createdJobId), requireAddress(intent.policyAddress, 'erc8183.policyAddress')],
+      }),
+      value: '0x0',
+      chainId: intent.chainId,
+      label: 'ERC-8183 registerJob',
+    }
+    const executed = await executeSteps(instanceId, [registerStep])
+    const executedRegisterTxHash = requiredStepHash(executed, 'ERC-8183 registerJob')
+    const receipt = await waitForReceipt(intent.chainId, executedRegisterTxHash, options)
+    assertRegisteredJob(receipt, purchase, createdJobId)
   }
-  const executed = await executeSteps(instanceId, [step])
-  const createTxHash = requiredStepHash(executed, 'ERC-8183 createJob')
-  updateRecoveryEntry(instanceId, purchase.purchaseId, {
-    txHashes: { create: createTxHash },
-  })
-  const receipt = await waitForReceipt(intent.chainId, createTxHash, options)
-  const onChainJobId = parseCreatedJobId(receipt, purchase)
-  updateRecoveryEntry(instanceId, purchase.purchaseId, {
-    onChainJobId,
-    txHashes: { create: createTxHash },
-  })
 
   return recordProgress(instanceId, purchase.purchaseId, {
     status: 'created',
-    onChainJobId,
-    createTxHash,
+    onChainJobId: createdJobId,
+    createTxHash: resolvedCreateTxHash,
   })
 }
 
 async function fundJob(
   instanceId: string,
   purchase: AgentSelfIntroPurchase,
-  options: Erc8183BuyCardOptions,
+  options: Erc8183CardOptions,
 ): Promise<AgentSelfIntroPurchase> {
   const intent = requireIntent(purchase)
   const jobId = requireOnChainJobId(purchase)
   const budgetAmount = requireBudgetAmount(intent)
-  const recovery = readRecoveryEntry(instanceId, purchase.purchaseId)
-  const existingFundTxHash = intent.txHashes.fund ?? recovery?.txHashes.fund
+  const existingFundTxHash = options.fundTxHash ?? intent.txHashes.fund ?? null
+
   if (existingFundTxHash) {
-    const setBudgetTxHash = intent.txHashes.setBudget ?? recovery?.txHashes.setBudget
+    const setBudgetTxHash = options.setBudgetTxHash ?? intent.txHashes.setBudget
     if (!setBudgetTxHash) {
       throw new Error(
-        `Recovered fund tx ${existingFundTxHash} is missing setBudget tx hash for purchase ${purchase.purchaseId}`,
+        `fund tx ${existingFundTxHash} is missing setBudget tx hash for purchase ${purchase.purchaseId}`,
       )
     }
     await waitForReceipt(intent.chainId, existingFundTxHash, options)
     return recordProgress(instanceId, purchase.purchaseId, {
       status: 'funded',
       setBudgetTxHash,
-      approveTxHash: intent.txHashes.approve ?? recovery?.txHashes.approve ?? null,
+      approveTxHash: options.approveTxHash ?? intent.txHashes.approve ?? null,
       fundTxHash: existingFundTxHash,
     })
   }
 
   const steps: TxStep[] = [
     {
-      to: requireAddress(intent.contractAddress, 'erc8183.contractAddress'),
+      to: requireAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
       data: encodeFunctionData({
         abi: ERC8183_ABI,
         functionName: 'setBudget',
@@ -391,7 +463,7 @@ async function fundJob(
       data: encodeFunctionData({
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [requireAddress(intent.contractAddress, 'erc8183.contractAddress'), budgetAmount],
+        args: [requireAddress(intent.commerceAddress, 'erc8183.commerceAddress'), budgetAmount],
       }),
       value: '0x0',
       chainId: intent.chainId,
@@ -399,14 +471,14 @@ async function fundJob(
       conditional: {
         type: 'allowance_lt',
         token,
-        spender: requireAddress(intent.contractAddress, 'erc8183.contractAddress'),
+        spender: requireAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
         amount: budgetAmount.toString(),
       },
     })
   }
 
   steps.push({
-    to: requireAddress(intent.contractAddress, 'erc8183.contractAddress'),
+    to: requireAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
     data: encodeFunctionData({
       abi: ERC8183_ABI,
       functionName: 'fund',
@@ -421,9 +493,6 @@ async function fundJob(
   const setBudgetTxHash = requiredStepHash(executed, 'ERC-8183 setBudget')
   const approveTxHash = optionalStepHash(executed, 'ERC-8183 approve payment token')
   const fundTxHash = requiredStepHash(executed, 'ERC-8183 fund')
-  updateRecoveryEntry(instanceId, purchase.purchaseId, {
-    txHashes: { setBudget: setBudgetTxHash, approve: approveTxHash, fund: fundTxHash },
-  })
   await waitForReceipt(intent.chainId, fundTxHash, options)
 
   return recordProgress(instanceId, purchase.purchaseId, {
@@ -437,7 +506,7 @@ async function fundJob(
 async function waitForSubmitted(
   instanceId: string,
   purchase: AgentSelfIntroPurchase,
-  options: Erc8183BuyCardOptions,
+  options: Erc8183CardOptions,
 ): Promise<AgentSelfIntroPurchase> {
   const timeoutMs = options.submittedTimeoutMs ?? SUBMITTED_TIMEOUT_MS
   const pollMs = options.submittedPollMs ?? SUBMITTED_POLL_MS
@@ -446,15 +515,9 @@ async function waitForSubmitted(
 
   while (Date.now() <= deadline) {
     current = await getPurchase(instanceId, purchase.purchaseId)
+    assertNotTerminal(current)
     if (current.status === 'submitted' || current.status === 'completed') return current
-    await throwIfTerminal(instanceId, current, options)
     await sleep(pollMs)
-  }
-
-  const refundTxHash = await claimRefundIfNeeded(instanceId, current, 'expired', options)
-  if (refundTxHash) {
-    current = await markExpiredPurchaseFailed(instanceId, current, refundTxHash)
-    throw purchaseError(current, 'expired', refundTxHash)
   }
 
   throw new Error(
@@ -465,71 +528,58 @@ async function waitForSubmitted(
 async function completeJob(
   instanceId: string,
   purchase: AgentSelfIntroPurchase,
-  options: Erc8183BuyCardOptions,
+  options: Erc8183CardOptions,
 ): Promise<AgentSelfIntroPurchase> {
   const intent = requireIntent(purchase)
   const jobId = requireOnChainJobId(purchase)
-  const recovery = readRecoveryEntry(instanceId, purchase.purchaseId)
-  const existingCompleteTxHash = intent.txHashes.complete ?? recovery?.txHashes.complete
-  if (existingCompleteTxHash) {
-    await waitForReceipt(intent.chainId, existingCompleteTxHash, options)
+  const completeTxHash = options.completeTxHash ?? intent.txHashes.complete ?? null
+
+  if (completeTxHash) {
+    await waitForReceipt(intent.chainId, completeTxHash, options)
     return recordProgress(instanceId, purchase.purchaseId, {
       status: 'completed',
-      completeTxHash: existingCompleteTxHash,
+      completeTxHash,
     })
   }
 
+  await assertAcceptableOnChainJob(intent, jobId, purchase.purchaseId)
+
   const completeStep: TxStep = {
-    to: requireAddress(intent.contractAddress, 'erc8183.contractAddress'),
+    to: requireAddress(intent.routerAddress, 'erc8183.routerAddress'),
     data: encodeFunctionData({
-      abi: ERC8183_ABI,
-      functionName: 'complete',
-      args: [
-        BigInt(jobId),
-        hashToBytes32(`accepted:${purchase.purchaseId}:${purchase.cardId ?? ''}`),
-        EMPTY_BYTES,
-      ],
+      abi: ERC8183_ROUTER_ABI,
+      functionName: 'settle',
+      args: [BigInt(jobId), EMPTY_BYTES],
     }),
     value: '0x0',
     chainId: intent.chainId,
-    label: 'ERC-8183 complete',
+    label: 'ERC-8183 settle',
   }
   const executed = await executeSteps(instanceId, [completeStep])
-  const completeTxHash = requiredStepHash(executed, 'ERC-8183 complete')
-  updateRecoveryEntry(instanceId, purchase.purchaseId, {
-    txHashes: { complete: completeTxHash },
-  })
-  await waitForReceipt(intent.chainId, completeTxHash, options)
+  const executedCompleteTxHash = requiredStepHash(executed, 'ERC-8183 settle')
+  await waitForReceipt(intent.chainId, executedCompleteTxHash, options)
 
   return recordProgress(instanceId, purchase.purchaseId, {
     status: 'completed',
-    completeTxHash,
+    completeTxHash: executedCompleteTxHash,
   })
 }
 
-async function claimRefundIfNeeded(
+async function claimRefundIfEligible(
   instanceId: string,
   purchase: AgentSelfIntroPurchase,
-  reason: 'expired' | 'rejected',
-  options: Erc8183BuyCardOptions,
+  options: Erc8183CardOptions,
 ): Promise<string | null> {
-  if (!isRefundCandidatePurchase(purchase, reason)) return null
   const intent = requireIntent(purchase)
   const jobId = purchase.erc8183?.onChainJobId
   if (!jobId) return null
-
-  const recovery = readRecoveryEntry(instanceId, purchase.purchaseId)
-  const existingRefundTxHash = recovery?.txHashes.refund
-  if (existingRefundTxHash) {
-    await waitForReceipt(intent.chainId, existingRefundTxHash, options)
-    return existingRefundTxHash
-  }
+  if (!isRefundCandidatePurchase(purchase)) return null
 
   const job = await readOnChainJob(intent, jobId)
-  if (!job || !shouldClaimRefundForJob(job, reason)) return null
+  if (!job || !shouldClaimRefundForJob(job)) return null
 
   const refundStep: TxStep = {
-    to: requireAddress(intent.contractAddress, 'erc8183.contractAddress'),
+    to: requireAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
     data: encodeFunctionData({
       abi: ERC8183_ABI,
       functionName: 'claimRefund',
@@ -541,24 +591,8 @@ async function claimRefundIfNeeded(
   }
   const executed = await executeSteps(instanceId, [refundStep])
   const refundTxHash = requiredStepHash(executed, 'ERC-8183 claimRefund')
-  updateRecoveryEntry(instanceId, purchase.purchaseId, {
-    txHashes: { refund: refundTxHash },
-  })
   await waitForReceipt(intent.chainId, refundTxHash, options)
   return refundTxHash
-}
-
-async function markExpiredPurchaseFailed(
-  instanceId: string,
-  purchase: AgentSelfIntroPurchase,
-  refundTxHash?: string,
-): Promise<AgentSelfIntroPurchase> {
-  return recordProgress(instanceId, purchase.purchaseId, {
-    status: 'failed',
-    errorMessage: refundTxHash
-      ? `ERC-8183 job expired; refund claimed: ${refundTxHash}`
-      : 'ERC-8183 job expired',
-  })
 }
 
 function unwrap<T>(envelope: ApiEnvelope<T>): T {
@@ -616,29 +650,29 @@ function requireAddress(value: string, field: string): `0x${string}` {
 async function readOnChainJob(
   intent: NonNullable<AgentSelfIntroPurchase['erc8183']>,
   jobId: string,
-): Promise<OnChainJob | null> {
+): Promise<OnChainJob> {
   const data = encodeFunctionData({
     abi: ERC8183_ABI,
     functionName: 'getJob',
     args: [BigInt(jobId)],
   })
-  try {
-    const raw = await evmRpc<Hex>(resolveRpcUrl(intent.chainId), 'eth_call', [
-      {
-        to: requireAddress(intent.contractAddress, 'erc8183.contractAddress'),
-        data,
-      },
-      'latest',
-    ])
-    const decoded = decodeFunctionResult({
-      abi: ERC8183_ABI,
-      functionName: 'getJob',
-      data: raw,
-    }) as unknown
-    return normalizeOnChainJob(decoded)
-  } catch {
-    return null
+  const raw = await evmRpc<Hex>(resolveRpcUrl(intent.chainId), 'eth_call', [
+    {
+      to: requireAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
+      data,
+    },
+    'latest',
+  ])
+  const decoded = decodeFunctionResult({
+    abi: ERC8183_ABI,
+    functionName: 'getJob',
+    data: raw,
+  }) as unknown
+  const job = normalizeOnChainJob(decoded)
+  if (!job) {
+    throw new Error(`ERC-8183 getJob returned an invalid job for jobId ${jobId}`)
   }
+  return job
 }
 
 function normalizeOnChainJob(decoded: unknown): OnChainJob | null {
@@ -653,11 +687,8 @@ function normalizeOnChainJob(decoded: unknown): OnChainJob | null {
   return { id, expiredAt, status: Number(status) }
 }
 
-function isRefundCandidatePurchase(
-  purchase: AgentSelfIntroPurchase,
-  reason: 'expired' | 'rejected',
-): boolean {
-  if (reason === 'rejected') return purchase.status === 'rejected'
+function isRefundCandidatePurchase(purchase: AgentSelfIntroPurchase): boolean {
+  if (purchase.status === 'rejected') return true
   if (purchase.status === 'funded' || purchase.status === 'submitted') return true
   return (
     purchase.status === 'failed' &&
@@ -665,18 +696,28 @@ function isRefundCandidatePurchase(
   )
 }
 
-function shouldClaimRefundForJob(job: OnChainJob, reason: 'expired' | 'rejected'): boolean {
-  if (reason === 'rejected') return isRejectedJobStatus(job.status)
-  if (!isFundedOrSubmittedJobStatus(job.status)) return false
+function shouldClaimRefundForJob(job: OnChainJob): boolean {
+  if (job.status === ERC8183_JOB_STATUS.REJECTED) return true
+  if (job.status !== ERC8183_JOB_STATUS.FUNDED && job.status !== ERC8183_JOB_STATUS.SUBMITTED) {
+    return false
+  }
   return job.expiredAt <= BigInt(Math.floor(Date.now() / 1000))
 }
 
-function isFundedOrSubmittedJobStatus(status: number): boolean {
-  return status === 1 || status === 2
-}
-
-function isRejectedJobStatus(status: number): boolean {
-  return status === 4
+async function assertAcceptableOnChainJob(
+  intent: NonNullable<AgentSelfIntroPurchase['erc8183']>,
+  jobId: string,
+  purchaseId: string,
+): Promise<void> {
+  const job = await readOnChainJob(intent, jobId)
+  if (job.status !== ERC8183_JOB_STATUS.SUBMITTED) {
+    throw new Error(
+      `ERC-8183 job is not submitted on-chain for purchase ${purchaseId}; status=${job.status}`,
+    )
+  }
+  if (job.expiredAt <= BigInt(Math.floor(Date.now() / 1000))) {
+    throw new Error(`ERC-8183 job expired for purchase ${purchaseId}`)
+  }
 }
 
 function parseCreatedJobId(receipt: RpcReceipt, purchase: AgentSelfIntroPurchase): string {
@@ -684,7 +725,7 @@ function parseCreatedJobId(receipt: RpcReceipt, purchase: AgentSelfIntroPurchase
     throw new Error(`createJob transaction failed: ${receipt.transactionHash}`)
   }
   const intent = requireIntent(purchase)
-  if (receipt.to && getAddress(receipt.to) !== getAddress(intent.contractAddress)) {
+  if (receipt.to && getAddress(receipt.to) !== getAddress(intent.commerceAddress)) {
     throw new Error('createJob transaction target does not match the ERC-8183 contract')
   }
 
@@ -707,6 +748,35 @@ function parseCreatedJobId(receipt: RpcReceipt, purchase: AgentSelfIntroPurchase
   return args.jobId.toString()
 }
 
+function assertRegisteredJob(
+  receipt: RpcReceipt,
+  purchase: AgentSelfIntroPurchase,
+  onChainJobId: string,
+): void {
+  if (receipt.status !== '0x1') {
+    throw new Error(`registerJob transaction failed: ${receipt.transactionHash}`)
+  }
+  const intent = requireIntent(purchase)
+  if (receipt.to && getAddress(receipt.to) !== getAddress(intent.routerAddress)) {
+    throw new Error('registerJob transaction target does not match the ERC-8183 router')
+  }
+
+  const events = parseEventLogs({ abi: ERC8183_ROUTER_ABI, logs: receipt.logs })
+  const registered = events.find((event) => event.eventName === 'JobRegistered')
+  if (!registered) throw new Error('JobRegistered event not found in registerJob receipt')
+
+  const args = registered.args as {
+    jobId?: bigint
+    policy?: string
+    client?: string
+  }
+  if (args.jobId?.toString() !== onChainJobId) {
+    throw new Error('JobRegistered.jobId does not match the created job')
+  }
+  assertSameAddress(args.policy, intent.policyAddress, 'JobRegistered.policy')
+  assertSameAddress(args.client, intent.clientWalletAddress, 'JobRegistered.client')
+}
+
 function assertSameAddress(actual: string | undefined, expected: string, field: string): void {
   if (!actual || getAddress(actual) !== getAddress(expected)) {
     throw new Error(`${field} does not match the purchase intent`)
@@ -716,7 +786,7 @@ function assertSameAddress(actual: string | undefined, expected: string, field: 
 async function waitForReceipt(
   chainId: number,
   txHash: string,
-  options: Erc8183BuyCardOptions,
+  options: Erc8183CardOptions,
 ): Promise<RpcReceipt> {
   const rpcUrl = resolveRpcUrl(chainId)
   const pollMs = options.receiptPollMs ?? RECEIPT_POLL_MS
@@ -776,134 +846,48 @@ async function evmRpc<T>(rpcUrl: string, method: string, params: unknown[]): Pro
   return json.result
 }
 
-function hashToBytes32(value: string | Uint8Array): Hex {
-  return `0x${createHash('sha256').update(value).digest('hex')}`
-}
-
-function toBuyCardResult(purchase: AgentSelfIntroPurchase): Erc8183BuyCardResult {
-  const text = purchase.suggestedTweetText
-  return {
-    purchaseId: purchase.purchaseId,
-    status: purchase.status,
-    imageUrl: purchase.imageUrl,
-    shareUrl: purchase.shareUrl,
-    suggestedTweetText: text,
-    xIntentUrl: text ? `https://x.com/intent/tweet?text=${encodeURIComponent(text)}` : null,
-    erc8183: purchase.erc8183,
-  }
-}
-
-async function throwIfTerminal(
-  instanceId: string,
-  purchase: AgentSelfIntroPurchase,
-  options: Erc8183BuyCardOptions,
-): Promise<void> {
-  if (purchase.erc8183?.status === 'expired') {
-    const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'expired', options)
-    const failedPurchase = await markExpiredPurchaseFailed(
-      instanceId,
-      purchase,
-      refundTxHash ?? undefined,
-    )
-    throw purchaseError(failedPurchase, 'expired', refundTxHash ?? undefined)
-  }
-  if (purchase.status === 'rejected') {
-    const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'rejected', options)
-    throw purchaseError(purchase, 'rejected', refundTxHash ?? undefined)
-  }
-  if (purchase.status === 'failed') {
-    const refundTxHash = await claimRefundIfNeeded(instanceId, purchase, 'expired', options)
-    if (refundTxHash) {
-      const failedPurchase = await markExpiredPurchaseFailed(instanceId, purchase, refundTxHash)
-      throw purchaseError(failedPurchase, undefined, refundTxHash)
-    }
+function assertNotTerminal(purchase: AgentSelfIntroPurchase): void {
+  if (purchase.status === 'failed' || purchase.status === 'rejected') {
     throw purchaseError(purchase)
   }
+  if (purchase.erc8183?.status === 'expired') {
+    throw purchaseError(purchase, 'expired')
+  }
 }
 
-function purchaseError(
-  purchase: AgentSelfIntroPurchase,
-  statusOverride?: string,
-  refundTxHash?: string,
-): Error {
+function purchaseError(purchase: AgentSelfIntroPurchase, statusOverride?: string): Error {
   const status = statusOverride ?? purchase.status
   const rejectHash = purchase.erc8183?.txHashes.reject
-  const suffixParts = [
-    rejectHash ? `rejectTxHash=${rejectHash}` : '',
-    refundTxHash ? `refundTxHash=${refundTxHash}` : '',
-  ].filter(Boolean)
-  const suffix = suffixParts.length > 0 ? ` ${suffixParts.join(' ')}` : ''
-  return new Error(`ERC-8183 buy-card ${status} for purchase ${purchase.purchaseId}${suffix}`)
+  const suffix = rejectHash ? ` rejectTxHash=${rejectHash}` : ''
+  return new Error(`ERC-8183 card purchase ${status} for purchase ${purchase.purchaseId}${suffix}`)
 }
 
-function recoveryStateFile(): string {
-  return process.env[RECOVERY_STATE_FILE_ENV] ?? DEFAULT_RECOVERY_STATE_FILE
-}
-
-function recoveryKey(instanceId: string, purchaseId: string): string {
-  return `${instanceId}:${purchaseId}`
-}
-
-function readRecoveryState(): RecoveryState {
-  const file = recoveryStateFile()
-  if (!existsSync(file)) return {}
-  try {
-    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as unknown
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
-    return parsed as RecoveryState
-  } catch {
-    return {}
+function parseCardOptions(args: Record<string, string>): Erc8183CardOptions {
+  return {
+    purchaseId: args['purchase-id'],
+    receiptTimeoutMs: parseOptionalPositiveInt(args['receipt-timeout-ms'], 'receipt-timeout-ms'),
+    receiptPollMs: parseOptionalPositiveInt(args['receipt-poll-ms'], 'receipt-poll-ms'),
+    submittedTimeoutMs: parseOptionalPositiveInt(
+      args['submitted-timeout-ms'],
+      'submitted-timeout-ms',
+    ),
+    submittedPollMs: parseOptionalPositiveInt(args['submitted-poll-ms'], 'submitted-poll-ms'),
+    wait: parseOptionalBoolean(args.wait, 'wait'),
+    createTxHash: parseOptionalTxHash(args['create-tx-hash'], 'create-tx-hash'),
+    registerTxHash: parseOptionalTxHash(args['register-tx-hash'], 'register-tx-hash'),
+    setBudgetTxHash: parseOptionalTxHash(args['set-budget-tx-hash'], 'set-budget-tx-hash'),
+    approveTxHash:
+      args['approve-tx-hash'] === undefined
+        ? undefined
+        : parseOptionalTxHash(args['approve-tx-hash'], 'approve-tx-hash'),
+    fundTxHash: parseOptionalTxHash(args['fund-tx-hash'], 'fund-tx-hash'),
+    completeTxHash: parseOptionalTxHash(args['complete-tx-hash'], 'complete-tx-hash'),
   }
 }
 
-function writeRecoveryState(state: RecoveryState): void {
-  const file = recoveryStateFile()
-  mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, JSON.stringify(state, null, 2), { mode: 0o600 })
-  chmodSync(file, 0o600)
-}
-
-function readRecoveryEntry(instanceId: string, purchaseId: string): RecoveryEntry | null {
-  return readRecoveryState()[recoveryKey(instanceId, purchaseId)] ?? null
-}
-
-function updateRecoveryEntry(
-  instanceId: string,
-  purchaseId: string,
-  patch: {
-    onChainJobId?: string | null
-    txHashes?: RecoveryTxHashes
-  },
-): void {
-  try {
-    const state = readRecoveryState()
-    const key = recoveryKey(instanceId, purchaseId)
-    const current = state[key]
-    state[key] = {
-      purchaseId,
-      updatedAt: new Date().toISOString(),
-      onChainJobId: patch.onChainJobId ?? current?.onChainJobId ?? null,
-      txHashes: {
-        ...(current?.txHashes ?? {}),
-        ...(patch.txHashes ?? {}),
-      },
-    }
-    writeRecoveryState(state)
-  } catch {
-    // Recovery is best effort; failing to write local state must not block the purchase flow.
-  }
-}
-
-function clearRecoveryEntry(instanceId: string, purchaseId: string): void {
-  try {
-    const state = readRecoveryState()
-    const key = recoveryKey(instanceId, purchaseId)
-    if (!(key in state)) return
-    delete state[key]
-    writeRecoveryState(state)
-  } catch {
-    // Best effort cleanup only.
-  }
+function requirePurchaseId(options: Erc8183CardOptions): string {
+  if (!options.purchaseId) throw new Error('Missing required argument: --purchase-id')
+  return options.purchaseId
 }
 
 function parseOptionalPositiveInt(value: string | undefined, name: string): number | undefined {
@@ -913,6 +897,20 @@ function parseOptionalPositiveInt(value: string | undefined, name: string): numb
     throw new Error(`Invalid --${name}: "${value}"`)
   }
   return parsed
+}
+
+function parseOptionalBoolean(value: string | undefined, name: string): boolean | undefined {
+  if (value === undefined) return undefined
+  const normalized = value.trim().toLowerCase()
+  if (['true', '1', 'yes'].includes(normalized)) return true
+  if (['false', '0', 'no'].includes(normalized)) return false
+  throw new Error(`Invalid --${name}: "${value}"`)
+}
+
+function parseOptionalTxHash(value: string | undefined, name: string): string | undefined {
+  if (value === undefined) return undefined
+  if (!/^0x[0-9a-fA-F]{64}$/.test(value)) throw new Error(`Invalid --${name}: "${value}"`)
+  return value
 }
 
 function sleep(ms: number): Promise<void> {

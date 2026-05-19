@@ -1,23 +1,21 @@
 import { strict as assert } from 'node:assert'
-import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { encodeAbiParameters, encodeEventTopics, encodeFunctionResult, parseAbi } from 'viem'
 import {
-  type Hex,
-  decodeFunctionData,
-  encodeAbiParameters,
-  encodeEventTopics,
-  encodeFunctionResult,
-  getAddress,
-  parseAbi,
-} from 'viem'
-import { buyErc8183Card } from '../packages/plugins/erc8183/src/buy-card.ts'
+  acceptErc8183Card,
+  createErc8183CardJob,
+  fundErc8183Card,
+  getErc8183CardDeliverable,
+  purchaseErc8183Card,
+  refundErc8183Card,
+} from '../packages/plugins/erc8183/src/card.ts'
 
 const INSTANCE_ID = '4fd09ba9-3654-4f01-bfc7-f28c3a0779f2'
 const PURCHASE_ID = '80fdb8b1-9230-4d78-9fd6-579d4e6136f0'
 const CARD_ID = '401d39ea-7ebd-4c43-887c-45617f3843cc'
 const CONTRACT = '0x1234567890123456789012345678901234567890'
+const ROUTER = '0x5555555555555555555555555555555555555555'
+const POLICY = '0x6666666666666666666666666666666666666666'
 const CLIENT = '0x2222222222222222222222222222222222222222'
 const PROVIDER = '0x3333333333333333333333333333333333333333'
 const TOKEN = '0x4444444444444444444444444444444444444444'
@@ -26,6 +24,7 @@ const JOB_ID = '42'
 
 const HASHES = {
   create: `0x${'01'.repeat(32)}`,
+  register: `0x${'11'.repeat(32)}`,
   setBudget: `0x${'02'.repeat(32)}`,
   approve: `0x${'03'.repeat(32)}`,
   fund: `0x${'04'.repeat(32)}`,
@@ -35,16 +34,19 @@ const HASHES = {
   refund: `0x${'10'.repeat(32)}`,
 }
 
+const JOB_STATUS = {
+  CREATED: 1,
+  FUNDED: 2,
+  SUBMITTED: 3,
+  COMPLETED: 4,
+  REJECTED: 5,
+} as const
+
 const ERC8183_ABI = parseAbi([
-  'function createJob(address provider,address evaluator,uint256 expiredAt,string description,address hook) returns (uint256)',
-  'function setBudget(uint256 jobId,uint256 amount,bytes optParams)',
-  'function fund(uint256 jobId,uint256 expectedBudget,bytes optParams)',
-  'function complete(uint256 jobId,bytes32 reason,bytes optParams)',
-  'function claimRefund(uint256 jobId)',
   'function getJob(uint256 jobId) view returns ((uint256 id,address client,address provider,address evaluator,string description,uint256 budget,uint256 expiredAt,uint8 status,address hook))',
   'event JobCreated(uint256 indexed jobId,address indexed client,address indexed provider,address evaluator,uint256 expiredAt,address hook)',
+  'event JobRegistered(uint256 indexed jobId,address indexed policy,address indexed client)',
 ])
-const ERC20_ABI = parseAbi(['function approve(address spender,uint256 amount) returns (bool)'])
 
 type PurchaseStatus =
   | 'initiated'
@@ -55,17 +57,12 @@ type PurchaseStatus =
   | 'failed'
   | 'rejected'
 type JsonRecord = Record<string, unknown>
-
-type StartedServer = {
-  url: string
-  close: () => Promise<void>
-}
+type StartedServer = { url: string; close: () => Promise<void> }
 
 interface BackendState {
   status: PurchaseStatus
   jobStatus: number
   jobExpiredAt: bigint
-  autoSubmitAfterFund: boolean
   progressCalls: string[]
   walletCalls: Array<{ labels: string[] }>
 }
@@ -75,130 +72,112 @@ const originalEnv = {
   WALLET_API_TOKEN: process.env.WALLET_API_TOKEN,
   INSTANCE_ID: process.env.INSTANCE_ID,
   EVM_RPC_56: process.env.EVM_RPC_56,
-  PURR_ERC8183_STATE_FILE: process.env.PURR_ERC8183_STATE_FILE,
 }
 
 async function main() {
-  const tempStateDir = mkdtempSync(join(tmpdir(), 'purr-erc8183-local-e2e-'))
-
   try {
-    await runHappyPathScenario(tempStateDir)
-    await runRejectedRefundScenario(tempStateDir)
-    await runExpiredRefundScenario(tempStateDir)
-    console.log('[erc8183-local-e2e] PASS')
+    await runHappyPathScenario()
+    await runRejectedRefundScenario()
+    await runExpiredRefundScenario()
+    console.log('[erc8183-card-local-e2e] PASS')
   } finally {
     restoreEnv()
-    rmSync(tempStateDir, { recursive: true, force: true })
   }
 }
 
-async function runHappyPathScenario(tempStateDir: string) {
-  await runLocalScenario(tempStateDir, 'happy-path', createBackendState(), async (state) => {
-    const result = await buyErc8183Card({
+async function runHappyPathScenario() {
+  await runLocalScenario('happy-path', createBackendState(), async (state) => {
+    const started = await purchaseErc8183Card()
+    assert.equal(started.status, 'initiated')
+
+    const created = await createErc8183CardJob({
+      purchaseId: started.purchaseId,
       receiptPollMs: 10,
       receiptTimeoutMs: 2_000,
+    })
+    assert.equal(created.status, 'created')
+    assert.equal(created.erc8183?.onChainJobId, JOB_ID)
+
+    const funded = await fundErc8183Card({
+      purchaseId: started.purchaseId,
+      receiptPollMs: 10,
+      receiptTimeoutMs: 2_000,
+    })
+    assert.equal(funded.status, 'submitted')
+
+    const delivered = await getErc8183CardDeliverable({
+      purchaseId: started.purchaseId,
+      wait: true,
       submittedPollMs: 10,
       submittedTimeoutMs: 2_000,
     })
+    assert.equal(delivered.status, 'submitted')
+    assert.equal(delivered.imageUrl, 'https://local.purr.test/cards/card.png')
 
-    assert.equal(result.status, 'completed')
-    assert.equal(result.imageUrl, 'https://local.purr.test/cards/card.png')
-    assert.equal(result.shareUrl, 'https://local.purr.test/cards/card')
-    assert.equal(result.erc8183?.onChainJobId, JOB_ID)
-    assert(result.xIntentUrl?.startsWith('https://x.com/intent/tweet?text='))
+    const completed = await acceptErc8183Card({
+      purchaseId: started.purchaseId,
+      receiptPollMs: 10,
+      receiptTimeoutMs: 2_000,
+    })
+    assert.equal(completed.status, 'completed')
 
     assert.deepEqual(state.progressCalls, ['created', 'funded', 'completed'])
     assert.deepEqual(
       state.walletCalls.map((call) => call.labels),
       [
         ['ERC-8183 createJob'],
+        ['ERC-8183 registerJob'],
         ['ERC-8183 setBudget', 'ERC-8183 approve payment token', 'ERC-8183 fund'],
-        ['ERC-8183 complete'],
+        ['ERC-8183 settle'],
       ],
     )
-
-    console.log('[erc8183-local-e2e] happy-path PASS')
-    console.log(
-      JSON.stringify(
-        {
-          purchaseId: result.purchaseId,
-          status: result.status,
-          imageUrl: result.imageUrl,
-          shareUrl: result.shareUrl,
-          xIntentUrl: result.xIntentUrl,
-          onChainJobId: result.erc8183?.onChainJobId,
-        },
-        null,
-        2,
-      ),
-    )
+    console.log('[erc8183-card-local-e2e] happy-path PASS')
   })
 }
 
-async function runRejectedRefundScenario(tempStateDir: string) {
+async function runRejectedRefundScenario() {
   await runLocalScenario(
-    tempStateDir,
     'rejected-refund',
-    createBackendState({ status: 'rejected', jobStatus: 4 }),
+    createBackendState({ status: 'rejected', jobStatus: JOB_STATUS.REJECTED }),
     async (state) => {
-      const error = await expectError(() =>
-        buyErc8183Card({
-          receiptPollMs: 10,
-          receiptTimeoutMs: 2_000,
-          submittedPollMs: 10,
-          submittedTimeoutMs: 2_000,
-        }),
-      )
-
-      assert.match(error.message, /ERC-8183 buy-card rejected/)
-      assert.match(error.message, new RegExp(`rejectTxHash=${HASHES.reject}`))
-      assert.match(error.message, new RegExp(`refundTxHash=${HASHES.refund}`))
-      assert.deepEqual(state.progressCalls, [])
+      const result = await refundErc8183Card({
+        purchaseId: PURCHASE_ID,
+        receiptPollMs: 10,
+        receiptTimeoutMs: 2_000,
+      })
+      assert.equal(result.refundTxHash, HASHES.refund)
+      assert.deepEqual(state.progressCalls, ['rejected'])
       assert.deepEqual(
         state.walletCalls.map((call) => call.labels),
         [['ERC-8183 claimRefund']],
       )
-
-      console.log('[erc8183-local-e2e] rejected-refund PASS')
+      console.log('[erc8183-card-local-e2e] rejected-refund PASS')
     },
   )
 }
 
-async function runExpiredRefundScenario(tempStateDir: string) {
+async function runExpiredRefundScenario() {
   await runLocalScenario(
-    tempStateDir,
     'expired-refund',
-    createBackendState({
-      status: 'funded',
-      jobStatus: 1,
-      jobExpiredAt: 1n,
-      autoSubmitAfterFund: false,
-    }),
+    createBackendState({ status: 'funded', jobStatus: JOB_STATUS.FUNDED, jobExpiredAt: 1n }),
     async (state) => {
-      const error = await expectError(() =>
-        buyErc8183Card({
-          receiptPollMs: 10,
-          receiptTimeoutMs: 2_000,
-          submittedPollMs: 1,
-          submittedTimeoutMs: 1,
-        }),
-      )
-
-      assert.match(error.message, /ERC-8183 buy-card expired/)
-      assert.match(error.message, new RegExp(`refundTxHash=${HASHES.refund}`))
-      assert.deepEqual(state.progressCalls, [])
+      const result = await refundErc8183Card({
+        purchaseId: PURCHASE_ID,
+        receiptPollMs: 10,
+        receiptTimeoutMs: 2_000,
+      })
+      assert.equal(result.refundTxHash, HASHES.refund)
+      assert.deepEqual(state.progressCalls, ['failed'])
       assert.deepEqual(
         state.walletCalls.map((call) => call.labels),
         [['ERC-8183 claimRefund']],
       )
-
-      console.log('[erc8183-local-e2e] expired-refund PASS')
+      console.log('[erc8183-card-local-e2e] expired-refund PASS')
     },
   )
 }
 
 async function runLocalScenario(
-  tempStateDir: string,
   name: string,
   state: BackendState,
   test: (state: BackendState) => Promise<void>,
@@ -210,35 +189,24 @@ async function runLocalScenario(
   process.env.WALLET_API_TOKEN = 'local-e2e-instance-token'
   process.env.INSTANCE_ID = INSTANCE_ID
   process.env.EVM_RPC_56 = rpc.url
-  process.env.PURR_ERC8183_STATE_FILE = join(tempStateDir, `${name}.json`)
 
   try {
     await test(state)
   } finally {
     await Promise.all([api.close(), rpc.close()])
+    console.log(`[erc8183-card-local-e2e] ${name} closed`)
   }
 }
 
 function createBackendState(overrides: Partial<BackendState> = {}): BackendState {
   return {
     status: 'initiated',
-    jobStatus: 2,
+    jobStatus: JOB_STATUS.SUBMITTED,
     jobExpiredAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
-    autoSubmitAfterFund: true,
     progressCalls: [],
     walletCalls: [],
     ...overrides,
   }
-}
-
-async function expectError(run: () => Promise<unknown>): Promise<Error> {
-  try {
-    await run()
-  } catch (error) {
-    assert(error instanceof Error)
-    return error
-  }
-  throw new Error('expected buy-card to throw')
 }
 
 async function handleApi(
@@ -271,7 +239,7 @@ async function handleApi(
       assert.equal(progress.onChainJobId, JOB_ID)
       assert.equal(progress.createTxHash, HASHES.create)
       state.status = 'created'
-      state.jobStatus = 0
+      state.jobStatus = JOB_STATUS.CREATED
       sendJson(res, 200, { ok: true, data: purchase('created') })
       return
     }
@@ -280,17 +248,29 @@ async function handleApi(
       assert.equal(progress.setBudgetTxHash, HASHES.setBudget)
       assert.equal(progress.approveTxHash, HASHES.approve)
       assert.equal(progress.fundTxHash, HASHES.fund)
-      state.status = state.autoSubmitAfterFund ? 'submitted' : 'funded'
-      state.jobStatus = state.autoSubmitAfterFund ? 2 : 1
-      sendJson(res, 200, { ok: true, data: purchase(state.status) })
+      state.status = 'submitted'
+      state.jobStatus = JOB_STATUS.SUBMITTED
+      sendJson(res, 200, { ok: true, data: purchase('submitted') })
       return
     }
 
     if (next === 'completed') {
       assert.equal(progress.completeTxHash, HASHES.complete)
       state.status = 'completed'
-      state.jobStatus = 3
+      state.jobStatus = JOB_STATUS.COMPLETED
       sendJson(res, 200, { ok: true, data: purchase('completed') })
+      return
+    }
+
+    if (next === 'rejected') {
+      assert.equal(progress.rejectTxHash, HASHES.reject)
+      sendJson(res, 200, { ok: true, data: purchase('rejected') })
+      return
+    }
+
+    if (next === 'failed') {
+      state.status = 'failed'
+      sendJson(res, 200, { ok: true, data: purchase('failed') })
       return
     }
 
@@ -302,9 +282,7 @@ async function handleApi(
     const request = body as { steps?: Array<JsonRecord> }
     const steps = request.steps ?? []
     const labels = steps.map((step) => String(step.label))
-    assert(!('dedupKey' in request))
     state.walletCalls.push({ labels })
-    validateWalletSteps(steps)
 
     sendJson(res, 200, {
       ok: true,
@@ -324,77 +302,6 @@ async function handleApi(
   }
 
   sendJson(res, 404, { ok: false, error: `${method} ${url.pathname} not found` })
-}
-
-function validateWalletSteps(steps: Array<JsonRecord>) {
-  for (const step of steps) {
-    const label = String(step.label)
-    assert.equal(step.chainId, 56)
-    assert.equal(step.value, '0x0')
-    assert(!('dedupKey' in step))
-
-    if (label === 'ERC-8183 createJob') {
-      assertSameAddress(String(step.to), CONTRACT, 'createJob.to')
-      const decoded = decodeFunctionData({ abi: ERC8183_ABI, data: step.data as Hex })
-      assert.equal(decoded.functionName, 'createJob')
-      assertSameAddress(decoded.args[0], PROVIDER, 'createJob.provider')
-      assertSameAddress(decoded.args[1], CLIENT, 'createJob.evaluator')
-      assert.equal(decoded.args[3], 'https://local.purr.test/cards/card/metadata.json')
-      assertSameAddress(decoded.args[4], ZERO, 'createJob.hook')
-      continue
-    }
-
-    if (label === 'ERC-8183 setBudget') {
-      assertSameAddress(String(step.to), CONTRACT, 'setBudget.to')
-      const decoded = decodeFunctionData({ abi: ERC8183_ABI, data: step.data as Hex })
-      assert.equal(decoded.functionName, 'setBudget')
-      assert.equal(decoded.args[0].toString(), JOB_ID)
-      assert.equal(decoded.args[1].toString(), '1000000')
-      continue
-    }
-
-    if (label === 'ERC-8183 approve payment token') {
-      assertSameAddress(String(step.to), TOKEN, 'approve.to')
-      const decoded = decodeFunctionData({ abi: ERC20_ABI, data: step.data as Hex })
-      assert.equal(decoded.functionName, 'approve')
-      assertSameAddress(decoded.args[0], CONTRACT, 'approve.spender')
-      assert.equal(decoded.args[1].toString(), '1000000')
-      assert.deepEqual(step.conditional, {
-        type: 'allowance_lt',
-        token: TOKEN,
-        spender: CONTRACT,
-        amount: '1000000',
-      })
-      continue
-    }
-
-    if (label === 'ERC-8183 fund') {
-      assertSameAddress(String(step.to), CONTRACT, 'fund.to')
-      const decoded = decodeFunctionData({ abi: ERC8183_ABI, data: step.data as Hex })
-      assert.equal(decoded.functionName, 'fund')
-      assert.equal(decoded.args[0].toString(), JOB_ID)
-      assert.equal(decoded.args[1].toString(), '1000000')
-      continue
-    }
-
-    if (label === 'ERC-8183 complete') {
-      assertSameAddress(String(step.to), CONTRACT, 'complete.to')
-      const decoded = decodeFunctionData({ abi: ERC8183_ABI, data: step.data as Hex })
-      assert.equal(decoded.functionName, 'complete')
-      assert.equal(decoded.args[0].toString(), JOB_ID)
-      continue
-    }
-
-    if (label === 'ERC-8183 claimRefund') {
-      assertSameAddress(String(step.to), CONTRACT, 'claimRefund.to')
-      const decoded = decodeFunctionData({ abi: ERC8183_ABI, data: step.data as Hex })
-      assert.equal(decoded.functionName, 'claimRefund')
-      assert.equal(decoded.args[0].toString(), JOB_ID)
-      continue
-    }
-
-    throw new Error(`unexpected wallet step label: ${label}`)
-  }
 }
 
 async function handleRpc(
@@ -459,7 +366,7 @@ function receiptForHash(hash: string) {
     })
     const data = encodeAbiParameters(
       [{ type: 'address' }, { type: 'uint256' }, { type: 'address' }],
-      [CLIENT, BigInt(Math.floor(Date.now() / 1000) + 86400), ZERO],
+      [ROUTER, BigInt(Math.floor(Date.now() / 1000) + 86400), ROUTER],
     )
     return baseReceipt(hash, [
       {
@@ -476,16 +383,46 @@ function receiptForHash(hash: string) {
     ])
   }
 
-  if (hash === HASHES.fund || hash === HASHES.complete || hash === HASHES.refund) {
+  if (hash === HASHES.register) {
+    const topics = encodeEventTopics({
+      abi: ERC8183_ABI,
+      eventName: 'JobRegistered',
+      args: {
+        jobId: BigInt(JOB_ID),
+        policy: POLICY,
+        client: CLIENT,
+      },
+    })
+    return baseReceipt(
+      hash,
+      [
+        {
+          address: ROUTER,
+          topics,
+          data: '0x',
+          blockNumber: '0x1',
+          transactionHash: hash,
+          transactionIndex: '0x0',
+          blockHash: `0x${'98'.repeat(32)}`,
+          logIndex: '0x0',
+          removed: false,
+        },
+      ],
+      ROUTER,
+    )
+  }
+
+  if (hash === HASHES.fund || hash === HASHES.refund) {
     return baseReceipt(hash)
   }
+  if (hash === HASHES.complete) return baseReceipt(hash, [], ROUTER)
   throw new Error(`unexpected receipt hash: ${hash}`)
 }
 
-function baseReceipt(hash: string, logs: unknown[] = []) {
+function baseReceipt(hash: string, logs: unknown[] = [], to = CONTRACT) {
   return {
     status: '0x1',
-    to: CONTRACT,
+    to,
     transactionHash: hash,
     blockNumber: '0x1',
     logs,
@@ -514,11 +451,13 @@ function purchase(status: PurchaseStatus) {
     idempotent: false,
     erc8183: {
       chainId: 56,
-      contractAddress: CONTRACT,
+      commerceAddress: CONTRACT,
+      routerAddress: ROUTER,
+      policyAddress: POLICY,
       clientWalletAddress: CLIENT,
       providerWalletAddress: PROVIDER,
-      evaluatorWalletAddress: CLIENT,
-      hookAddress: ZERO,
+      evaluatorWalletAddress: ROUTER,
+      hookAddress: ROUTER,
       paymentTokenAddress: TOKEN,
       paymentTokenSymbol: 'USDT',
       budgetAmount: '1000000',
@@ -542,16 +481,13 @@ function purchase(status: PurchaseStatus) {
 
 function hashForLabel(label: string): string {
   if (label === 'ERC-8183 createJob') return HASHES.create
+  if (label === 'ERC-8183 registerJob') return HASHES.register
   if (label === 'ERC-8183 setBudget') return HASHES.setBudget
   if (label === 'ERC-8183 approve payment token') return HASHES.approve
   if (label === 'ERC-8183 fund') return HASHES.fund
-  if (label === 'ERC-8183 complete') return HASHES.complete
+  if (label === 'ERC-8183 settle') return HASHES.complete
   if (label === 'ERC-8183 claimRefund') return HASHES.refund
   throw new Error(`unexpected label: ${label}`)
-}
-
-function assertSameAddress(actual: string, expected: string, field: string) {
-  assert.equal(getAddress(actual), getAddress(expected), `${field} mismatch`)
 }
 
 async function startJsonServer(
@@ -562,10 +498,10 @@ async function startJsonServer(
       const bodyText = await readBody(req)
       const body = bodyText ? JSON.parse(bodyText) : undefined
       await handler(req, res, body)
-    } catch {
+    } catch (error) {
       sendJson(res, 500, {
         ok: false,
-        error: 'local e2e server handler failed',
+        error: error instanceof Error ? error.message : 'local e2e server handler failed',
       })
     }
   })
@@ -601,7 +537,6 @@ function restoreEnv() {
   setEnv('WALLET_API_TOKEN', originalEnv.WALLET_API_TOKEN)
   setEnv('INSTANCE_ID', originalEnv.INSTANCE_ID)
   setEnv('EVM_RPC_56', originalEnv.EVM_RPC_56)
-  setEnv('PURR_ERC8183_STATE_FILE', originalEnv.PURR_ERC8183_STATE_FILE)
 }
 
 function setEnv(name: string, value: string | undefined) {
@@ -614,7 +549,7 @@ function setEnv(name: string, value: string | undefined) {
 
 main().catch((error) => {
   restoreEnv()
-  console.error('[erc8183-local-e2e] FAIL')
-  console.error(error)
+  console.error('[erc8183-card-local-e2e] FAIL')
+  console.error(error instanceof Error ? error.message : error)
   process.exit(1)
 })

@@ -304,7 +304,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
-  erc8183           Pieverse ERC-8183 campaign card flow
+  pieverse          Pieverse campaign card flow
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call)
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
@@ -336,11 +336,11 @@ Examples:
   purr lista list-vaults --zone classic
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56 --execute
-  purr erc8183 card purchase
-  purr erc8183 card create-job --purchase-id 00000000-0000-0000-0000-000000000000
-  purr erc8183 card fund --purchase-id 00000000-0000-0000-0000-000000000000
-  purr erc8183 card deliverable --purchase-id 00000000-0000-0000-0000-000000000000 --wait
-  purr erc8183 card accept --purchase-id 00000000-0000-0000-0000-000000000000
+  purr pieverse card purchase
+  purr pieverse card create-job --purchase-id 00000000-0000-0000-0000-000000000000
+  purr pieverse card fund --purchase-id 00000000-0000-0000-0000-000000000000
+  purr pieverse card deliverable --purchase-id 00000000-0000-0000-0000-000000000000 --wait
+  purr pieverse card accept --purchase-id 00000000-0000-0000-0000-000000000000
   purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury
@@ -829,7 +829,7 @@ Examples:
       break
     }
 
-    case 'erc8183': {
+    case 'pieverse': {
       switch (command) {
         case 'card': {
           const [cardCommand, ...cardRest] = rest
@@ -837,7 +837,7 @@ Examples:
           return
         }
         default:
-          throw new Error(`Unknown erc8183 command: ${command}. Use: card`)
+          throw new Error(`Unknown pieverse command: ${command}. Use: card`)
       }
     }
 
@@ -1176,7 +1176,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, erc8183, evm, wallet, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, evm, wallet, instance, execute, config, version, store`,
       )
   }
 

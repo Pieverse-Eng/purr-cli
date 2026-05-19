@@ -172,10 +172,9 @@ export async function erc8183Card(
 ): Promise<void> {
   if (args['rpc-url']) {
     throw new Error(
-      'purr erc8183 card commands do not accept --rpc-url. Set EVM_RPC_56 or EVM_RPC_URL if an RPC override is needed.',
+      'purr pieverse card commands do not accept --rpc-url. Set EVM_RPC_56 or EVM_RPC_URL if an RPC override is needed.',
     )
   }
-
   const options = parseCardOptions(args)
   let result: Erc8183CardResult
 
@@ -203,7 +202,7 @@ export async function erc8183Card(
       break
     default:
       throw new Error(
-        'Unknown erc8183 card command. Use: purchase, create-job, fund, deliverable, accept, refund, status',
+        'Unknown pieverse card command. Use: purchase, create-job, fund, deliverable, accept, refund, status',
       )
   }
 

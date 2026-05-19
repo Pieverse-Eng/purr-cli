@@ -11,7 +11,7 @@ import { buildAbiCallStep } from '@pieverseio/purr-plugin-evm/abi-call'
 import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
-import { erc8183Card } from '@pieverseio/purr-plugin-erc8183/card'
+import { pieverseCard } from '@pieverseio/purr-plugin-pieverse-card/card'
 import {
   createOrder,
   getNetworks,
@@ -833,7 +833,7 @@ Examples:
       switch (command) {
         case 'card': {
           const [cardCommand, ...cardRest] = rest
-          await erc8183Card(cardCommand, parseArgs(cardRest))
+          await pieverseCard(cardCommand, parseArgs(cardRest))
           return
         }
         default:

@@ -2,13 +2,13 @@ import { strict as assert } from 'node:assert'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { encodeAbiParameters, encodeEventTopics, encodeFunctionResult, parseAbi } from 'viem'
 import {
-  acceptErc8183Card,
-  createErc8183CardJob,
-  fundErc8183Card,
-  getErc8183CardDeliverable,
-  purchaseErc8183Card,
-  refundErc8183Card,
-} from '../packages/plugins/erc8183/src/card.ts'
+  acceptPieverseCard,
+  createPieverseCardJob,
+  fundPieverseCard,
+  getPieverseCardDeliverable,
+  purchasePieverseCard,
+  refundPieverseCard,
+} from '../packages/plugins/pieverse-card/src/card.ts'
 
 const INSTANCE_ID = '4fd09ba9-3654-4f01-bfc7-f28c3a0779f2'
 const PURCHASE_ID = '80fdb8b1-9230-4d78-9fd6-579d4e6136f0'
@@ -79,7 +79,7 @@ async function main() {
     await runHappyPathScenario()
     await runRejectedRefundScenario()
     await runExpiredRefundScenario()
-    console.log('[erc8183-card-local-e2e] PASS')
+    console.log('[pieverse-card-local-e2e] PASS')
   } finally {
     restoreEnv()
   }
@@ -87,10 +87,10 @@ async function main() {
 
 async function runHappyPathScenario() {
   await runLocalScenario('happy-path', createBackendState(), async (state) => {
-    const started = await purchaseErc8183Card()
+    const started = await purchasePieverseCard()
     assert.equal(started.status, 'initiated')
 
-    const created = await createErc8183CardJob({
+    const created = await createPieverseCardJob({
       purchaseId: started.purchaseId,
       receiptPollMs: 10,
       receiptTimeoutMs: 2_000,
@@ -98,14 +98,14 @@ async function runHappyPathScenario() {
     assert.equal(created.status, 'created')
     assert.equal(created.erc8183?.onChainJobId, JOB_ID)
 
-    const funded = await fundErc8183Card({
+    const funded = await fundPieverseCard({
       purchaseId: started.purchaseId,
       receiptPollMs: 10,
       receiptTimeoutMs: 2_000,
     })
     assert.equal(funded.status, 'submitted')
 
-    const delivered = await getErc8183CardDeliverable({
+    const delivered = await getPieverseCardDeliverable({
       purchaseId: started.purchaseId,
       wait: true,
       submittedPollMs: 10,
@@ -114,7 +114,7 @@ async function runHappyPathScenario() {
     assert.equal(delivered.status, 'submitted')
     assert.equal(delivered.imageUrl, 'https://local.purr.test/cards/card.png')
 
-    const completed = await acceptErc8183Card({
+    const completed = await acceptPieverseCard({
       purchaseId: started.purchaseId,
       receiptPollMs: 10,
       receiptTimeoutMs: 2_000,
@@ -131,7 +131,7 @@ async function runHappyPathScenario() {
         ['ERC-8183 settle'],
       ],
     )
-    console.log('[erc8183-card-local-e2e] happy-path PASS')
+    console.log('[pieverse-card-local-e2e] happy-path PASS')
   })
 }
 
@@ -140,7 +140,7 @@ async function runRejectedRefundScenario() {
     'rejected-refund',
     createBackendState({ status: 'rejected', jobStatus: JOB_STATUS.REJECTED }),
     async (state) => {
-      const result = await refundErc8183Card({
+      const result = await refundPieverseCard({
         purchaseId: PURCHASE_ID,
         receiptPollMs: 10,
         receiptTimeoutMs: 2_000,
@@ -151,7 +151,7 @@ async function runRejectedRefundScenario() {
         state.walletCalls.map((call) => call.labels),
         [['ERC-8183 claimRefund']],
       )
-      console.log('[erc8183-card-local-e2e] rejected-refund PASS')
+      console.log('[pieverse-card-local-e2e] rejected-refund PASS')
     },
   )
 }
@@ -161,7 +161,7 @@ async function runExpiredRefundScenario() {
     'expired-refund',
     createBackendState({ status: 'funded', jobStatus: JOB_STATUS.FUNDED, jobExpiredAt: 1n }),
     async (state) => {
-      const result = await refundErc8183Card({
+      const result = await refundPieverseCard({
         purchaseId: PURCHASE_ID,
         receiptPollMs: 10,
         receiptTimeoutMs: 2_000,
@@ -172,7 +172,7 @@ async function runExpiredRefundScenario() {
         state.walletCalls.map((call) => call.labels),
         [['ERC-8183 claimRefund']],
       )
-      console.log('[erc8183-card-local-e2e] expired-refund PASS')
+      console.log('[pieverse-card-local-e2e] expired-refund PASS')
     },
   )
 }
@@ -194,7 +194,7 @@ async function runLocalScenario(
     await test(state)
   } finally {
     await Promise.all([api.close(), rpc.close()])
-    console.log(`[erc8183-card-local-e2e] ${name} closed`)
+    console.log(`[pieverse-card-local-e2e] ${name} closed`)
   }
 }
 
@@ -549,7 +549,7 @@ function setEnv(name: string, value: string | undefined) {
 
 main().catch((error) => {
   restoreEnv()
-  console.error('[erc8183-card-local-e2e] FAIL')
+  console.error('[pieverse-card-local-e2e] FAIL')
   console.error(error instanceof Error ? error.message : error)
   process.exit(1)
 })

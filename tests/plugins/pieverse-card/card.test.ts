@@ -7,16 +7,16 @@ import {
   parseAbi,
 } from 'viem'
 import {
-  acceptErc8183Card,
-  createErc8183CardJob,
-  erc8183Card,
-  fundErc8183Card,
-  getErc8183CardDeliverable,
-  getErc8183CardStatus,
-  purchaseErc8183Card,
-  refundErc8183Card,
+  acceptPieverseCard,
+  createPieverseCardJob,
+  pieverseCard,
+  fundPieverseCard,
+  getPieverseCardDeliverable,
+  getPieverseCardStatus,
+  purchasePieverseCard,
+  refundPieverseCard,
   resolveRpcUrl,
-} from '@pieverseio/purr-plugin-erc8183/card'
+} from '@pieverseio/purr-plugin-pieverse-card/card'
 
 const originalFetch = globalThis.fetch
 
@@ -242,7 +242,7 @@ function mockFetchSequence(responses: unknown[]) {
   })
 }
 
-describe('erc8183 card staged commands', () => {
+describe('pieverse card staged commands', () => {
   beforeEach(() => {
     process.env.WALLET_API_URL = 'https://api.test'
     process.env.WALLET_API_TOKEN = 'token'
@@ -278,7 +278,7 @@ describe('erc8183 card staged commands', () => {
   })
 
   it('keeps RPC configuration out of CLI arguments', async () => {
-    await expect(erc8183Card('purchase', { 'rpc-url': 'https://rpc.example' })).rejects.toThrow(
+    await expect(pieverseCard('purchase', { 'rpc-url': 'https://rpc.example' })).rejects.toThrow(
       /do not accept --rpc-url/,
     )
   })
@@ -291,7 +291,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await purchaseErc8183Card()
+    const result = await purchasePieverseCard()
 
     expect(result.purchaseId).toBe(PURCHASE_ID)
     expect(result.status).toBe('initiated')
@@ -318,7 +318,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await createErc8183CardJob({
+    const result = await createPieverseCardJob({
       purchaseId: PURCHASE_ID,
       receiptPollMs: 1,
     })
@@ -351,7 +351,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await createErc8183CardJob({
+    const result = await createPieverseCardJob({
       purchaseId: PURCHASE_ID,
       createTxHash: HASHES.create,
       registerTxHash: HASHES.register,
@@ -383,7 +383,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await fundErc8183Card({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
+    const result = await fundPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
 
     expect(result.status).toBe('submitted')
     expect(result.erc8183?.txHashes.submit).toBe(HASHES.submit)
@@ -428,7 +428,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await fundErc8183Card({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
+    const result = await fundPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
 
     expect(result.status).toBe('funded')
     const fundSteps = JSON.parse(String(mock.mock.calls[1][1]?.body)).steps
@@ -446,7 +446,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await getErc8183CardDeliverable({
+    const result = await getPieverseCardDeliverable({
       purchaseId: PURCHASE_ID,
       wait: true,
       submittedPollMs: 1,
@@ -476,7 +476,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await acceptErc8183Card({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
+    const result = await acceptPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
 
     expect(result.status).toBe('completed')
     const progressBody = JSON.parse(String(mock.mock.calls[4][1]?.body))
@@ -501,7 +501,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await refundErc8183Card({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
+    const result = await refundPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
 
     expect(result.refundTxHash).toBe(HASHES.refund)
     const refundBody = JSON.parse(String(mock.mock.calls[2][1]?.body))
@@ -522,7 +522,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    const result = await getErc8183CardStatus({ purchaseId: PURCHASE_ID })
+    const result = await getPieverseCardStatus({ purchaseId: PURCHASE_ID })
 
     expect(result.status).toBe('completed')
     expect(result).not.toHaveProperty('xIntentUrl')
@@ -554,7 +554,7 @@ describe('erc8183 card staged commands', () => {
     })
 
     await expect(
-      createErc8183CardJob({ purchaseId: PURCHASE_ID, receiptPollMs: 1 }),
+      createPieverseCardJob({ purchaseId: PURCHASE_ID, receiptPollMs: 1 }),
     ).rejects.toThrow('JobCreated.provider')
   })
 
@@ -570,7 +570,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    await expect(acceptErc8183Card({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })).rejects.toThrow(
+    await expect(acceptPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })).rejects.toThrow(
       `ERC-8183 job expired for purchase ${PURCHASE_ID}`,
     )
     const walletCalls = mock.mock.calls.filter(([url]) =>
@@ -595,7 +595,7 @@ describe('erc8183 card staged commands', () => {
       writable: true,
     })
 
-    await expect(acceptErc8183Card({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })).rejects.toThrow(
+    await expect(acceptPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })).rejects.toThrow(
       'EVM RPC eth_call error -32000: upstream RPC unavailable',
     )
     const walletCalls = mock.mock.calls.filter(([url]) =>

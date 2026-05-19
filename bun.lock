@@ -20,9 +20,9 @@
       "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
-        "@pieverseio/purr-plugin-erc8183": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
         "@pieverseio/purr-plugin-ows": "workspace:*",
+        "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
         "@pieverseio/purr-plugin-store": "workspace:*",
         "@pieverseio/purr-plugin-vendors": "workspace:*",
         "@pieverseio/purr-plugin-wallet": "workspace:*",
@@ -32,14 +32,6 @@
       "name": "@pieverseio/purr-core",
       "version": "0.2.5",
       "dependencies": {
-        "viem": "^2.46.0",
-      },
-    },
-    "packages/plugins/erc8183": {
-      "name": "@pieverseio/purr-plugin-erc8183",
-      "version": "0.2.5",
-      "dependencies": {
-        "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
       },
     },
@@ -59,6 +51,14 @@
         "@pieverseio/purr-core": "workspace:*",
         "@solana/web3.js": "^1.95.0",
         "bs58": "^6.0.0",
+        "viem": "^2.46.0",
+      },
+    },
+    "packages/plugins/pieverse-card": {
+      "name": "@pieverseio/purr-plugin-pieverse-card",
+      "version": "0.2.5",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
       },
     },
@@ -161,11 +161,11 @@
 
     "@pieverseio/purr-core": ["@pieverseio/purr-core@workspace:packages/core"],
 
-    "@pieverseio/purr-plugin-erc8183": ["@pieverseio/purr-plugin-erc8183@workspace:packages/plugins/erc8183"],
-
     "@pieverseio/purr-plugin-evm": ["@pieverseio/purr-plugin-evm@workspace:packages/plugins/evm"],
 
     "@pieverseio/purr-plugin-ows": ["@pieverseio/purr-plugin-ows@workspace:packages/plugins/ows"],
+
+    "@pieverseio/purr-plugin-pieverse-card": ["@pieverseio/purr-plugin-pieverse-card@workspace:packages/plugins/pieverse-card"],
 
     "@pieverseio/purr-plugin-store": ["@pieverseio/purr-plugin-store@workspace:packages/plugins/store"],
 

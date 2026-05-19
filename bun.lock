@@ -17,11 +17,12 @@
     },
     "packages/cli": {
       "name": "@pieverseio/purr-cli-internal",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
         "@pieverseio/purr-plugin-ows": "workspace:*",
+        "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
         "@pieverseio/purr-plugin-store": "workspace:*",
         "@pieverseio/purr-plugin-vendors": "workspace:*",
         "@pieverseio/purr-plugin-wallet": "workspace:*",
@@ -29,14 +30,14 @@
     },
     "packages/core": {
       "name": "@pieverseio/purr-core",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "viem": "^2.46.0",
       },
     },
     "packages/plugins/evm": {
       "name": "@pieverseio/purr-plugin-evm",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -44,7 +45,7 @@
     },
     "packages/plugins/ows": {
       "name": "@pieverseio/purr-plugin-ows",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@open-wallet-standard/core": "1.2.4",
         "@pieverseio/purr-core": "workspace:*",
@@ -53,13 +54,21 @@
         "viem": "^2.46.0",
       },
     },
+    "packages/plugins/pieverse-card": {
+      "name": "@pieverseio/purr-plugin-pieverse-card",
+      "version": "0.2.5",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
+        "viem": "^2.46.0",
+      },
+    },
     "packages/plugins/store": {
       "name": "@pieverseio/purr-plugin-store",
-      "version": "0.2.4",
+      "version": "0.2.5",
     },
     "packages/plugins/vendors": {
       "name": "@pieverseio/purr-plugin-vendors",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -67,7 +76,7 @@
     },
     "packages/plugins/wallet": {
       "name": "@pieverseio/purr-plugin-wallet",
-      "version": "0.2.4",
+      "version": "0.2.5",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
@@ -155,6 +164,8 @@
     "@pieverseio/purr-plugin-evm": ["@pieverseio/purr-plugin-evm@workspace:packages/plugins/evm"],
 
     "@pieverseio/purr-plugin-ows": ["@pieverseio/purr-plugin-ows@workspace:packages/plugins/ows"],
+
+    "@pieverseio/purr-plugin-pieverse-card": ["@pieverseio/purr-plugin-pieverse-card@workspace:packages/plugins/pieverse-card"],
 
     "@pieverseio/purr-plugin-store": ["@pieverseio/purr-plugin-store@workspace:packages/plugins/store"],
 

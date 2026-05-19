@@ -16,4 +16,6 @@ export const ERC8183_ROUTER_ABI = parseAbi([
   'event JobSettled(uint256 indexed jobId,address indexed policy,uint8 indexed verdict,bytes32 reason)',
 ])
 
-export const ERC20_ABI = parseAbi(['function approve(address spender,uint256 amount) returns (bool)'])
+export const ERC20_ABI = parseAbi([
+  'function approve(address spender,uint256 amount) returns (bool)',
+])

@@ -4,10 +4,7 @@ import { ZERO_ADDRESS } from './constants.js'
 import { requireIntent } from './guards.js'
 import type { AgentSelfIntroPurchase, RpcReceipt } from './types.js'
 
-export function parseCreatedJobId(
-  receipt: RpcReceipt,
-  purchase: AgentSelfIntroPurchase,
-): string {
+export function parseCreatedJobId(receipt: RpcReceipt, purchase: AgentSelfIntroPurchase): string {
   if (receipt.status !== '0x1') {
     throw new Error(`createJob transaction failed: ${receipt.transactionHash}`)
   }

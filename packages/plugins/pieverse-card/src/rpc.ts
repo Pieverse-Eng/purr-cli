@@ -1,15 +1,6 @@
-import {
-  decodeFunctionResult,
-  type Hex,
-  encodeFunctionData,
-} from 'viem'
+import { decodeFunctionResult, type Hex, encodeFunctionData } from 'viem'
 import { ERC8183_ABI } from './abi.js'
-import {
-  BNB_CHAIN_ID,
-  DEFAULT_RPCS,
-  RECEIPT_POLL_MS,
-  RECEIPT_TIMEOUT_MS,
-} from './constants.js'
+import { BNB_CHAIN_ID, DEFAULT_RPCS, RECEIPT_POLL_MS, RECEIPT_TIMEOUT_MS } from './constants.js'
 import { requireEvmAddress, sleep } from './guards.js'
 import type {
   OnChainJob,
@@ -21,10 +12,7 @@ import type {
 
 let rpcReqId = 1
 
-export async function readOnChainJob(
-  intent: PurchaseIntent,
-  jobId: string,
-): Promise<OnChainJob> {
+export async function readOnChainJob(intent: PurchaseIntent, jobId: string): Promise<OnChainJob> {
   const data = encodeFunctionData({
     abi: ERC8183_ABI,
     functionName: 'getJob',

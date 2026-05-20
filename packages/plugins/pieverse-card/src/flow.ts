@@ -23,7 +23,7 @@ import {
   sleep,
 } from './guards.js'
 import { assertRegisteredJob, parseCreatedJobId } from './receipts.js'
-import { readOnChainJob, waitForReceipt } from './rpc.js'
+import { readCommercePaymentToken, readOnChainJob, waitForReceipt } from './rpc.js'
 import type {
   AgentSelfIntroPurchase,
   OnChainJob,
@@ -31,6 +31,8 @@ import type {
   PieverseCardResult,
   PurchaseIntent,
 } from './types.js'
+
+const MIN_JOB_EXPIRATION_SECONDS = 8 * 24 * 60 * 60
 
 export async function purchasePieverseCard(): Promise<PieverseCardResult> {
   const { instanceId } = resolveCredentials()
@@ -147,7 +149,8 @@ async function createJob(
     createdJobId = parseCreatedJobId(receipt, purchase)
     resolvedCreateTxHash = createTxHash
   } else {
-    const expiredAt = Math.floor(Date.now() / 1000) + intent.jobExpirationSeconds
+    const jobExpirationSeconds = Math.max(intent.jobExpirationSeconds, MIN_JOB_EXPIRATION_SECONDS)
+    const expiredAt = Math.floor(Date.now() / 1000) + jobExpirationSeconds
     const step: TxStep = {
       to: requireEvmAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
       data: encodeFunctionData({
@@ -243,8 +246,9 @@ async function fundJob(
     },
   ]
 
-  if (intent.paymentTokenAddress && !isNative(intent.paymentTokenAddress) && budgetAmount > 0n) {
-    const token = requireEvmAddress(intent.paymentTokenAddress, 'erc8183.paymentTokenAddress')
+  const paymentTokenAddress = await resolvePaymentTokenAddress(intent)
+  if (paymentTokenAddress && !isNative(paymentTokenAddress) && budgetAmount > 0n) {
+    const token = requireEvmAddress(paymentTokenAddress, 'erc8183.paymentTokenAddress')
     steps.push({
       to: token,
       data: encodeFunctionData({
@@ -288,6 +292,14 @@ async function fundJob(
     approveTxHash,
     fundTxHash,
   })
+}
+
+async function resolvePaymentTokenAddress(intent: PurchaseIntent): Promise<string | null> {
+  try {
+    return await readCommercePaymentToken(intent)
+  } catch {
+    return intent.paymentTokenAddress
+  }
 }
 
 async function waitForSubmitted(

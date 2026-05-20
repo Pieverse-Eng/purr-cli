@@ -12,11 +12,10 @@ export const DEFAULT_RPCS: Record<number, string> = {
 }
 
 export const ERC8183_JOB_STATUS = {
-  NONE: 0,
-  CREATED: 1,
-  FUNDED: 2,
-  SUBMITTED: 3,
-  COMPLETED: 4,
-  REJECTED: 5,
-  REFUNDED: 6,
+  OPEN: 0,
+  FUNDED: 1,
+  SUBMITTED: 2,
+  COMPLETED: 3,
+  REJECTED: 4,
+  EXPIRED: 5,
 } as const

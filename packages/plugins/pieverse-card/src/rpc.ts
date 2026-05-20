@@ -37,6 +37,27 @@ export async function readOnChainJob(intent: PurchaseIntent, jobId: string): Pro
   return job
 }
 
+export async function readCommercePaymentToken(intent: PurchaseIntent): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: ERC8183_ABI,
+    functionName: 'paymentToken',
+  })
+  const raw = await evmRpc<Hex>(resolveRpcUrl(intent.chainId), 'eth_call', [
+    {
+      to: requireEvmAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
+      data,
+    },
+    'latest',
+  ])
+  const decoded = decodeFunctionResult({
+    abi: ERC8183_ABI,
+    functionName: 'paymentToken',
+    data: raw,
+  })
+  if (typeof decoded !== 'string') throw new Error('ERC-8183 paymentToken returned invalid data')
+  return requireEvmAddress(decoded, 'erc8183.paymentToken')
+}
+
 function normalizeOnChainJob(decoded: unknown): OnChainJob | null {
   const job = Array.isArray(decoded) ? decoded[0] : decoded
   if (!job || typeof job !== 'object') return null

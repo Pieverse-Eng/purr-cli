@@ -2,6 +2,7 @@ import { parseAbi } from 'viem'
 
 export const ERC8183_ABI = parseAbi([
   'function createJob(address provider,address evaluator,uint256 expiredAt,string description,address hook) returns (uint256)',
+  'function paymentToken() view returns (address)',
   'function setBudget(uint256 jobId,uint256 amount,bytes optParams)',
   'function fund(uint256 jobId,uint256 expectedBudget,bytes optParams)',
   'function claimRefund(uint256 jobId)',

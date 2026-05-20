@@ -44,11 +44,12 @@ const HASHES = {
 }
 
 const JOB_STATUS = {
-  CREATED: 1,
-  FUNDED: 2,
-  SUBMITTED: 3,
-  COMPLETED: 4,
-  REJECTED: 5,
+  OPEN: 0,
+  FUNDED: 1,
+  SUBMITTED: 2,
+  COMPLETED: 3,
+  REJECTED: 4,
+  EXPIRED: 5,
 } as const
 
 const EVENT_ABI = parseAbi([
@@ -59,6 +60,7 @@ const ROUTER_EVENT_ABI = parseAbi([
 ])
 const JOB_VIEW_ABI = parseAbi([
   'function getJob(uint256 jobId) view returns ((uint256 id,address client,address provider,address evaluator,string description,uint256 budget,uint256 expiredAt,uint8 status,address hook))',
+  'function paymentToken() view returns (address)',
 ])
 
 function purchase(status: string, overrides: Partial<Record<string, unknown>> = {}) {
@@ -228,6 +230,18 @@ function getJobResult(status: number, expiredAt: bigint) {
   }
 }
 
+function paymentTokenResult(token: string) {
+  return {
+    jsonrpc: '2.0',
+    id: 1,
+    result: encodeFunctionResult({
+      abi: JOB_VIEW_ABI,
+      functionName: 'paymentToken',
+      result: token as `0x${string}`,
+    }),
+  }
+}
+
 function mockFetchSequence(responses: unknown[]) {
   let index = 0
   return vi.fn().mockImplementation(async () => {
@@ -369,6 +383,7 @@ describe('pieverse card staged commands', () => {
     process.env.EVM_RPC_56 = 'https://rpc.test'
     const mock = mockFetchSequence([
       ok(purchase('created')),
+      paymentTokenResult(TOKEN),
       walletResult([
         { label: 'ERC-8183 setBudget', hash: HASHES.setBudget },
         { label: 'ERC-8183 approve payment token', hash: HASHES.approve },
@@ -391,12 +406,12 @@ describe('pieverse card staged commands', () => {
       url: String(url),
       body: init?.body ? JSON.parse(String(init.body)) : undefined,
     }))
-    expect(calls[1].body.steps.map((step: { label: string }) => step.label)).toEqual([
+    expect(calls[2].body.steps.map((step: { label: string }) => step.label)).toEqual([
       'ERC-8183 setBudget',
       'ERC-8183 approve payment token',
       'ERC-8183 fund',
     ])
-    expect(calls[3].body).toMatchObject({
+    expect(calls[4].body).toMatchObject({
       status: 'funded',
       setBudgetTxHash: HASHES.setBudget,
       approveTxHash: HASHES.approve,
@@ -415,6 +430,7 @@ describe('pieverse card staged commands', () => {
     })
     const mock = mockFetchSequence([
       ok(nativePurchase),
+      paymentTokenResult(ZERO),
       walletResult([
         { label: 'ERC-8183 setBudget', hash: HASHES.setBudget },
         { label: 'ERC-8183 fund', hash: HASHES.fund },
@@ -431,7 +447,7 @@ describe('pieverse card staged commands', () => {
     const result = await fundPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
 
     expect(result.status).toBe('funded')
-    const fundSteps = JSON.parse(String(mock.mock.calls[1][1]?.body)).steps
+    const fundSteps = JSON.parse(String(mock.mock.calls[2][1]?.body)).steps
     expect(fundSteps.map((step: { label: string }) => step.label)).toEqual([
       'ERC-8183 setBudget',
       'ERC-8183 fund',

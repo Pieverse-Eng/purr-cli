@@ -19,7 +19,6 @@ export function parseCardOptions(args: Record<string, string>): PieverseCardOpti
         ? undefined
         : parseOptionalTxHash(args['approve-tx-hash'], 'approve-tx-hash'),
     fundTxHash: parseOptionalTxHash(args['fund-tx-hash'], 'fund-tx-hash'),
-    completeTxHash: parseOptionalTxHash(args['complete-tx-hash'], 'complete-tx-hash'),
   }
 }
 

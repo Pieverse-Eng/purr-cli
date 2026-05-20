@@ -9,6 +9,10 @@ export type PurchaseStatus =
   | 'failed'
   | 'rejected'
 
+export type AgentSelfIntroCardLevel = 'lv1'
+export type AgentSelfIntroPartner = 'okx' | 'bnb'
+export type AgentSelfIntroCardChannel = 'telegram' | 'line'
+
 export interface ApiEnvelope<T> {
   ok: boolean
   data?: T
@@ -37,6 +41,9 @@ export interface AgentSelfIntroPurchase {
   status: PurchaseStatus
   cardId: string | null
   templateId: string | null
+  lv: AgentSelfIntroCardLevel
+  partner: AgentSelfIntroPartner
+  channel: AgentSelfIntroCardChannel
   imageUrl: string | null
   shareUrl: string | null
   suggestedTweetText: string | null
@@ -73,7 +80,14 @@ export interface AgentSelfIntroPurchase {
 
 export type PurchaseIntent = NonNullable<AgentSelfIntroPurchase['erc8183']>
 
+export interface PieverseCardPurchaseRequest {
+  partner?: AgentSelfIntroPartner
+  channel?: AgentSelfIntroCardChannel
+}
+
 export interface PieverseCardOptions {
+  partner?: AgentSelfIntroPartner
+  channel?: AgentSelfIntroCardChannel
   purchaseId?: string
   receiptTimeoutMs?: number
   receiptPollMs?: number

@@ -1,16 +1,24 @@
 import { apiGet, apiPost } from '@pieverseio/purr-core/api-client'
 import type { TxStep } from '@pieverseio/purr-core/types'
 import { SERVICE_SLUG } from './constants.js'
-import type { AgentSelfIntroPurchase, ApiEnvelope, WalletExecuteResult } from './types.js'
+import type {
+  AgentSelfIntroPurchase,
+  ApiEnvelope,
+  PieverseCardPurchaseRequest,
+  WalletExecuteResult,
+} from './types.js'
 
 function basePath(instanceId: string): string {
   return `/v1/instances/${instanceId}/erc8183/services/${SERVICE_SLUG}/card`
 }
 
-export async function purchaseCard(instanceId: string): Promise<AgentSelfIntroPurchase> {
+export async function purchaseCard(
+  instanceId: string,
+  body: PieverseCardPurchaseRequest = {},
+): Promise<AgentSelfIntroPurchase> {
   const res = await apiPost<ApiEnvelope<AgentSelfIntroPurchase>>(
     `${basePath(instanceId)}/purchase`,
-    {},
+    body,
   )
   return unwrap(res)
 }

@@ -38,7 +38,7 @@ export async function pieverseCard(
 
   switch (command) {
     case 'purchase':
-      result = await purchasePieverseCard()
+      result = await purchasePieverseCard(options)
       break
     case 'create-job':
       result = await createPieverseCardJob(options)

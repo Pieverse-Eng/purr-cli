@@ -547,5 +547,4 @@ describe('pieverse card staged commands', () => {
       createPieverseCardJob({ purchaseId: PURCHASE_ID, receiptPollMs: 1 }),
     ).rejects.toThrow('JobCreated.provider')
   })
-
 })

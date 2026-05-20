@@ -2,7 +2,6 @@ import { strict as assert } from 'node:assert'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { encodeAbiParameters, encodeEventTopics, encodeFunctionResult, parseAbi } from 'viem'
 import {
-  acceptPieverseCard,
   createPieverseCardJob,
   fundPieverseCard,
   getPieverseCardDeliverable,
@@ -114,21 +113,13 @@ async function runHappyPathScenario() {
     assert.equal(delivered.status, 'submitted')
     assert.equal(delivered.imageUrl, 'https://local.purr.test/cards/card.png')
 
-    const completed = await acceptPieverseCard({
-      purchaseId: started.purchaseId,
-      receiptPollMs: 10,
-      receiptTimeoutMs: 2_000,
-    })
-    assert.equal(completed.status, 'completed')
-
-    assert.deepEqual(state.progressCalls, ['created', 'funded', 'completed'])
+    assert.deepEqual(state.progressCalls, ['created', 'funded'])
     assert.deepEqual(
       state.walletCalls.map((call) => call.labels),
       [
         ['ERC-8183 createJob'],
         ['ERC-8183 registerJob'],
         ['ERC-8183 setBudget', 'ERC-8183 approve payment token', 'ERC-8183 fund'],
-        ['ERC-8183 settle'],
       ],
     )
     console.log('[pieverse-card-local-e2e] happy-path PASS')
@@ -251,14 +242,6 @@ async function handleApi(
       state.status = 'submitted'
       state.jobStatus = JOB_STATUS.SUBMITTED
       sendJson(res, 200, { ok: true, data: purchase('submitted') })
-      return
-    }
-
-    if (next === 'completed') {
-      assert.equal(progress.completeTxHash, HASHES.complete)
-      state.status = 'completed'
-      state.jobStatus = JOB_STATUS.COMPLETED
-      sendJson(res, 200, { ok: true, data: purchase('completed') })
       return
     }
 
@@ -415,7 +398,6 @@ function receiptForHash(hash: string) {
   if (hash === HASHES.fund || hash === HASHES.refund) {
     return baseReceipt(hash)
   }
-  if (hash === HASHES.complete) return baseReceipt(hash, [], ROUTER)
   throw new Error(`unexpected receipt hash: ${hash}`)
 }
 
@@ -485,7 +467,6 @@ function hashForLabel(label: string): string {
   if (label === 'ERC-8183 setBudget') return HASHES.setBudget
   if (label === 'ERC-8183 approve payment token') return HASHES.approve
   if (label === 'ERC-8183 fund') return HASHES.fund
-  if (label === 'ERC-8183 settle') return HASHES.complete
   if (label === 'ERC-8183 claimRefund') return HASHES.refund
   throw new Error(`unexpected label: ${label}`)
 }

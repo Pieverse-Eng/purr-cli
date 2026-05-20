@@ -85,7 +85,6 @@ export interface PieverseCardOptions {
   setBudgetTxHash?: string
   approveTxHash?: string | null
   fundTxHash?: string
-  completeTxHash?: string
 }
 
 export type PieverseCardResult = AgentSelfIntroPurchase & {

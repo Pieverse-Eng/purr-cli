@@ -7,7 +7,6 @@ import {
   parseAbi,
 } from 'viem'
 import {
-  acceptPieverseCard,
   createPieverseCardJob,
   pieverseCard,
   fundPieverseCard,
@@ -477,31 +476,6 @@ describe('pieverse card staged commands', () => {
     expect(walletCalls).toHaveLength(0)
   })
 
-  it('accepts a submitted card by completing as evaluator', async () => {
-    process.env.EVM_RPC_56 = 'https://rpc.test'
-    const mock = mockFetchSequence([
-      ok(purchase('submitted')),
-      getJobResult(JOB_STATUS.SUBMITTED, 9_999_999_999n),
-      walletResult([{ label: 'ERC-8183 settle', hash: HASHES.complete }]),
-      rpcReceipt(HASHES.complete, [], '0x1', ROUTER),
-      ok(purchase('completed')),
-    ])
-    Object.defineProperty(globalThis, 'fetch', {
-      value: mock,
-      configurable: true,
-      writable: true,
-    })
-
-    const result = await acceptPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })
-
-    expect(result.status).toBe('completed')
-    const progressBody = JSON.parse(String(mock.mock.calls[4][1]?.body))
-    expect(progressBody).toMatchObject({
-      status: 'completed',
-      completeTxHash: HASHES.complete,
-    })
-  })
-
   it('claims refund for rejected jobs explicitly', async () => {
     process.env.EVM_RPC_56 = 'https://rpc.test'
     const mock = mockFetchSequence([
@@ -574,49 +548,4 @@ describe('pieverse card staged commands', () => {
     ).rejects.toThrow('JobCreated.provider')
   })
 
-  it('does not send complete when the on-chain submitted job is expired', async () => {
-    process.env.EVM_RPC_56 = 'https://rpc.test'
-    const mock = mockFetchSequence([
-      ok(purchase('submitted')),
-      getJobResult(JOB_STATUS.SUBMITTED, 1n),
-    ])
-    Object.defineProperty(globalThis, 'fetch', {
-      value: mock,
-      configurable: true,
-      writable: true,
-    })
-
-    await expect(acceptPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })).rejects.toThrow(
-      `ERC-8183 job expired for purchase ${PURCHASE_ID}`,
-    )
-    const walletCalls = mock.mock.calls.filter(([url]) =>
-      String(url).endsWith(`/v1/instances/${INSTANCE_ID}/wallet/execute`),
-    )
-    expect(walletCalls).toHaveLength(0)
-  })
-
-  it('surfaces on-chain job read failures before completing', async () => {
-    process.env.EVM_RPC_56 = 'https://rpc.test'
-    const mock = mockFetchSequence([
-      ok(purchase('submitted')),
-      {
-        jsonrpc: '2.0',
-        id: 1,
-        error: { code: -32000, message: 'upstream RPC unavailable' },
-      },
-    ])
-    Object.defineProperty(globalThis, 'fetch', {
-      value: mock,
-      configurable: true,
-      writable: true,
-    })
-
-    await expect(acceptPieverseCard({ purchaseId: PURCHASE_ID, receiptPollMs: 1 })).rejects.toThrow(
-      'EVM RPC eth_call error -32000: upstream RPC unavailable',
-    )
-    const walletCalls = mock.mock.calls.filter(([url]) =>
-      String(url).endsWith(`/v1/instances/${INSTANCE_ID}/wallet/execute`),
-    )
-    expect(walletCalls).toHaveLength(0)
-  })
 })

@@ -89,21 +89,6 @@ export async function getPieverseCardDeliverable(
   return waitForSubmitted(instanceId, purchase, options)
 }
 
-export async function acceptPieverseCard(
-  options: PieverseCardOptions,
-): Promise<PieverseCardResult> {
-  const { instanceId } = resolveCredentials()
-  const purchase = await getPurchase(instanceId, requirePurchaseId(options))
-  assertNotTerminal(purchase)
-
-  if (purchase.status === 'completed') return purchase
-  if (purchase.status !== 'submitted') {
-    throw new Error(`Purchase ${purchase.purchaseId} must be submitted before accept`)
-  }
-
-  return completeJob(instanceId, purchase, options)
-}
-
 export async function refundPieverseCard(
   options: PieverseCardOptions,
 ): Promise<PieverseCardResult> {
@@ -324,46 +309,6 @@ async function waitForSubmitted(
   )
 }
 
-async function completeJob(
-  instanceId: string,
-  purchase: AgentSelfIntroPurchase,
-  options: PieverseCardOptions,
-): Promise<AgentSelfIntroPurchase> {
-  const intent = requireIntent(purchase)
-  const jobId = requireOnChainJobId(purchase)
-  const completeTxHash = options.completeTxHash ?? intent.txHashes.complete ?? null
-
-  if (completeTxHash) {
-    await waitForReceipt(intent.chainId, completeTxHash, options)
-    return recordProgress(instanceId, purchase.purchaseId, {
-      status: 'completed',
-      completeTxHash,
-    })
-  }
-
-  await assertAcceptableOnChainJob(intent, jobId, purchase.purchaseId)
-
-  const completeStep: TxStep = {
-    to: requireEvmAddress(intent.routerAddress, 'erc8183.routerAddress'),
-    data: encodeFunctionData({
-      abi: ERC8183_ROUTER_ABI,
-      functionName: 'settle',
-      args: [BigInt(jobId), EMPTY_BYTES],
-    }),
-    value: '0x0',
-    chainId: intent.chainId,
-    label: 'ERC-8183 settle',
-  }
-  const executed = await executeSteps(instanceId, [completeStep])
-  const executedCompleteTxHash = requiredStepHash(executed, 'ERC-8183 settle')
-  await waitForReceipt(intent.chainId, executedCompleteTxHash, options)
-
-  return recordProgress(instanceId, purchase.purchaseId, {
-    status: 'completed',
-    completeTxHash: executedCompleteTxHash,
-  })
-}
-
 async function claimRefundIfEligible(
   instanceId: string,
   purchase: AgentSelfIntroPurchase,
@@ -409,20 +354,4 @@ function shouldClaimRefundForJob(job: OnChainJob): boolean {
     return false
   }
   return job.expiredAt <= BigInt(Math.floor(Date.now() / 1000))
-}
-
-async function assertAcceptableOnChainJob(
-  intent: PurchaseIntent,
-  jobId: string,
-  purchaseId: string,
-): Promise<void> {
-  const job = await readOnChainJob(intent, jobId)
-  if (job.status !== ERC8183_JOB_STATUS.SUBMITTED) {
-    throw new Error(
-      `ERC-8183 job is not submitted on-chain for purchase ${purchaseId}; status=${job.status}`,
-    )
-  }
-  if (job.expiredAt <= BigInt(Math.floor(Date.now() / 1000))) {
-    throw new Error(`ERC-8183 job expired for purchase ${purchaseId}`)
-  }
 }

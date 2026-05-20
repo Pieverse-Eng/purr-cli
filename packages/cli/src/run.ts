@@ -340,7 +340,6 @@ Examples:
   purr pieverse card create-job --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card fund --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card deliverable --purchase-id 00000000-0000-0000-0000-000000000000 --wait
-  purr pieverse card accept --purchase-id 00000000-0000-0000-0000-000000000000
   purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury

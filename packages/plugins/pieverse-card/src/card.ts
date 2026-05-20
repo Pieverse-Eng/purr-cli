@@ -1,5 +1,4 @@
 import {
-  acceptPieverseCard,
   createPieverseCardJob,
   fundPieverseCard,
   getPieverseCardDeliverable,
@@ -11,7 +10,6 @@ import { parseCardOptions } from './options.js'
 import type { PieverseCardResult } from './types.js'
 
 export {
-  acceptPieverseCard,
   createPieverseCardJob,
   fundPieverseCard,
   getPieverseCardDeliverable,
@@ -51,9 +49,6 @@ export async function pieverseCard(
     case 'deliverable':
       result = await getPieverseCardDeliverable(options)
       break
-    case 'accept':
-      result = await acceptPieverseCard(options)
-      break
     case 'refund':
       result = await refundPieverseCard(options)
       break
@@ -62,7 +57,7 @@ export async function pieverseCard(
       break
     default:
       throw new Error(
-        'Unknown pieverse card command. Use: purchase, create-job, fund, deliverable, accept, refund, status',
+        'Unknown pieverse card command. Use: purchase, create-job, fund, deliverable, refund, status',
       )
   }
 

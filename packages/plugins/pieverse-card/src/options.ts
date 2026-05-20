@@ -1,7 +1,12 @@
 import type { PieverseCardOptions } from './types.js'
 
+const PARTNERS = ['okx', 'bnb'] as const
+const CHANNELS = ['telegram', 'line'] as const
+
 export function parseCardOptions(args: Record<string, string>): PieverseCardOptions {
   return {
+    partner: parseOptionalChoice(args.partner, 'partner', PARTNERS),
+    channel: parseOptionalChoice(args.channel, 'channel', CHANNELS),
     purchaseId: args['purchase-id'],
     receiptTimeoutMs: parseOptionalPositiveInt(args['receipt-timeout-ms'], 'receipt-timeout-ms'),
     receiptPollMs: parseOptionalPositiveInt(args['receipt-poll-ms'], 'receipt-poll-ms'),
@@ -37,6 +42,17 @@ function parseOptionalBoolean(value: string | undefined, name: string): boolean 
   if (['true', '1', 'yes'].includes(normalized)) return true
   if (['false', '0', 'no'].includes(normalized)) return false
   throw new Error(`Invalid --${name}: "${value}"`)
+}
+
+function parseOptionalChoice<T extends readonly string[]>(
+  value: string | undefined,
+  name: string,
+  choices: T,
+): T[number] | undefined {
+  if (value === undefined) return undefined
+  const normalized = value.trim().toLowerCase()
+  if ((choices as readonly string[]).includes(normalized)) return normalized as T[number]
+  throw new Error(`Invalid --${name}: "${value}" (expected ${choices.join('|')})`)
 }
 
 function parseOptionalTxHash(value: string | undefined, name: string): string | undefined {

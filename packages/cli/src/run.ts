@@ -336,7 +336,7 @@ Examples:
   purr lista list-vaults --zone classic
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56 --execute
-  purr pieverse card purchase
+  purr pieverse card purchase --partner okx --channel telegram
   purr pieverse card create-job --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card fund --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card deliverable --purchase-id 00000000-0000-0000-0000-000000000000 --wait

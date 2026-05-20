@@ -72,6 +72,9 @@ function purchase(status: string, overrides: Partial<Record<string, unknown>> = 
     status,
     cardId: CARD_ID,
     templateId: 'template-1',
+    lv: 'lv1',
+    partner: 'okx',
+    channel: 'telegram',
     imageUrl: 'https://cdn.example/card.png',
     shareUrl: 'https://purr.example/cards/card',
     suggestedTweetText: 'Pie name: linwe.pie\n@pieverse @purrfectagent0',
@@ -312,6 +315,30 @@ describe('pieverse card staged commands', () => {
     expect(mock).toHaveBeenCalledTimes(1)
     expect(String(mock.mock.calls[0][0])).toBe(
       `https://api.test/v1/instances/${INSTANCE_ID}/erc8183/services/agent-self-intro/card/purchase`,
+    )
+  })
+
+  it('passes purchase campaign parameters through the CLI handler', async () => {
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const mock = mockFetchSequence([ok(purchase('initiated', { partner: 'bnb', channel: 'line' }))])
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
+
+    await pieverseCard('purchase', { partner: 'BNB', channel: 'LINE' })
+
+    expect(consoleLog).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(mock.mock.calls[0][1]?.body))).toEqual({
+      partner: 'bnb',
+      channel: 'line',
+    })
+  })
+
+  it('rejects unsupported purchase campaign parameters', async () => {
+    await expect(pieverseCard('purchase', { partner: 'binance' })).rejects.toThrow(
+      /Invalid --partner/,
     )
   })
 

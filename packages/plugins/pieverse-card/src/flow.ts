@@ -28,15 +28,18 @@ import type {
   AgentSelfIntroPurchase,
   OnChainJob,
   PieverseCardOptions,
+  PieverseCardPurchaseRequest,
   PieverseCardResult,
   PurchaseIntent,
 } from './types.js'
 
 const MIN_JOB_EXPIRATION_SECONDS = 8 * 24 * 60 * 60
 
-export async function purchasePieverseCard(): Promise<PieverseCardResult> {
+export async function purchasePieverseCard(
+  options: PieverseCardOptions = {},
+): Promise<PieverseCardResult> {
   const { instanceId } = resolveCredentials()
-  return purchaseCard(instanceId)
+  return purchaseCard(instanceId, purchaseRequestFromOptions(options))
 }
 
 export async function getPieverseCardStatus(
@@ -337,6 +340,13 @@ async function claimRefundIfEligible(
   const refundTxHash = requiredStepHash(executed, 'ERC-8183 claimRefund')
   await waitForReceipt(intent.chainId, refundTxHash, options)
   return refundTxHash
+}
+
+function purchaseRequestFromOptions(options: PieverseCardOptions): PieverseCardPurchaseRequest {
+  return {
+    partner: options.partner,
+    channel: options.channel,
+  }
 }
 
 function isRefundCandidatePurchase(purchase: AgentSelfIntroPurchase): boolean {

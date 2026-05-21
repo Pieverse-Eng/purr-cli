@@ -114,7 +114,15 @@ const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
   196: {
     OKB: NATIVE,
     USDC: '0x74b7F16337b8972027F6196A17a631aC6dE26d22',
-    USDT: '0x1E4a5963aBFD975d8c9021ce480b42188849D41d',
+    // USDT on X Layer is `USD₮0` (Tether's native deployment). It carries
+    // ~12x the supply of the legacy bridged Tether and is the contract OKX
+    // x402 + our merchant flow settle against, so `USDT` resolves here.
+    // The legacy bridged Tether is still reachable via `USDT.E`, mirroring
+    // the `USDC.E` convention used on Arbitrum/Polygon.
+    USDT: '0x779ded0c9e1022225f8e0630b35a9b54be713736',
+    USDT0: '0x779ded0c9e1022225f8e0630b35a9b54be713736',
+    'USDT.E': '0x1E4a5963aBFD975d8c9021ce480b42188849D41d',
+    USDG: '0x4ae46a509f6b1d9056937ba4500cb143933d2dc8',
     XETH: '0xe7B000003a45145dECF8a28FC755aD5EC5Ea025A',
     XBTC: '0xb7c00000bcDEEf966B20B3D884b98e64d2b06b4f',
   },

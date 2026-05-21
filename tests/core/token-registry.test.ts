@@ -77,16 +77,13 @@ describe('resolveToken', () => {
     expect(resolveToken('USDC', 196)).toBe('0x74b7F16337b8972027F6196A17a631aC6dE26d22')
   })
 
-  it('resolves USDT on X Layer to USDT0 (Tether native deployment)', () => {
-    expect(resolveToken('USDT', 196)).toBe('0x779ded0c9e1022225f8e0630b35a9b54be713736')
-  })
-
-  it('resolves USDT0 alias on X Layer to the same address as USDT', () => {
+  it('resolves USDT0 on X Layer (canonical Tether-family asset)', () => {
     expect(resolveToken('USDT0', 196)).toBe('0x779ded0c9e1022225f8e0630b35a9b54be713736')
   })
 
-  it('resolves USDT.E on X Layer to the legacy bridged Tether', () => {
-    expect(resolveToken('USDT.E', 196)).toBe('0x1E4a5963aBFD975d8c9021ce480b42188849D41d')
+  it('does not resolve bare USDT on X Layer (deprecated legacy bridged Tether is intentionally unmapped)', () => {
+    expect(() => resolveToken('USDT', 196)).toThrow(/Unknown token "USDT" on chain 196/)
+    expect(() => resolveToken('USDT', 196)).toThrow(/USDT0/)
   })
 
   it('resolves USDG on X Layer', () => {

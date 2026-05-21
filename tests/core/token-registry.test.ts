@@ -77,8 +77,17 @@ describe('resolveToken', () => {
     expect(resolveToken('USDC', 196)).toBe('0x74b7F16337b8972027F6196A17a631aC6dE26d22')
   })
 
-  it('resolves USDT on X Layer', () => {
-    expect(resolveToken('USDT', 196)).toBe('0x1E4a5963aBFD975d8c9021ce480b42188849D41d')
+  it('resolves USDT0 on X Layer (canonical Tether-family asset)', () => {
+    expect(resolveToken('USDT0', 196)).toBe('0x779ded0c9e1022225f8e0630b35a9b54be713736')
+  })
+
+  it('does not resolve bare USDT on X Layer (deprecated legacy bridged Tether is intentionally unmapped)', () => {
+    expect(() => resolveToken('USDT', 196)).toThrow(/Unknown token "USDT" on chain 196/)
+    expect(() => resolveToken('USDT', 196)).toThrow(/USDT0/)
+  })
+
+  it('resolves USDG on X Layer', () => {
+    expect(resolveToken('USDG', 196)).toBe('0x4ae46a509f6b1d9056937ba4500cb143933d2dc8')
   })
 
   // --- BNB Chain tokens ---

@@ -11,7 +11,8 @@
     "./json-input": "./src/json-input.ts",
     "./shared": "./src/shared.ts",
     "./token-registry": "./src/token-registry.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./x402-tokens": "./src/x402-tokens.ts"
   },
   "dependencies": {
     "viem": "^2.46.0"

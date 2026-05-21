@@ -70,6 +70,7 @@ import { walletAbiCall } from '@pieverseio/purr-plugin-wallet/abi-call'
 import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
 import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
 import { walletSign } from '@pieverseio/purr-plugin-wallet/sign'
+import { walletSignOkxX402 } from '@pieverseio/purr-plugin-wallet/sign-okx-x402'
 import { walletSignTransaction } from '@pieverseio/purr-plugin-wallet/sign-transaction'
 import { walletSignTypedData } from '@pieverseio/purr-plugin-wallet/sign-typed-data'
 import { walletTransfer } from '@pieverseio/purr-plugin-wallet/transfer'
@@ -305,7 +306,7 @@ Groups:
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaign card flow
-  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call)
+  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call)
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
@@ -357,6 +358,7 @@ Examples:
   purr instance renew --chain-id 56 --token-address 0x55d3...7955 --yes
   purr wallet sign --address 0x... --message "Hello"
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'
+  purr wallet sign-okx-x402 --expected '{"amountBaseUnits":"1","chainId":196,"tokenAddress":"0x779ded...","payTo":"0x..."}'
   purr wallet transfer --to 0x... --amount 0.01 --chain-id 56
   purr wallet transfer --to 0x... --amount 1000 --chain-id 56 --token 0x55d3...7955
   purr wallet transfer --to FuQPd1q... --amount 0.5 --chain-type solana
@@ -854,6 +856,9 @@ Examples:
         case 'sign-typed-data':
           await walletSignTypedData(args)
           return
+        case 'sign-okx-x402':
+          await walletSignOkxX402(args)
+          return
         case 'sign-transaction': {
           // Sign unsigned txs from a vendor API (Bitget makeOrder, Bulbaswap
           // bridge makeSwapOrder, etc) via managed custody — no broadcast.
@@ -873,7 +878,7 @@ Examples:
           return
         default:
           throw new Error(
-            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-transaction, transfer, abi-call`,
+            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call`,
           )
       }
     }

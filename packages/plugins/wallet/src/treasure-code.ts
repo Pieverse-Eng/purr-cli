@@ -29,6 +29,7 @@ interface Envelope<T> {
 
 interface PaymentRequiredData {
   expected: Expected
+  paymentRequiredHeader?: string
   wordRequested?: string | null
 }
 
@@ -85,7 +86,10 @@ export async function treasureCodeAttempt(args: Record<string, string>): Promise
   if (!expected) throw new Error('payment-required returned no `expected` envelope')
 
   // Sign the envelope verbatim — the helper owns the x402 plumbing.
-  const signed = await signOkxX402FromExpected(JSON.stringify(expected))
+  const signed = await signOkxX402FromExpected(
+    JSON.stringify(expected),
+    pr.data.paymentRequiredHeader,
+  )
 
   const submitBody: Record<string, unknown> = {
     paymentSignature: signed.paymentSignature,
@@ -137,12 +141,15 @@ export async function treasureCodeFinalUnlock(args: Record<string, string>): Pro
 
   const pr = await apiPost<Envelope<PaymentRequiredData>>(
     '/v1/treasure-code/final-unlocks/payment-required',
-    { words },
+    {},
   )
   const expected = pr.data?.expected
   if (!expected) throw new Error('final-unlocks/payment-required returned no `expected` envelope')
 
-  const signed = await signOkxX402FromExpected(JSON.stringify(expected))
+  const signed = await signOkxX402FromExpected(
+    JSON.stringify(expected),
+    pr.data.paymentRequiredHeader,
+  )
   const res = await apiPost<Envelope<unknown>>('/v1/treasure-code/final-unlocks', {
     paymentSignature: signed.paymentSignature,
     expected,

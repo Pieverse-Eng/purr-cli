@@ -74,6 +74,11 @@ import { walletSignOkxX402 } from '@pieverseio/purr-plugin-wallet/sign-okx-x402'
 import { walletSignTransaction } from '@pieverseio/purr-plugin-wallet/sign-transaction'
 import { walletSignTypedData } from '@pieverseio/purr-plugin-wallet/sign-typed-data'
 import { walletTransfer } from '@pieverseio/purr-plugin-wallet/transfer'
+import {
+  treasureCodeAttempt,
+  treasureCodeFinalUnlock,
+  treasureCodeVault,
+} from '@pieverseio/purr-plugin-wallet/treasure-code'
 import { handleInstanceCommand } from './instance.js'
 import type { PluginId, PluginRuntimeMap, PurrCliOptions } from './types.js'
 
@@ -307,6 +312,7 @@ Groups:
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaign card flow
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call)
+  treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
@@ -359,6 +365,10 @@ Examples:
   purr wallet sign --address 0x... --message "Hello"
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'
   purr wallet sign-okx-x402 --expected '{"amountBaseUnits":"1","chainId":196,"tokenAddress":"0x779ded...","payTo":"0x..."}'
+  purr treasure-code vault
+  purr treasure-code attempt
+  purr treasure-code attempt --guess crocodile
+  purr treasure-code final-unlock --words-file /tmp/words.json
   purr wallet transfer --to 0x... --amount 0.01 --chain-id 56
   purr wallet transfer --to 0x... --amount 1000 --chain-id 56 --token 0x55d3...7955
   purr wallet transfer --to FuQPd1q... --amount 0.5 --chain-type solana
@@ -883,6 +893,24 @@ Examples:
       }
     }
 
+    case 'treasure-code': {
+      switch (command) {
+        case 'vault':
+          await treasureCodeVault()
+          return
+        case 'attempt':
+          await treasureCodeAttempt(args)
+          return
+        case 'final-unlock':
+          await treasureCodeFinalUnlock(args)
+          return
+        default:
+          throw new Error(
+            `Unknown treasure-code command: ${command}. Use: vault, attempt, final-unlock`,
+          )
+      }
+    }
+
     case 'store': {
       if (command === 'install') {
         const slugInput = args.slug || (rest[0] && !rest[0].startsWith('--') ? rest[0] : '')
@@ -1180,7 +1208,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, evm, wallet, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, evm, wallet, treasure-code, instance, execute, config, version, store`,
       )
   }
 

@@ -11,7 +11,8 @@
     "./sign-okx-x402": "./src/sign-okx-x402.ts",
     "./sign-transaction": "./src/sign-transaction.ts",
     "./sign-typed-data": "./src/sign-typed-data.ts",
-    "./transfer": "./src/transfer.ts"
+    "./transfer": "./src/transfer.ts",
+    "./treasure-code": "./src/treasure-code.ts"
   },
   "dependencies": {
     "@okxweb3/x402-core": "^0.1.0",

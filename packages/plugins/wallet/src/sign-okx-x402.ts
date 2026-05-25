@@ -297,10 +297,22 @@ async function runSignOkxX402(args: Record<string, string>): Promise<SignOkxX402
     }
   }
 
-  const paymentRequirements = await buildPaymentRequirements(
-    expected,
-    args['payment-required-header'],
-  )
+  return signOkxX402FromExpected(expectedRaw, args['payment-required-header'])
+}
+
+/**
+ * Reusable core: sign an `expected` envelope (raw JSON string from a
+ * /payment-required response) and return the payment signature, payer address,
+ * and EIP-3009 nonce. Shared by `wallet sign-okx-x402` and higher-level helper
+ * commands (e.g. `treasure-code attempt`) that own the full
+ * payment-required → sign → submit flow so agents never hand-roll it.
+ */
+export async function signOkxX402FromExpected(
+  expectedRaw: string,
+  paymentRequiredHeader?: string,
+): Promise<SignOkxX402Output> {
+  const expected = parseExpected(expectedRaw)
+  const paymentRequirements = await buildPaymentRequirements(expected, paymentRequiredHeader)
 
   const { instanceId } = resolveCredentials()
   const payerAddress = (await resolveAgentEvmAddress(instanceId, expected.chainId)) as `0x${string}`

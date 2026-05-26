@@ -55,8 +55,8 @@ Examples:
 const INSTANCE_STATUS_USAGE = `Usage: purr instance status [--json]
 
 Calls GET /v1/instances/:id/billing-status using WALLET_API_URL, WALLET_API_TOKEN,
-and INSTANCE_ID. Prints billing status, quote, trusted wallet balances, and
-ready-to-renew state. Use --json for the raw platform response.`
+and INSTANCE_ID. Prints billing status, quote, and trusted wallet balances.
+Use --json for the raw platform response.`
 
 const INSTANCE_RENEW_USAGE = `Usage: purr instance renew --chain-id <id> [--token-address 0x...] [--dry-run] [--yes]
 
@@ -300,12 +300,6 @@ function formatPlan(status: JsonRecord): string {
   return 'unknown'
 }
 
-function formatReady(status: JsonRecord): string {
-  const ready = status.readyToRenew ?? status.readyForRenewal ?? status.ready
-  if (typeof ready === 'boolean') return ready ? 'yes' : 'no'
-  return asString(ready) ?? 'unknown'
-}
-
 function printRenewalPreview(status: JsonRecord, options: RenewOptions): void {
   const wallet = findWallet(status, options.chainId)
   const payer = asString(wallet?.address) ?? asString(status.payerWallet) ?? 'unknown'
@@ -315,7 +309,6 @@ function printRenewalPreview(status: JsonRecord, options: RenewOptions): void {
   console.error(`  Status: ${asString(status.status) ?? 'unknown'}`)
   console.error(`  Plan: ${formatPlan(status)}`)
   console.error(`  Next billing date: ${asString(status.nextBillingDate) ?? 'unknown'}`)
-  console.error(`  Ready to renew: ${formatReady(status)}`)
   console.error(`  Chain: ${formatChainId(options.chainId)}`)
   console.error(`  Token: ${token}`)
   console.error(`  Amount: ${renewalAmount(status)}`)
@@ -343,7 +336,6 @@ function printBillingStatus(status: JsonRecord): void {
   console.log(`Next billing date: ${asString(status.nextBillingDate) ?? 'unknown'}`)
   console.log(`Plan: ${formatPlan(status)}`)
   console.log(`Renewal price: ${formatRenewalPrice(status)}`)
-  console.log(`Ready to renew: ${formatReady(status)}`)
   console.log('Agent wallets:')
 
   const wallets = Array.isArray(status.agentWallets) ? status.agentWallets : []

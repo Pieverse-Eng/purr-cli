@@ -26,7 +26,6 @@ const billingStatus = {
   nextBillingDate: '2026-05-30',
   plan: { name: 'basic' },
   effectiveRenewalPriceUsd: '29',
-  readyToRenew: true,
   agentWallets: [
     {
       chainId: 56,
@@ -156,7 +155,7 @@ describe('instance CLI', () => {
         expect(result.stdout).toContain('Next billing date: 2026-05-30')
         expect(result.stdout).toContain('Plan: basic')
         expect(result.stdout).toContain('Renewal price: $29 USD')
-        expect(result.stdout).toContain('Ready to renew: yes')
+        expect(result.stdout).not.toContain('Ready to renew')
         expect(result.stdout).toContain(`Chain 56 (BSC): ${WALLET_ADDRESS}`)
         expect(result.stdout).toContain(`${TOKEN_ADDRESS}`)
       },

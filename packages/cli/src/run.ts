@@ -12,6 +12,7 @@ import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
 import { pieverseCard } from '@pieverseio/purr-plugin-pieverse-card/card'
+import { pnsResolve } from '@pieverseio/purr-plugin-pns/resolve'
 import {
   createOrder,
   getNetworks,
@@ -311,6 +312,7 @@ Groups:
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaign card flow
+  pns               Pie Name Service lookup helpers
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance billing status and trusted-wallet renewal
@@ -347,6 +349,7 @@ Examples:
   purr pieverse card create-job --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card fund --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card deliverable --purchase-id 00000000-0000-0000-0000-000000000000 --wait
+  purr pns resolve alice
   purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury
@@ -852,6 +855,19 @@ Examples:
       }
     }
 
+    case 'pns': {
+      switch (command) {
+        case 'resolve':
+          if (rest.length !== 1 || rest[0].startsWith('--')) {
+            throw new Error('Usage: purr pns resolve <handle>')
+          }
+          await pnsResolve(rest[0])
+          return
+        default:
+          throw new Error(`Unknown pns command: ${command}. Use: resolve`)
+      }
+    }
+
     case 'wallet': {
       switch (command) {
         case 'address':
@@ -1208,7 +1224,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, evm, wallet, treasure-code, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, evm, wallet, treasure-code, instance, execute, config, version, store`,
       )
   }
 

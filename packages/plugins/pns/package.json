@@ -1,0 +1,12 @@
+{
+  "name": "@pieverseio/purr-plugin-pns",
+  "version": "0.2.11",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./resolve": "./src/resolve.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*"
+  }
+}

@@ -65,7 +65,7 @@
     },
     "packages/plugins/pns": {
       "name": "@pieverseio/purr-plugin-pns",
-      "version": "0.2.11",
+      "version": "0.2.12",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },

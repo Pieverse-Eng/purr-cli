@@ -63,6 +63,11 @@ export interface Credentials {
   instanceId: string
 }
 
+export interface ApiCredentials {
+  apiUrl: string
+  apiToken: string
+}
+
 export interface ApiRequestOptions {
   headers?: Record<string, string>
 }
@@ -106,17 +111,15 @@ function parseErrorBody(bodyText: string): unknown {
   }
 }
 
-export function resolveCredentials(): Credentials {
+export function resolveApiCredentials(): ApiCredentials {
   const config = readConfigFile()
 
   const apiUrl = process.env.WALLET_API_URL ?? config['api-url']
   const apiToken = process.env.WALLET_API_TOKEN ?? config['api-token']
-  const instanceId = process.env.INSTANCE_ID ?? config['instance-id']
 
   const missing: string[] = []
   if (!apiUrl) missing.push('WALLET_API_URL env var or api-url config')
   if (!apiToken) missing.push('WALLET_API_TOKEN env var or api-token config')
-  if (!instanceId) missing.push('INSTANCE_ID env var or instance-id config')
 
   if (missing.length > 0) {
     throw new Error(
@@ -127,12 +130,29 @@ export function resolveCredentials(): Credentials {
   return {
     apiUrl: apiUrl as string,
     apiToken: apiToken as string,
+  }
+}
+
+export function resolveCredentials(): Credentials {
+  const config = readConfigFile()
+  const { apiUrl, apiToken } = resolveApiCredentials()
+  const instanceId = process.env.INSTANCE_ID ?? config['instance-id']
+
+  if (!instanceId) {
+    throw new Error(
+      'Missing required credentials:\n  - INSTANCE_ID env var or instance-id config\n\nSet via env vars or run: purr config set <key> <value>',
+    )
+  }
+
+  return {
+    apiUrl,
+    apiToken,
     instanceId: instanceId as string,
   }
 }
 
 export async function apiGet<T = unknown>(path: string): Promise<T> {
-  const { apiUrl, apiToken } = resolveCredentials()
+  const { apiUrl, apiToken } = resolveApiCredentials()
   const url = `${apiUrl.replace(/\/$/, '')}${path}`
 
   const res = await fetch(url, {
@@ -162,7 +182,7 @@ export async function apiPost<T = unknown>(
   body: unknown,
   options: ApiRequestOptions = {},
 ): Promise<T> {
-  const { apiUrl, apiToken } = resolveCredentials()
+  const { apiUrl, apiToken } = resolveApiCredentials()
   const url = `${apiUrl.replace(/\/$/, '')}${path}`
 
   const res = await fetch(url, {

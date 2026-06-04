@@ -41,7 +41,9 @@ describe('Pieverse CLI routing', () => {
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('')
     expect(result.stdout).toContain('pieverse          Pieverse campaign card flow')
+    expect(result.stdout).toContain('pns               Pie Name Service lookup helpers')
     expect(result.stdout).toContain('purr pieverse card purchase')
+    expect(result.stdout).toContain('purr pns resolve alice')
   })
 
   it('routes pieverse card commands through the card handler', async () => {
@@ -50,5 +52,13 @@ describe('Pieverse CLI routing', () => {
     expect(result.code).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('Unknown pieverse card command')
+  })
+
+  it('keeps pns resolve to one positional handle with no raw flag', async () => {
+    const result = await runPurr(['pns', 'resolve', '--raw'])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('Usage: purr pns resolve <handle>')
   })
 })

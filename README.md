@@ -46,6 +46,7 @@ purr <group> <command> [options]
 | `opensea` | OpenSea buy and sell execution helpers |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
+| `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, and abi-call operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
@@ -77,6 +78,7 @@ purr evm abi-call --to <contract-address> --signature <function-signature> --arg
 purr execute --steps-file <path-to-steps-json> --dedup-key <dedup-key>
 purr instance status
 purr instance renew --chain-id <chain-id> --token-address <token-address> --yes
+purr pns resolve <handle>
 purr store list --search <keyword> --limit <limit>
 purr store info <slug>
 purr store install <slug>

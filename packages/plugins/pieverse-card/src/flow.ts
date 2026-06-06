@@ -6,6 +6,7 @@ import { ERC20_ABI, ERC8183_ABI, ERC8183_ROUTER_ABI } from './abi.js'
 import { executeSteps, getPurchase, purchaseCard, recordProgress } from './api.js'
 import {
   EMPTY_BYTES,
+  ERC8183_SPONSORED_GAS_PRICE,
   ERC8183_JOB_STATUS,
   SUBMITTED_POLL_MS,
   SUBMITTED_TIMEOUT_MS,
@@ -155,6 +156,7 @@ async function createJob(
       value: '0x0',
       chainId: intent.chainId,
       label: 'ERC-8183 createJob',
+      gasPrice: ERC8183_SPONSORED_GAS_PRICE,
     }
     const executed = await executeSteps(instanceId, [step])
     resolvedCreateTxHash = requiredStepHash(executed, 'ERC-8183 createJob')
@@ -180,6 +182,7 @@ async function createJob(
       value: '0x0',
       chainId: intent.chainId,
       label: 'ERC-8183 registerJob',
+      gasPrice: ERC8183_SPONSORED_GAS_PRICE,
     }
     const executed = await executeSteps(instanceId, [registerStep])
     const executedRegisterTxHash = requiredStepHash(executed, 'ERC-8183 registerJob')
@@ -231,6 +234,7 @@ async function fundJob(
       value: '0x0',
       chainId: intent.chainId,
       label: 'ERC-8183 setBudget',
+      gasPrice: ERC8183_SPONSORED_GAS_PRICE,
     },
   ]
 
@@ -266,6 +270,7 @@ async function fundJob(
     value: '0x0',
     chainId: intent.chainId,
     label: 'ERC-8183 fund',
+    gasPrice: ERC8183_SPONSORED_GAS_PRICE,
   })
 
   const executed = await executeSteps(instanceId, steps)
@@ -335,6 +340,7 @@ async function claimRefundIfEligible(
     value: '0x0',
     chainId: intent.chainId,
     label: 'ERC-8183 claimRefund',
+    gasPrice: ERC8183_SPONSORED_GAS_PRICE,
   }
   const executed = await executeSteps(instanceId, [refundStep])
   const refundTxHash = requiredStepHash(executed, 'ERC-8183 claimRefund')

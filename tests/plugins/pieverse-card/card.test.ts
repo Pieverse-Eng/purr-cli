@@ -442,7 +442,7 @@ describe('pieverse card staged commands', () => {
     ])
     expect(calls[2].body.steps.map((step: { gasPrice?: string }) => step.gasPrice)).toEqual([
       SPONSORED_GAS_PRICE,
-      undefined,
+      SPONSORED_GAS_PRICE,
       SPONSORED_GAS_PRICE,
     ])
     expect(calls[4].body).toMatchObject({

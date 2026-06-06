@@ -251,6 +251,7 @@ async function fundJob(
       value: '0x0',
       chainId: intent.chainId,
       label: 'ERC-8183 approve payment token',
+      gasPrice: ERC8183_SPONSORED_GAS_PRICE,
       conditional: {
         type: 'allowance_lt',
         token,

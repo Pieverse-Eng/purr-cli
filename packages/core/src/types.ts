@@ -16,6 +16,7 @@ export interface TxStep {
   chainId: number
   label?: string
   gasLimit?: string
+  gasPrice?: string
   conditional?: ConditionalCheck
 }
 

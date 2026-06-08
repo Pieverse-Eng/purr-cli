@@ -9,6 +9,11 @@ export interface ConditionalCheck {
   amount: string // wei
 }
 
+export interface EvmExecutionOptions {
+  mode: 'standard' | 'paymaster'
+  fallback?: boolean
+}
+
 export interface TxStep {
   to: string
   data: string // hex calldata
@@ -17,6 +22,7 @@ export interface TxStep {
   label?: string
   gasLimit?: string
   gasPrice?: string
+  execution?: EvmExecutionOptions
   conditional?: ConditionalCheck
 }
 

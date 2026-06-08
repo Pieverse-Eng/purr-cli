@@ -4,12 +4,20 @@ import { SERVICE_SLUG } from './constants.js'
 import type {
   AgentSelfIntroPurchase,
   ApiEnvelope,
+  Erc8183ServicePurchase,
   PieverseCardPurchaseRequest,
+  SocialMemeBoosterJudgePurchase,
   WalletExecuteResult,
 } from './types.js'
 
-function basePath(instanceId: string): string {
+export const SOCIAL_MEME_BOOSTER_JUDGE_SERVICE_SLUG = 'social-meme-booster-judge'
+
+function cardBasePath(instanceId: string): string {
   return `/v1/instances/${instanceId}/erc8183/services/${SERVICE_SLUG}/card`
+}
+
+function memeJudgeBasePath(instanceId: string): string {
+  return `/v1/instances/${instanceId}/erc8183/services/${SOCIAL_MEME_BOOSTER_JUDGE_SERVICE_SLUG}`
 }
 
 export async function purchaseCard(
@@ -17,7 +25,7 @@ export async function purchaseCard(
   body: PieverseCardPurchaseRequest = {},
 ): Promise<AgentSelfIntroPurchase> {
   const res = await apiPost<ApiEnvelope<AgentSelfIntroPurchase>>(
-    `${basePath(instanceId)}/purchase`,
+    `${cardBasePath(instanceId)}/purchase`,
     body,
   )
   return unwrap(res)
@@ -28,7 +36,7 @@ export async function getPurchase(
   purchaseId: string,
 ): Promise<AgentSelfIntroPurchase> {
   const res = await apiGet<ApiEnvelope<AgentSelfIntroPurchase>>(
-    `${basePath(instanceId)}/purchases/${purchaseId}`,
+    `${cardBasePath(instanceId)}/purchases/${purchaseId}`,
   )
   return unwrap(res)
 }
@@ -39,8 +47,47 @@ export async function recordProgress(
   body: Record<string, unknown>,
 ): Promise<AgentSelfIntroPurchase> {
   const res = await apiPost<ApiEnvelope<AgentSelfIntroPurchase>>(
-    `${basePath(instanceId)}/purchases/${purchaseId}/progress`,
+    `${cardBasePath(instanceId)}/purchases/${purchaseId}/progress`,
     body,
+  )
+  return unwrap(res)
+}
+
+export async function purchaseMemeJudge(
+  instanceId: string,
+): Promise<SocialMemeBoosterJudgePurchase> {
+  const res = await apiPost<ApiEnvelope<SocialMemeBoosterJudgePurchase>>(
+    `${memeJudgeBasePath(instanceId)}/purchase`,
+    {},
+  )
+  return unwrap(res)
+}
+
+export async function getMemeJudgePurchase(
+  instanceId: string,
+  purchaseId: string,
+): Promise<SocialMemeBoosterJudgePurchase> {
+  const res = await apiGet<ApiEnvelope<SocialMemeBoosterJudgePurchase>>(
+    `${memeJudgeBasePath(instanceId)}/purchases/${purchaseId}`,
+  )
+  return unwrap(res)
+}
+
+export async function recordMemeJudgeProgress(
+  instanceId: string,
+  purchaseId: string,
+  body: Record<string, unknown>,
+): Promise<SocialMemeBoosterJudgePurchase> {
+  const res = await apiPost<ApiEnvelope<SocialMemeBoosterJudgePurchase>>(
+    `${memeJudgeBasePath(instanceId)}/purchases/${purchaseId}/progress`,
+    body,
+  )
+  return unwrap(res)
+}
+
+export async function getMemeJudgeInput(purchaseId: string): Promise<unknown> {
+  const res = await apiGet<ApiEnvelope<unknown>>(
+    `/v1/erc8183/services/${SOCIAL_MEME_BOOSTER_JUDGE_SERVICE_SLUG}/purchases/${purchaseId}/input`,
   )
   return unwrap(res)
 }
@@ -54,6 +101,15 @@ export async function executeSteps(
     { steps },
   )
   return unwrap(res)
+}
+
+export interface Erc8183ServiceClient<TPurchase extends Erc8183ServicePurchase> {
+  getPurchase: (instanceId: string, purchaseId: string) => Promise<TPurchase>
+  recordProgress: (
+    instanceId: string,
+    purchaseId: string,
+    body: Record<string, unknown>,
+  ) => Promise<TPurchase>
 }
 
 function unwrap<T>(envelope: ApiEnvelope<T>): T {

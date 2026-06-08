@@ -1,12 +1,12 @@
 import { getAddress, isAddress } from 'viem'
 import type {
-  AgentSelfIntroPurchase,
-  PieverseCardOptions,
+  Erc8183ServicePurchase,
+  PieverseServiceOptions,
   PurchaseIntent,
   WalletExecuteResult,
 } from './types.js'
 
-export function requireIntent(purchase: AgentSelfIntroPurchase): PurchaseIntent {
+export function requireIntent(purchase: Erc8183ServicePurchase): PurchaseIntent {
   if (!purchase.erc8183) {
     throw new Error(`Purchase ${purchase.purchaseId} did not include an ERC-8183 intent`)
   }
@@ -22,7 +22,7 @@ export function requireBudgetAmount(intent: PurchaseIntent): bigint {
   return amount
 }
 
-export function requireOnChainJobId(purchase: AgentSelfIntroPurchase): string {
+export function requireOnChainJobId(purchase: Erc8183ServicePurchase): string {
   const jobId = purchase.erc8183?.onChainJobId
   if (!jobId) {
     throw new Error(`Purchase ${purchase.purchaseId} is missing erc8183.onChainJobId`)
@@ -32,7 +32,7 @@ export function requireOnChainJobId(purchase: AgentSelfIntroPurchase): string {
 
 export function requiredStepHash(result: WalletExecuteResult, label: string): string {
   const step = result.results.find((candidate) => candidate.label === label)
-  if (!step || step.status !== 'success' || !step.hash) {
+  if (step?.status !== 'success' || !step.hash) {
     throw new Error(`Wallet execute did not return a tx hash for ${label}`)
   }
   return step.hash
@@ -49,7 +49,7 @@ export function requireEvmAddress(value: string, field: string): `0x${string}` {
   return getAddress(value) as `0x${string}`
 }
 
-export function assertNotTerminal(purchase: AgentSelfIntroPurchase): void {
+export function assertNotTerminal(purchase: Erc8183ServicePurchase): void {
   if (purchase.status === 'failed' || purchase.status === 'rejected') {
     throw purchaseError(purchase)
   }
@@ -58,14 +58,14 @@ export function assertNotTerminal(purchase: AgentSelfIntroPurchase): void {
   }
 }
 
-function purchaseError(purchase: AgentSelfIntroPurchase, statusOverride?: string): Error {
+function purchaseError(purchase: Erc8183ServicePurchase, statusOverride?: string): Error {
   const status = statusOverride ?? purchase.status
   const rejectHash = purchase.erc8183?.txHashes.reject
   const suffix = rejectHash ? ` rejectTxHash=${rejectHash}` : ''
-  return new Error(`ERC-8183 card purchase ${status} for purchase ${purchase.purchaseId}${suffix}`)
+  return new Error(`ERC-8183 purchase ${status} for purchase ${purchase.purchaseId}${suffix}`)
 }
 
-export function requirePurchaseId(options: PieverseCardOptions): string {
+export function requirePurchaseId(options: PieverseServiceOptions): string {
   if (!options.purchaseId) throw new Error('Missing required argument: --purchase-id')
   return options.purchaseId
 }

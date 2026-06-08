@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-cli",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "description": "Calldata builder CLI for on-chain step construction",
   "type": "module",
   "workspaces": [
@@ -14,7 +14,8 @@
     "build:windows": "bun scripts/build-binary.js windows",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e:pieverse-card-local": "bun scripts/pieverse-card-local-e2e.ts"
+    "test:e2e:pieverse-card-local": "bun scripts/pieverse-card-local-e2e.ts",
+    "test:e2e:pieverse-meme-judge-local": "bun scripts/pieverse-meme-judge-local-e2e.ts"
   },
   "devDependencies": {
     "@open-wallet-standard/core": "1.2.4",

@@ -1,10 +1,11 @@
 {
   "name": "@pieverseio/purr-plugin-pieverse-card",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "type": "module",
   "private": true,
   "exports": {
-    "./card": "./src/card.ts"
+    "./card": "./src/card.ts",
+    "./purrfect-yap": "./src/purrfect-yap.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",

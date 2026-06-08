@@ -1,12 +1,26 @@
-import type { PieverseCardOptions } from './types.js'
+import type {
+  PieverseCardOptions,
+  PieverseMemeJudgeOptions,
+  PieverseServiceOptions,
+} from './types.js'
 
 const PARTNERS = ['okx', 'bnb'] as const
 const CHANNELS = ['telegram', 'line'] as const
 
 export function parseCardOptions(args: Record<string, string>): PieverseCardOptions {
   return {
+    ...parseServiceOptions(args),
     partner: parseOptionalChoice(args.partner, 'partner', PARTNERS),
     channel: parseOptionalChoice(args.channel, 'channel', CHANNELS),
+  }
+}
+
+export function parseMemeJudgeOptions(args: Record<string, string>): PieverseMemeJudgeOptions {
+  return parseServiceOptions(args)
+}
+
+function parseServiceOptions(args: Record<string, string>): PieverseServiceOptions {
+  return {
     purchaseId: args['purchase-id'],
     receiptTimeoutMs: parseOptionalPositiveInt(args['receipt-timeout-ms'], 'receipt-timeout-ms'),
     receiptPollMs: parseOptionalPositiveInt(args['receipt-poll-ms'], 'receipt-poll-ms'),
@@ -15,6 +29,8 @@ export function parseCardOptions(args: Record<string, string>): PieverseCardOpti
       'submitted-timeout-ms',
     ),
     submittedPollMs: parseOptionalPositiveInt(args['submitted-poll-ms'], 'submitted-poll-ms'),
+    resultTimeoutMs: parseOptionalPositiveInt(args['result-timeout-ms'], 'result-timeout-ms'),
+    resultPollMs: parseOptionalPositiveInt(args['result-poll-ms'], 'result-poll-ms'),
     wait: parseOptionalBoolean(args.wait, 'wait'),
     createTxHash: parseOptionalTxHash(args['create-tx-hash'], 'create-tx-hash'),
     registerTxHash: parseOptionalTxHash(args['register-tx-hash'], 'register-tx-hash'),

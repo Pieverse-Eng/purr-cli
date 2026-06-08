@@ -203,7 +203,7 @@ export async function getPieverseMemeJudgeResult(
 
   return waitForStatuses(memeJudgeService, instanceId, purchase, {
     statuses: ['completed'],
-    description: 'ERC-8183 meme judge result',
+    description: 'ERC-8183 PurrfectYap result',
     timeoutMs: options.resultTimeoutMs ?? options.submittedTimeoutMs,
     pollMs: options.resultPollMs ?? options.submittedPollMs,
   })

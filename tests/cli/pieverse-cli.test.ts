@@ -43,7 +43,7 @@ describe('Pieverse CLI routing', () => {
     expect(result.stdout).toContain('pieverse          Pieverse campaign card flow')
     expect(result.stdout).toContain('pns               Pie Name Service lookup helpers')
     expect(result.stdout).toContain('purr pieverse card purchase')
-    expect(result.stdout).toContain('purr pieverse meme-judge purchase')
+    expect(result.stdout).toContain('purr pieverse purrfect-yap purchase')
     expect(result.stdout).toContain('purr pns resolve alice')
   })
 
@@ -55,20 +55,29 @@ describe('Pieverse CLI routing', () => {
     expect(result.stderr).toContain('Unknown pieverse card command')
   })
 
-  it('routes pieverse meme-judge commands through the meme judge handler', async () => {
-    const result = await runPurr(['pieverse', 'meme-judge', 'unknown-command'])
+  it('routes pieverse purrfect-yap commands through the PurrfectYap handler', async () => {
+    const result = await runPurr(['pieverse', 'purrfect-yap', 'unknown-command'])
 
     expect(result.code).toBe(1)
     expect(result.stdout).toBe('')
-    expect(result.stderr).toContain('Unknown pieverse meme-judge command')
+    expect(result.stderr).toContain('Unknown pieverse purrfect-yap command')
+    expect(result.stderr).not.toContain('score')
   })
 
-  it('rejects card-only campaign parameters for meme-judge commands', async () => {
-    const result = await runPurr(['pieverse', 'meme-judge', 'purchase', '--channel', 'line'])
+  it('rejects card-only campaign parameters for purrfect-yap commands', async () => {
+    const result = await runPurr(['pieverse', 'purrfect-yap', 'purchase', '--channel', 'line'])
 
     expect(result.code).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('do not accept --channel')
+  })
+
+  it('does not keep the old meme-judge command name', async () => {
+    const result = await runPurr(['pieverse', 'meme-judge', 'purchase'])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('Unknown pieverse command: meme-judge. Use: card, purrfect-yap')
   })
 
   it('keeps pns resolve to one positional handle with no raw flag', async () => {

@@ -7,7 +7,7 @@ import {
   getPieverseMemeJudgeInput,
   getPieverseMemeJudgeResult,
   purchasePieverseMemeJudge,
-} from '../packages/plugins/pieverse-card/src/meme-judge.ts'
+} from '../packages/plugins/pieverse-card/src/purrfect-yap.ts'
 
 const INSTANCE_ID = '4fd09ba9-3654-4f01-bfc7-f28c3a0779f2'
 const PURCHASE_ID = '2e0bc8f2-b9f2-4629-88ff-0aee7a564eef'

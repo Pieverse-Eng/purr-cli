@@ -63,6 +63,30 @@ const memeJudgeService: Erc8183ServiceClient<SocialMemeBoosterJudgePurchase> = {
   recordProgress: recordMemeJudgeProgress,
 }
 
+function isStatusAtLeastSubmitted(status: Erc8183ServicePurchase['status']): boolean {
+  return status === 'submitted' || status === 'completed'
+}
+
+function isCardDeliverableReady(purchase: AgentSelfIntroPurchase): boolean {
+  return (
+    isStatusAtLeastSubmitted(purchase.status) &&
+    Boolean(purchase.imageUrl) &&
+    Boolean(purchase.shareUrl) &&
+    Boolean(purchase.suggestedTweetText) &&
+    Boolean(purchase.erc8183?.txHashes.fund) &&
+    Boolean(purchase.erc8183?.txHashes.submit)
+  )
+}
+
+function isMemeJudgeResultReady(purchase: SocialMemeBoosterJudgePurchase): boolean {
+  return (
+    purchase.status === 'completed' &&
+    Boolean(purchase.erc8183?.txHashes.fund) &&
+    Boolean(purchase.erc8183?.txHashes.submit) &&
+    Boolean(purchase.erc8183?.txHashes.complete)
+  )
+}
+
 function sponsoredErc8183Step(step: TxStep): TxStep {
   return {
     ...step,
@@ -108,10 +132,11 @@ export async function fundPieverseCard(options: PieverseCardOptions): Promise<Pi
     throw new Error(`Purchase ${purchase.purchaseId} must be created before funding`)
   }
   if (purchase.status !== 'created') {
-    return purchase
+    return markCardProviderSubmittedIfReady(instanceId, purchase, options)
   }
 
-  return fundJob(cardService, instanceId, purchase, options)
+  const funded = await fundJob(cardService, instanceId, purchase, options)
+  return markCardProviderSubmittedIfReady(instanceId, funded, options)
 }
 
 export async function getPieverseCardDeliverable(
@@ -121,13 +146,14 @@ export async function getPieverseCardDeliverable(
   const purchase = await getPurchase(instanceId, requirePurchaseId(options))
   assertNotTerminal(purchase)
 
-  if (purchase.status === 'submitted' || purchase.status === 'completed' || !options.wait) {
+  if (isCardDeliverableReady(purchase) || !options.wait) {
     return purchase
   }
 
-  return waitForStatuses(cardService, instanceId, purchase, {
-    statuses: ['submitted', 'completed'],
-    description: 'ERC-8183 provider submit',
+  return waitForPurchase(cardService, instanceId, purchase, {
+    ready: isCardDeliverableReady,
+    beforeCheck: (current) => markCardProviderSubmittedIfReady(instanceId, current, options),
+    description: 'ERC-8183 card deliverable',
     timeoutMs: options.submittedTimeoutMs,
     pollMs: options.submittedPollMs,
   })
@@ -197,12 +223,12 @@ export async function getPieverseMemeJudgeResult(
   const purchase = await getMemeJudgePurchase(instanceId, requirePurchaseId(options))
   assertNotTerminal(purchase)
 
-  if (purchase.status === 'completed' || !options.wait) {
+  if (isMemeJudgeResultReady(purchase) || !options.wait) {
     return purchase
   }
 
-  return waitForStatuses(memeJudgeService, instanceId, purchase, {
-    statuses: ['completed'],
+  return waitForPurchase(memeJudgeService, instanceId, purchase, {
+    ready: isMemeJudgeResultReady,
     description: 'ERC-8183 PurrfectYap result',
     timeoutMs: options.resultTimeoutMs ?? options.submittedTimeoutMs,
     pollMs: options.resultPollMs ?? options.submittedPollMs,
@@ -386,6 +412,25 @@ async function fundJob<TPurchase extends Erc8183ServicePurchase>(
   })
 }
 
+async function markCardProviderSubmittedIfReady(
+  instanceId: string,
+  purchase: AgentSelfIntroPurchase,
+  options: PieverseServiceOptions,
+): Promise<AgentSelfIntroPurchase> {
+  if (isStatusAtLeastSubmitted(purchase.status)) return purchase
+  if (purchase.status !== 'funded') return purchase
+
+  const intent = purchase.erc8183
+  const submitTxHash = intent?.txHashes.submit
+  if (!intent || !submitTxHash) return purchase
+
+  await waitForReceipt(intent.chainId, submitTxHash, options)
+  return recordProgress(instanceId, purchase.purchaseId, {
+    status: 'submitted',
+    submitTxHash,
+  })
+}
+
 async function resolvePaymentTokenAddress(intent: PurchaseIntent): Promise<string | null> {
   try {
     return await readCommercePaymentToken(intent)
@@ -394,12 +439,13 @@ async function resolvePaymentTokenAddress(intent: PurchaseIntent): Promise<strin
   }
 }
 
-async function waitForStatuses<TPurchase extends Erc8183ServicePurchase>(
+async function waitForPurchase<TPurchase extends Erc8183ServicePurchase>(
   service: Erc8183ServiceClient<TPurchase>,
   instanceId: string,
   purchase: TPurchase,
   params: {
-    statuses: readonly TPurchase['status'][]
+    ready: (purchase: TPurchase) => boolean
+    beforeCheck?: (purchase: TPurchase) => Promise<TPurchase>
     description: string
     timeoutMs?: number
     pollMs?: number
@@ -411,10 +457,14 @@ async function waitForStatuses<TPurchase extends Erc8183ServicePurchase>(
   let current = purchase
 
   while (Date.now() <= deadline) {
+    if (params.beforeCheck) {
+      current = await params.beforeCheck(current)
+      assertNotTerminal(current)
+    }
+    if (params.ready(current)) return current
+    await sleep(pollMs)
     current = await service.getPurchase(instanceId, purchase.purchaseId)
     assertNotTerminal(current)
-    if (params.statuses.includes(current.status)) return current
-    await sleep(pollMs)
   }
 
   throw new Error(

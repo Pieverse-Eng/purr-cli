@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-pieverse-card",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "type": "module",
   "private": true,
   "exports": {

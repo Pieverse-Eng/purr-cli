@@ -114,6 +114,21 @@ function purchase(status: string, overrides: Partial<Record<string, unknown>> = 
   }
 }
 
+function purchaseWithProviderSubmit(status = 'funded') {
+  const base = purchase(status)
+  return {
+    ...base,
+    erc8183: {
+      ...base.erc8183,
+      deliverableUri: 'https://purr.example/card.json',
+      txHashes: {
+        ...base.erc8183.txHashes,
+        submit: HASHES.submit,
+      },
+    },
+  }
+}
+
 function ok<T>(data: T) {
   return { ok: true, data }
 }
@@ -411,7 +426,7 @@ describe('pieverse card staged commands', () => {
     expect(walletCalls).toHaveLength(0)
   })
 
-  it('runs fund and accepts backend auto-submit as the returned status', async () => {
+  it('runs fund, waits for provider submit, and records submitted progress', async () => {
     process.env.EVM_RPC_56 = 'https://rpc.test'
     const mock = mockFetchSequence([
       ok(purchase('created')),
@@ -422,6 +437,8 @@ describe('pieverse card staged commands', () => {
         { label: 'ERC-8183 fund', hash: HASHES.fund },
       ]),
       rpcReceipt(HASHES.fund),
+      ok(purchaseWithProviderSubmit('funded')),
+      rpcReceipt(HASHES.submit),
       ok(purchase('submitted')),
     ])
     Object.defineProperty(globalThis, 'fetch', {
@@ -458,6 +475,10 @@ describe('pieverse card staged commands', () => {
       setBudgetTxHash: HASHES.setBudget,
       approveTxHash: HASHES.approve,
       fundTxHash: HASHES.fund,
+    })
+    expect(calls[6].body).toMatchObject({
+      status: 'submitted',
+      submitTxHash: HASHES.submit,
     })
   })
 
@@ -504,8 +525,13 @@ describe('pieverse card staged commands', () => {
     ])
   })
 
-  it('waits for deliverable without sending user-side transactions', async () => {
-    const mock = mockFetchSequence([ok(purchase('funded')), ok(purchase('submitted'))])
+  it('waits for provider submit before returning the card deliverable', async () => {
+    process.env.EVM_RPC_56 = 'https://rpc.test'
+    const mock = mockFetchSequence([
+      ok(purchaseWithProviderSubmit('funded')),
+      rpcReceipt(HASHES.submit),
+      ok(purchase('submitted')),
+    ])
     Object.defineProperty(globalThis, 'fetch', {
       value: mock,
       configurable: true,
@@ -521,6 +547,11 @@ describe('pieverse card staged commands', () => {
     expect(result.status).toBe('submitted')
     expect(result.imageUrl).toBe('https://cdn.example/card.png')
     expect(result.suggestedTweetText).toContain('@purrfectagent0')
+    const progressBody = JSON.parse(String(mock.mock.calls[2][1]?.body))
+    expect(progressBody).toMatchObject({
+      status: 'submitted',
+      submitTxHash: HASHES.submit,
+    })
     const walletCalls = mock.mock.calls.filter(([url]) =>
       String(url).endsWith(`/v1/instances/${INSTANCE_ID}/wallet/execute`),
     )

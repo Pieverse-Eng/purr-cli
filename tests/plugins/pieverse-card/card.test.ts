@@ -30,6 +30,7 @@ const PROVIDER = '0x3333333333333333333333333333333333333333'
 const TOKEN = '0x4444444444444444444444444444444444444444'
 const ZERO = '0x0000000000000000000000000000000000000000'
 const SPONSORED_GAS_PRICE = '0x0'
+const PAYMASTER_EXECUTION = { mode: 'paymaster', fallback: false }
 
 const HASHES = {
   create: `0x${'01'.repeat(32)}`,
@@ -371,8 +372,10 @@ describe('pieverse card staged commands', () => {
     }))
     expect(calls[1].body.steps[0].label).toBe('ERC-8183 createJob')
     expect(calls[1].body.steps[0].gasPrice).toBe(SPONSORED_GAS_PRICE)
+    expect(calls[1].body.steps[0].execution).toEqual(PAYMASTER_EXECUTION)
     expect(calls[3].body.steps[0].label).toBe('ERC-8183 registerJob')
     expect(calls[3].body.steps[0].gasPrice).toBe(SPONSORED_GAS_PRICE)
+    expect(calls[3].body.steps[0].execution).toEqual(PAYMASTER_EXECUTION)
     expect(calls[5].body).toMatchObject({
       status: 'created',
       onChainJobId: '42',
@@ -445,6 +448,11 @@ describe('pieverse card staged commands', () => {
       SPONSORED_GAS_PRICE,
       SPONSORED_GAS_PRICE,
     ])
+    expect(calls[2].body.steps.map((step: { execution?: unknown }) => step.execution)).toEqual([
+      PAYMASTER_EXECUTION,
+      PAYMASTER_EXECUTION,
+      PAYMASTER_EXECUTION,
+    ])
     expect(calls[4].body).toMatchObject({
       status: 'funded',
       setBudgetTxHash: HASHES.setBudget,
@@ -489,6 +497,10 @@ describe('pieverse card staged commands', () => {
     expect(fundSteps.map((step: { gasPrice?: string }) => step.gasPrice)).toEqual([
       SPONSORED_GAS_PRICE,
       SPONSORED_GAS_PRICE,
+    ])
+    expect(fundSteps.map((step: { execution?: unknown }) => step.execution)).toEqual([
+      PAYMASTER_EXECUTION,
+      PAYMASTER_EXECUTION,
     ])
   })
 
@@ -536,6 +548,7 @@ describe('pieverse card staged commands', () => {
     const refundBody = JSON.parse(String(mock.mock.calls[2][1]?.body))
     expect(refundBody.steps[0].label).toBe('ERC-8183 claimRefund')
     expect(refundBody.steps[0].gasPrice).toBe(SPONSORED_GAS_PRICE)
+    expect(refundBody.steps[0].execution).toEqual(PAYMASTER_EXECUTION)
     const progressBody = JSON.parse(String(mock.mock.calls[4][1]?.body))
     expect(progressBody).toMatchObject({
       status: 'rejected',

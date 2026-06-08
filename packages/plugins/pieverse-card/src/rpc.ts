@@ -4,7 +4,7 @@ import { BNB_CHAIN_ID, DEFAULT_RPCS, RECEIPT_POLL_MS, RECEIPT_TIMEOUT_MS } from 
 import { requireEvmAddress, sleep } from './guards.js'
 import type {
   OnChainJob,
-  PieverseCardOptions,
+  PieverseServiceOptions,
   PurchaseIntent,
   RpcReceipt,
   RpcResponse,
@@ -73,7 +73,7 @@ function normalizeOnChainJob(decoded: unknown): OnChainJob | null {
 export async function waitForReceipt(
   chainId: number,
   txHash: string,
-  options: PieverseCardOptions,
+  options: PieverseServiceOptions,
 ): Promise<RpcReceipt> {
   const rpcUrl = resolveRpcUrl(chainId)
   const pollMs = options.receiptPollMs ?? RECEIPT_POLL_MS

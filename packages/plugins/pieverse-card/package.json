@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "exports": {
-    "./card": "./src/card.ts"
+    "./card": "./src/card.ts",
+    "./meme-judge": "./src/meme-judge.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",

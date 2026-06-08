@@ -2,9 +2,9 @@ import { getAddress, parseEventLogs } from 'viem'
 import { ERC8183_ABI, ERC8183_ROUTER_ABI } from './abi.js'
 import { ZERO_ADDRESS } from './constants.js'
 import { requireIntent } from './guards.js'
-import type { AgentSelfIntroPurchase, RpcReceipt } from './types.js'
+import type { Erc8183ServicePurchase, RpcReceipt } from './types.js'
 
-export function parseCreatedJobId(receipt: RpcReceipt, purchase: AgentSelfIntroPurchase): string {
+export function parseCreatedJobId(receipt: RpcReceipt, purchase: Erc8183ServicePurchase): string {
   if (receipt.status !== '0x1') {
     throw new Error(`createJob transaction failed: ${receipt.transactionHash}`)
   }
@@ -34,7 +34,7 @@ export function parseCreatedJobId(receipt: RpcReceipt, purchase: AgentSelfIntroP
 
 export function assertRegisteredJob(
   receipt: RpcReceipt,
-  purchase: AgentSelfIntroPurchase,
+  purchase: Erc8183ServicePurchase,
   onChainJobId: string,
 ): void {
   if (receipt.status !== '0x1') {

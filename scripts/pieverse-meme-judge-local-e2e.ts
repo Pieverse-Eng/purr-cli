@@ -2,35 +2,32 @@ import { strict as assert } from 'node:assert'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { encodeAbiParameters, encodeEventTopics, encodeFunctionResult, parseAbi } from 'viem'
 import {
-  createPieverseCardJob,
-  fundPieverseCard,
-  getPieverseCardDeliverable,
-  purchasePieverseCard,
-  refundPieverseCard,
-} from '../packages/plugins/pieverse-card/src/card.ts'
+  createPieverseMemeJudgeJob,
+  fundPieverseMemeJudge,
+  getPieverseMemeJudgeInput,
+  getPieverseMemeJudgeResult,
+  purchasePieverseMemeJudge,
+} from '../packages/plugins/pieverse-card/src/meme-judge.ts'
 
 const INSTANCE_ID = '4fd09ba9-3654-4f01-bfc7-f28c3a0779f2'
-const PURCHASE_ID = '80fdb8b1-9230-4d78-9fd6-579d4e6136f0'
-const CARD_ID = '401d39ea-7ebd-4c43-887c-45617f3843cc'
+const PURCHASE_ID = '2e0bc8f2-b9f2-4629-88ff-0aee7a564eef'
+const JOB_INTENT_ID = '8a1f6e57-d857-4086-80e8-1635f7680f72'
 const CONTRACT = '0x1234567890123456789012345678901234567890'
 const ROUTER = '0x5555555555555555555555555555555555555555'
 const POLICY = '0x6666666666666666666666666666666666666666'
 const CLIENT = '0x2222222222222222222222222222222222222222'
 const PROVIDER = '0x3333333333333333333333333333333333333333'
 const TOKEN = '0x4444444444444444444444444444444444444444'
-const ZERO = '0x0000000000000000000000000000000000000000'
-const JOB_ID = '42'
+const JOB_ID = '8183001'
 
 const HASHES = {
-  create: `0x${'01'.repeat(32)}`,
-  register: `0x${'11'.repeat(32)}`,
-  setBudget: `0x${'02'.repeat(32)}`,
-  approve: `0x${'03'.repeat(32)}`,
-  fund: `0x${'04'.repeat(32)}`,
-  submit: `0x${'05'.repeat(32)}`,
-  complete: `0x${'06'.repeat(32)}`,
-  reject: `0x${'09'.repeat(32)}`,
-  refund: `0x${'10'.repeat(32)}`,
+  create: `0x${'21'.repeat(32)}`,
+  register: `0x${'22'.repeat(32)}`,
+  setBudget: `0x${'23'.repeat(32)}`,
+  approve: `0x${'24'.repeat(32)}`,
+  fund: `0x${'25'.repeat(32)}`,
+  submit: `0x${'26'.repeat(32)}`,
+  complete: `0x${'27'.repeat(32)}`,
 }
 
 const JOB_STATUS = {
@@ -38,7 +35,6 @@ const JOB_STATUS = {
   FUNDED: 1,
   SUBMITTED: 2,
   COMPLETED: 3,
-  REJECTED: 4,
 } as const
 
 const ERC8183_ABI = parseAbi([
@@ -61,7 +57,7 @@ type StartedServer = { url: string; close: () => Promise<void> }
 interface BackendState {
   status: PurchaseStatus
   jobStatus: number
-  jobExpiredAt: bigint
+  purchaseReads: number
   progressCalls: string[]
   walletCalls: Array<{ labels: string[] }>
 }
@@ -82,9 +78,7 @@ const originalEnv = {
 async function main() {
   try {
     await runHappyPathScenario()
-    await runRejectedRefundScenario()
-    await runExpiredRefundScenario()
-    console.log('[pieverse-card-local-e2e] PASS')
+    console.log('[pieverse-meme-judge-local-e2e] PASS')
   } finally {
     restoreEnv()
   }
@@ -92,10 +86,19 @@ async function main() {
 
 async function runHappyPathScenario() {
   await runLocalScenario('happy-path', createBackendState(), async (state) => {
-    const started = await purchasePieverseCard()
+    const started = await purchasePieverseMemeJudge()
     assert.equal(started.status, 'initiated')
+    assert.equal(started.serviceSlug, 'social-meme-booster-judge')
 
-    const created = await createPieverseCardJob({
+    const input = (await getPieverseMemeJudgeInput({ purchaseId: started.purchaseId })) as {
+      posts?: Array<{ tweetId?: string }>
+    }
+    assert.deepEqual(
+      input.posts?.map((post) => post.tweetId),
+      ['2059000000000000000'],
+    )
+
+    const created = await createPieverseMemeJudgeJob({
       purchaseId: started.purchaseId,
       receiptPollMs: 10,
       receiptTimeoutMs: 2_000,
@@ -103,21 +106,21 @@ async function runHappyPathScenario() {
     assert.equal(created.status, 'created')
     assert.equal(created.erc8183?.onChainJobId, JOB_ID)
 
-    const funded = await fundPieverseCard({
+    const funded = await fundPieverseMemeJudge({
       purchaseId: started.purchaseId,
       receiptPollMs: 10,
       receiptTimeoutMs: 2_000,
     })
-    assert.equal(funded.status, 'submitted')
+    assert.equal(funded.status, 'funded')
 
-    const delivered = await getPieverseCardDeliverable({
+    const result = await getPieverseMemeJudgeResult({
       purchaseId: started.purchaseId,
       wait: true,
-      submittedPollMs: 10,
-      submittedTimeoutMs: 2_000,
+      resultPollMs: 10,
+      resultTimeoutMs: 2_000,
     })
-    assert.equal(delivered.status, 'submitted')
-    assert.equal(delivered.imageUrl, 'https://local.purr.test/cards/card.png')
+    assert.equal(result.status, 'completed')
+    assert.equal(result.completedAt, '2026-06-08T12:00:00.000Z')
 
     assert.deepEqual(state.progressCalls, ['created', 'funded'])
     assert.deepEqual(
@@ -128,50 +131,8 @@ async function runHappyPathScenario() {
         ['ERC-8183 setBudget', 'ERC-8183 approve payment token', 'ERC-8183 fund'],
       ],
     )
-    console.log('[pieverse-card-local-e2e] happy-path PASS')
+    console.log('[pieverse-meme-judge-local-e2e] happy-path PASS')
   })
-}
-
-async function runRejectedRefundScenario() {
-  await runLocalScenario(
-    'rejected-refund',
-    createBackendState({ status: 'rejected', jobStatus: JOB_STATUS.REJECTED }),
-    async (state) => {
-      const result = await refundPieverseCard({
-        purchaseId: PURCHASE_ID,
-        receiptPollMs: 10,
-        receiptTimeoutMs: 2_000,
-      })
-      assert.equal(result.refundTxHash, HASHES.refund)
-      assert.deepEqual(state.progressCalls, ['rejected'])
-      assert.deepEqual(
-        state.walletCalls.map((call) => call.labels),
-        [['ERC-8183 claimRefund']],
-      )
-      console.log('[pieverse-card-local-e2e] rejected-refund PASS')
-    },
-  )
-}
-
-async function runExpiredRefundScenario() {
-  await runLocalScenario(
-    'expired-refund',
-    createBackendState({ status: 'funded', jobStatus: JOB_STATUS.FUNDED, jobExpiredAt: 1n }),
-    async (state) => {
-      const result = await refundPieverseCard({
-        purchaseId: PURCHASE_ID,
-        receiptPollMs: 10,
-        receiptTimeoutMs: 2_000,
-      })
-      assert.equal(result.refundTxHash, HASHES.refund)
-      assert.deepEqual(state.progressCalls, ['failed'])
-      assert.deepEqual(
-        state.walletCalls.map((call) => call.labels),
-        [['ERC-8183 claimRefund']],
-      )
-      console.log('[pieverse-card-local-e2e] expired-refund PASS')
-    },
-  )
 }
 
 async function runLocalScenario(
@@ -192,18 +153,17 @@ async function runLocalScenario(
     await test(state)
   } finally {
     await Promise.all([api.close(), rpc.close()])
-    console.log(`[pieverse-card-local-e2e] ${name} closed`)
+    console.log(`[pieverse-meme-judge-local-e2e] ${name} closed`)
   }
 }
 
-function createBackendState(overrides: Partial<BackendState> = {}): BackendState {
+function createBackendState(): BackendState {
   return {
     status: 'initiated',
-    jobStatus: JOB_STATUS.SUBMITTED,
-    jobExpiredAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
+    jobStatus: JOB_STATUS.OPEN,
+    purchaseReads: 0,
     progressCalls: [],
     walletCalls: [],
-    ...overrides,
   }
 }
 
@@ -213,10 +173,13 @@ async function handleApi(
   body: unknown,
   state: BackendState,
 ) {
-  assert.equal(req.headers.authorization, 'Bearer local-e2e-instance-token')
   const method = req.method ?? 'GET'
   const url = new URL(req.url ?? '/', 'http://local-api')
-  const basePath = `/v1/instances/${INSTANCE_ID}/erc8183/services/agent-self-intro/card`
+  const basePath = `/v1/instances/${INSTANCE_ID}/erc8183/services/social-meme-booster-judge`
+
+  if (method !== 'GET') {
+    assert.equal(req.headers.authorization, 'Bearer local-e2e-instance-token')
+  }
 
   if (method === 'POST' && url.pathname === `${basePath}/purchase`) {
     sendJson(res, 200, { ok: true, data: purchase(state.status) })
@@ -224,7 +187,54 @@ async function handleApi(
   }
 
   if (method === 'GET' && url.pathname === `${basePath}/purchases/${PURCHASE_ID}`) {
+    state.purchaseReads++
+    if (state.status === 'funded' && state.purchaseReads >= 4) {
+      state.status = 'completed'
+      state.jobStatus = JOB_STATUS.COMPLETED
+    }
     sendJson(res, 200, { ok: true, data: purchase(state.status) })
+    return
+  }
+
+  if (
+    method === 'GET' &&
+    url.pathname === `/v1/erc8183/services/social-meme-booster-judge/purchases/${PURCHASE_ID}/input`
+  ) {
+    sendJson(res, 200, {
+      ok: true,
+      data: {
+        serviceSlug: 'social-meme-booster-judge',
+        serviceId: 'social-meme-booster-judge',
+        purchaseId: PURCHASE_ID,
+        jobId: JOB_INTENT_ID,
+        campaignSlug: 'bnb-survivor-quest',
+        campaignDay: '2026-06-08',
+        instanceId: INSTANCE_ID,
+        pieName: 'local-test.pie',
+        posts: [
+          {
+            postId: 'post-1',
+            tweetId: '2059000000000000000',
+            tweetUrl: 'https://x.com/local/status/2059000000000000000',
+            textPreview: 'Meme booster post',
+            tweetCreatedAt: '2026-06-08T11:00:00.000Z',
+          },
+        ],
+        requirements: {
+          engagementSnapshot: {
+            source: 'x_live_fetch',
+            timing: 'after_payment_before_completion',
+            staleDiscoveryMetricsAllowed: false,
+            requiredMetrics: ['likes', 'reposts', 'replies', 'quotes', 'impressions'],
+            endpoint: {
+              method: 'POST',
+              href: 'https://x-agent.example/api/twitter/engagement-snapshots',
+              authorization: 'bearer_token_required',
+            },
+          },
+        },
+      },
+    })
     return
   }
 
@@ -246,21 +256,9 @@ async function handleApi(
       assert.equal(progress.setBudgetTxHash, HASHES.setBudget)
       assert.equal(progress.approveTxHash, HASHES.approve)
       assert.equal(progress.fundTxHash, HASHES.fund)
-      state.status = 'submitted'
-      state.jobStatus = JOB_STATUS.SUBMITTED
-      sendJson(res, 200, { ok: true, data: purchase('submitted') })
-      return
-    }
-
-    if (next === 'rejected') {
-      assert.equal(progress.rejectTxHash, HASHES.reject)
-      sendJson(res, 200, { ok: true, data: purchase('rejected') })
-      return
-    }
-
-    if (next === 'failed') {
-      state.status = 'failed'
-      sendJson(res, 200, { ok: true, data: purchase('failed') })
+      state.status = 'funded'
+      state.jobStatus = JOB_STATUS.FUNDED
+      sendJson(res, 200, { ok: true, data: purchase('funded') })
       return
     }
 
@@ -324,12 +322,12 @@ async function handleRpc(
           id: BigInt(JOB_ID),
           client: CLIENT,
           provider: PROVIDER,
-          evaluator: CLIENT,
-          description: 'https://local.purr.test/cards/card/metadata.json',
+          evaluator: ROUTER,
+          description: `https://local.purr.test/judgements/${PURCHASE_ID}/input`,
           budget: 1000000n,
-          expiredAt: state.jobExpiredAt,
+          expiredAt: BigInt(Math.floor(Date.now() / 1000) + 3600),
           status: state.jobStatus,
-          hook: ZERO,
+          hook: ROUTER,
         },
       }),
     })
@@ -366,7 +364,7 @@ function receiptForHash(hash: string) {
         blockNumber: '0x1',
         transactionHash: hash,
         transactionIndex: '0x0',
-        blockHash: `0x${'99'.repeat(32)}`,
+        blockHash: `0x${'a1'.repeat(32)}`,
         logIndex: '0x0',
         removed: false,
       },
@@ -393,7 +391,7 @@ function receiptForHash(hash: string) {
           blockNumber: '0x1',
           transactionHash: hash,
           transactionIndex: '0x0',
-          blockHash: `0x${'98'.repeat(32)}`,
+          blockHash: `0x${'a2'.repeat(32)}`,
           logIndex: '0x0',
           removed: false,
         },
@@ -402,7 +400,7 @@ function receiptForHash(hash: string) {
     )
   }
 
-  if (hash === HASHES.fund || hash === HASHES.refund) {
+  if (hash === HASHES.fund) {
     return baseReceipt(hash)
   }
   throw new Error(`unexpected receipt hash: ${hash}`)
@@ -421,22 +419,17 @@ function baseReceipt(hash: string, logs: unknown[] = [], to = CONTRACT) {
 function purchase(status: PurchaseStatus) {
   const hasCreate = status !== 'initiated'
   const hasFunding = hasCreate && status !== 'created'
-  const hasProviderResult =
-    status === 'submitted' || status === 'completed' || status === 'rejected'
+  const hasResult = status === 'completed'
   return {
-    serviceSlug: 'agent-self-intro',
-    serviceId: 'pieverse-card-generation-v1',
+    serviceSlug: 'social-meme-booster-judge',
+    serviceId: 'social-meme-booster-judge',
     purchaseId: PURCHASE_ID,
     instanceId: INSTANCE_ID,
+    campaignSlug: 'bnb-survivor-quest',
+    campaignDay: '2026-06-08',
     pieName: 'local-test.pie',
     status,
-    cardId: CARD_ID,
-    templateId: 'cat-card-001',
-    imageUrl: 'https://local.purr.test/cards/card.png',
-    shareUrl: 'https://local.purr.test/cards/card',
-    suggestedTweetText:
-      'Pie name: local-test.pie\n@pieverse @purrfectagent0\nhttps://local.purr.test/cards/card',
-    completedAt: status === 'completed' ? new Date().toISOString() : null,
+    completedAt: hasResult ? '2026-06-08T12:00:00.000Z' : null,
     idempotent: false,
     erc8183: {
       chainId: 56,
@@ -450,8 +443,8 @@ function purchase(status: PurchaseStatus) {
       paymentTokenAddress: TOKEN,
       paymentTokenSymbol: 'USDT',
       budgetAmount: '1000000',
-      jobUri: 'https://local.purr.test/cards/card/metadata.json',
-      deliverableUri: hasProviderResult ? 'https://local.purr.test/cards/card/metadata.json' : null,
+      jobUri: `https://local.purr.test/v1/erc8183/services/social-meme-booster-judge/purchases/${PURCHASE_ID}/input`,
+      deliverableUri: hasResult ? `https://local.purr.test/judgements/${PURCHASE_ID}` : null,
       jobExpirationSeconds: 86400,
       onChainJobId: hasCreate ? JOB_ID : null,
       status,
@@ -460,9 +453,9 @@ function purchase(status: PurchaseStatus) {
         setBudget: hasFunding ? HASHES.setBudget : null,
         approve: hasFunding ? HASHES.approve : null,
         fund: hasFunding ? HASHES.fund : null,
-        submit: hasProviderResult ? HASHES.submit : null,
-        complete: status === 'completed' ? HASHES.complete : null,
-        reject: status === 'rejected' ? HASHES.reject : null,
+        submit: hasResult ? HASHES.submit : null,
+        complete: hasResult ? HASHES.complete : null,
+        reject: null,
       },
     },
   }
@@ -474,7 +467,6 @@ function hashForLabel(label: string): string {
   if (label === 'ERC-8183 setBudget') return HASHES.setBudget
   if (label === 'ERC-8183 approve payment token') return HASHES.approve
   if (label === 'ERC-8183 fund') return HASHES.fund
-  if (label === 'ERC-8183 claimRefund') return HASHES.refund
   throw new Error(`unexpected label: ${label}`)
 }
 
@@ -552,7 +544,7 @@ function setEnv(name: string, value: string | undefined) {
 
 main().catch((error) => {
   restoreEnv()
-  console.error('[pieverse-card-local-e2e] FAIL')
+  console.error('[pieverse-meme-judge-local-e2e] FAIL')
   console.error(error instanceof Error ? error.message : error)
   process.exit(1)
 })

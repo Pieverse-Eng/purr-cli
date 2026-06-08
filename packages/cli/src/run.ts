@@ -12,6 +12,7 @@ import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
 import { pieverseCard } from '@pieverseio/purr-plugin-pieverse-card/card'
+import { pieverseMemeJudge } from '@pieverseio/purr-plugin-pieverse-card/meme-judge'
 import { pnsResolve } from '@pieverseio/purr-plugin-pns/resolve'
 import {
   createOrder,
@@ -349,6 +350,10 @@ Examples:
   purr pieverse card create-job --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card fund --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card deliverable --purchase-id 00000000-0000-0000-0000-000000000000 --wait
+  purr pieverse meme-judge purchase
+  purr pieverse meme-judge create-job --purchase-id 00000000-0000-0000-0000-000000000000
+  purr pieverse meme-judge fund --purchase-id 00000000-0000-0000-0000-000000000000
+  purr pieverse meme-judge result --purchase-id 00000000-0000-0000-0000-000000000000 --wait
   purr pns resolve alice
   purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
@@ -850,8 +855,13 @@ Examples:
           await pieverseCard(cardCommand, parseArgs(cardRest))
           return
         }
+        case 'meme-judge': {
+          const [memeJudgeCommand, ...memeJudgeRest] = rest
+          await pieverseMemeJudge(memeJudgeCommand, parseArgs(memeJudgeRest))
+          return
+        }
         default:
-          throw new Error(`Unknown pieverse command: ${command}. Use: card`)
+          throw new Error(`Unknown pieverse command: ${command}. Use: card, meme-judge`)
       }
     }
 

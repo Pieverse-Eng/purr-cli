@@ -57,10 +57,7 @@ function mockFetchSequence(responses: unknown[]) {
   })
 }
 
-function memeJudgePurchase(
-  status: string,
-  judgeResult: TestJudgeResult | null = null,
-) {
+function memeJudgePurchase(status: string, judgeResult: TestJudgeResult | null = null) {
   return {
     serviceSlug: 'social-meme-booster-judge',
     serviceId: 'social-meme-booster-judge',

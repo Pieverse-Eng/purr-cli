@@ -6,6 +6,7 @@ import type {
   ApiEnvelope,
   Erc8183ServicePurchase,
   PieverseCardPurchaseRequest,
+  SocialMemeBoosterJudgeInput,
   SocialMemeBoosterJudgePurchase,
   WalletExecuteResult,
 } from './types.js'
@@ -85,8 +86,8 @@ export async function recordMemeJudgeProgress(
   return unwrap(res)
 }
 
-export async function getMemeJudgeInput(purchaseId: string): Promise<unknown> {
-  const res = await apiGet<ApiEnvelope<unknown>>(
+export async function getMemeJudgeInput(purchaseId: string): Promise<SocialMemeBoosterJudgeInput> {
+  const res = await apiGet<ApiEnvelope<SocialMemeBoosterJudgeInput>>(
     `/v1/erc8183/services/${SOCIAL_MEME_BOOSTER_JUDGE_SERVICE_SLUG}/purchases/${purchaseId}/input`,
   )
   return unwrap(res)

@@ -57,9 +57,18 @@ type StartedServer = { url: string; close: () => Promise<void> }
 interface BackendState {
   status: PurchaseStatus
   jobStatus: number
+  posts: BoosterPost[]
   purchaseReads: number
   progressCalls: string[]
   walletCalls: Array<{ labels: string[] }>
+}
+
+interface BoosterPost {
+  postId: string
+  tweetId: string
+  tweetUrl: string
+  textPreview: string
+  tweetCreatedAt: string
 }
 
 const originalEnv = {
@@ -78,6 +87,7 @@ const originalEnv = {
 async function main() {
   try {
     await runHappyPathScenario()
+    await runNoPostsScenario()
     console.log('[pieverse-meme-judge-local-e2e] PASS')
   } finally {
     restoreEnv()
@@ -89,14 +99,6 @@ async function runHappyPathScenario() {
     const started = await purchasePieverseMemeJudge()
     assert.equal(started.status, 'initiated')
     assert.equal(started.serviceSlug, 'social-meme-booster-judge')
-
-    const input = (await getPieverseMemeJudgeInput({ purchaseId: started.purchaseId })) as {
-      posts?: Array<{ tweetId?: string }>
-    }
-    assert.deepEqual(
-      input.posts?.map((post) => post.tweetId),
-      ['2059000000000000000'],
-    )
 
     const created = await createPieverseMemeJudgeJob({
       purchaseId: started.purchaseId,
@@ -113,6 +115,12 @@ async function runHappyPathScenario() {
     })
     assert.equal(funded.status, 'funded')
 
+    const input = await getPieverseMemeJudgeInput({ purchaseId: started.purchaseId })
+    assert.deepEqual(
+      input.posts.map((post) => post.tweetId),
+      ['2059000000000000000'],
+    )
+
     const result = await getPieverseMemeJudgeResult({
       purchaseId: started.purchaseId,
       wait: true,
@@ -121,6 +129,7 @@ async function runHappyPathScenario() {
     })
     assert.equal(result.status, 'completed')
     assert.equal(result.completedAt, '2026-06-08T12:00:00.000Z')
+    assert.deepEqual(result.judgeResult, { outcome: 'scored', totalScore: 293 })
 
     assert.deepEqual(state.progressCalls, ['created', 'funded'])
     assert.deepEqual(
@@ -132,6 +141,45 @@ async function runHappyPathScenario() {
       ],
     )
     console.log('[pieverse-meme-judge-local-e2e] happy-path PASS')
+  })
+}
+
+async function runNoPostsScenario() {
+  await runLocalScenario('no-posts-completed', createBackendState({ posts: [] }), async (state) => {
+    const started = await purchasePieverseMemeJudge()
+    assert.equal(started.status, 'initiated')
+
+    const created = await createPieverseMemeJudgeJob({
+      purchaseId: started.purchaseId,
+      receiptPollMs: 10,
+      receiptTimeoutMs: 2_000,
+    })
+    assert.equal(created.status, 'created')
+
+    const funded = await fundPieverseMemeJudge({
+      purchaseId: started.purchaseId,
+      receiptPollMs: 10,
+      receiptTimeoutMs: 2_000,
+    })
+    assert.equal(funded.status, 'funded')
+
+    const input = await getPieverseMemeJudgeInput({ purchaseId: started.purchaseId })
+    assert.deepEqual(input.posts, [])
+
+    const result = await getPieverseMemeJudgeResult({
+      purchaseId: started.purchaseId,
+      wait: true,
+      resultPollMs: 10,
+      resultTimeoutMs: 2_000,
+    })
+    assert.equal(result.status, 'completed')
+    assert.deepEqual(result.judgeResult, { outcome: 'no_score', totalScore: null })
+    assert.equal(result.erc8183?.txHashes.fund, HASHES.fund)
+    assert.equal(result.erc8183?.txHashes.submit, HASHES.submit)
+    assert.equal(result.erc8183?.txHashes.complete, HASHES.complete)
+
+    assert.deepEqual(state.progressCalls, ['created', 'funded'])
+    console.log('[pieverse-meme-judge-local-e2e] no-posts-completed PASS')
   })
 }
 
@@ -157,10 +205,19 @@ async function runLocalScenario(
   }
 }
 
-function createBackendState(): BackendState {
+function createBackendState(overrides: Partial<Pick<BackendState, 'posts'>> = {}): BackendState {
   return {
     status: 'initiated',
     jobStatus: JOB_STATUS.OPEN,
+    posts: overrides.posts ?? [
+      {
+        postId: 'post-1',
+        tweetId: '2059000000000000000',
+        tweetUrl: 'https://x.com/local/status/2059000000000000000',
+        textPreview: 'Meme booster post',
+        tweetCreatedAt: '2026-06-08T11:00:00.000Z',
+      },
+    ],
     purchaseReads: 0,
     progressCalls: [],
     walletCalls: [],
@@ -182,7 +239,7 @@ async function handleApi(
   }
 
   if (method === 'POST' && url.pathname === `${basePath}/purchase`) {
-    sendJson(res, 200, { ok: true, data: purchase(state.status) })
+    sendJson(res, 200, { ok: true, data: purchase(state.status, state) })
     return
   }
 
@@ -192,7 +249,7 @@ async function handleApi(
       state.status = 'completed'
       state.jobStatus = JOB_STATUS.COMPLETED
     }
-    sendJson(res, 200, { ok: true, data: purchase(state.status) })
+    sendJson(res, 200, { ok: true, data: purchase(state.status, state) })
     return
   }
 
@@ -200,6 +257,10 @@ async function handleApi(
     method === 'GET' &&
     url.pathname === `/v1/erc8183/services/social-meme-booster-judge/purchases/${PURCHASE_ID}/input`
   ) {
+    if (state.status !== 'funded' && state.status !== 'submitted' && state.status !== 'completed') {
+      sendJson(res, 409, { ok: false, code: 'ERC8183_PURCHASE_NOT_FUNDED' })
+      return
+    }
     sendJson(res, 200, {
       ok: true,
       data: {
@@ -211,15 +272,7 @@ async function handleApi(
         campaignDay: '2026-06-08',
         instanceId: INSTANCE_ID,
         pieName: 'local-test.pie',
-        posts: [
-          {
-            postId: 'post-1',
-            tweetId: '2059000000000000000',
-            tweetUrl: 'https://x.com/local/status/2059000000000000000',
-            textPreview: 'Meme booster post',
-            tweetCreatedAt: '2026-06-08T11:00:00.000Z',
-          },
-        ],
+        posts: state.posts,
         requirements: {
           engagementSnapshot: {
             source: 'x_live_fetch',
@@ -248,7 +301,7 @@ async function handleApi(
       assert.equal(progress.createTxHash, HASHES.create)
       state.status = 'created'
       state.jobStatus = JOB_STATUS.OPEN
-      sendJson(res, 200, { ok: true, data: purchase('created') })
+      sendJson(res, 200, { ok: true, data: purchase('created', state) })
       return
     }
 
@@ -258,7 +311,7 @@ async function handleApi(
       assert.equal(progress.fundTxHash, HASHES.fund)
       state.status = 'funded'
       state.jobStatus = JOB_STATUS.FUNDED
-      sendJson(res, 200, { ok: true, data: purchase('funded') })
+      sendJson(res, 200, { ok: true, data: purchase('funded', state) })
       return
     }
 
@@ -416,7 +469,7 @@ function baseReceipt(hash: string, logs: unknown[] = [], to = CONTRACT) {
   }
 }
 
-function purchase(status: PurchaseStatus) {
+function purchase(status: PurchaseStatus, state: BackendState) {
   const hasCreate = status !== 'initiated'
   const hasFunding = hasCreate && status !== 'created'
   const hasResult = status === 'completed'
@@ -430,6 +483,11 @@ function purchase(status: PurchaseStatus) {
     pieName: 'local-test.pie',
     status,
     completedAt: hasResult ? '2026-06-08T12:00:00.000Z' : null,
+    judgeResult: hasResult
+      ? state.posts.length > 0
+        ? { outcome: 'scored', totalScore: 293 }
+        : { outcome: 'no_score', totalScore: null }
+      : null,
     idempotent: false,
     erc8183: {
       chainId: 56,

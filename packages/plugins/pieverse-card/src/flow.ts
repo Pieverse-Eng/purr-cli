@@ -46,6 +46,7 @@ import type {
   PieverseMemeJudgeResult,
   PieverseServiceOptions,
   PurchaseIntent,
+  SocialMemeBoosterJudgeInput,
   SocialMemeBoosterJudgePurchase,
 } from './types.js'
 
@@ -181,7 +182,7 @@ export async function getPieverseMemeJudgeStatus(
 
 export async function getPieverseMemeJudgeInput(
   options: PieverseMemeJudgeOptions,
-): Promise<unknown> {
+): Promise<SocialMemeBoosterJudgeInput> {
   return getMemeJudgeInput(requirePurchaseId(options))
 }
 

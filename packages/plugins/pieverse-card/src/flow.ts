@@ -80,12 +80,16 @@ function isCardDeliverableReady(purchase: AgentSelfIntroPurchase): boolean {
 }
 
 function isMemeJudgeResultReady(purchase: SocialMemeBoosterJudgePurchase): boolean {
-  return (
-    purchase.status === 'completed' &&
+  const hasSubmittedProof =
+    isStatusAtLeastSubmitted(purchase.status) &&
     Boolean(purchase.erc8183?.txHashes.fund) &&
-    Boolean(purchase.erc8183?.txHashes.submit) &&
-    Boolean(purchase.erc8183?.txHashes.complete)
-  )
+    Boolean(purchase.erc8183?.txHashes.submit)
+  if (!hasSubmittedProof || !purchase.judgeResult) return false
+
+  const hasPlatformResultPosts = Array.isArray(purchase.judgeResult.posts)
+  const hasLegacyCompletionProof =
+    purchase.status === 'completed' && Boolean(purchase.erc8183?.txHashes.complete)
+  return hasPlatformResultPosts || hasLegacyCompletionProof
 }
 
 function sponsoredErc8183Step(step: TxStep): TxStep {

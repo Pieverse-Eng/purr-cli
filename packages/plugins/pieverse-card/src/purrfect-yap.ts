@@ -25,6 +25,7 @@ export type {
   PieverseMemeJudgeOptions,
   PieverseMemeJudgeResult,
   SocialMemeBoosterJudgeInput,
+  SocialMemeBoosterJudgePostResult,
   SocialMemeBoosterJudgeResult,
   SocialMemeBoosterJudgePurchase,
 } from './types.js'

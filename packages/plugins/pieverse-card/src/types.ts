@@ -86,7 +86,18 @@ export interface AgentSelfIntroPurchase extends Erc8183ServicePurchase {
 export interface SocialMemeBoosterJudgePurchase extends Erc8183ServicePurchase {
   campaignSlug: string
   campaignDay: string
+  judgeResult: SocialMemeBoosterJudgeResult | null
 }
+
+export type SocialMemeBoosterJudgeResult =
+  | {
+      outcome: 'scored'
+      totalScore: number
+    }
+  | {
+      outcome: 'no_score'
+      totalScore: null
+    }
 
 export interface SocialMemeBoosterJudgeInputPost {
   postId: string

@@ -129,6 +129,7 @@ async function runHappyPathScenario() {
     })
     assert.equal(result.status, 'completed')
     assert.equal(result.completedAt, '2026-06-08T12:00:00.000Z')
+    assert.deepEqual(result.judgeResult, { outcome: 'scored', totalScore: 293 })
 
     assert.deepEqual(state.progressCalls, ['created', 'funded'])
     assert.deepEqual(
@@ -172,6 +173,7 @@ async function runNoPostsScenario() {
       resultTimeoutMs: 2_000,
     })
     assert.equal(result.status, 'completed')
+    assert.deepEqual(result.judgeResult, { outcome: 'no_score', totalScore: null })
     assert.equal(result.erc8183?.txHashes.fund, HASHES.fund)
     assert.equal(result.erc8183?.txHashes.submit, HASHES.submit)
     assert.equal(result.erc8183?.txHashes.complete, HASHES.complete)
@@ -237,7 +239,7 @@ async function handleApi(
   }
 
   if (method === 'POST' && url.pathname === `${basePath}/purchase`) {
-    sendJson(res, 200, { ok: true, data: purchase(state.status) })
+    sendJson(res, 200, { ok: true, data: purchase(state.status, state) })
     return
   }
 
@@ -247,7 +249,7 @@ async function handleApi(
       state.status = 'completed'
       state.jobStatus = JOB_STATUS.COMPLETED
     }
-    sendJson(res, 200, { ok: true, data: purchase(state.status) })
+    sendJson(res, 200, { ok: true, data: purchase(state.status, state) })
     return
   }
 
@@ -299,7 +301,7 @@ async function handleApi(
       assert.equal(progress.createTxHash, HASHES.create)
       state.status = 'created'
       state.jobStatus = JOB_STATUS.OPEN
-      sendJson(res, 200, { ok: true, data: purchase('created') })
+      sendJson(res, 200, { ok: true, data: purchase('created', state) })
       return
     }
 
@@ -309,7 +311,7 @@ async function handleApi(
       assert.equal(progress.fundTxHash, HASHES.fund)
       state.status = 'funded'
       state.jobStatus = JOB_STATUS.FUNDED
-      sendJson(res, 200, { ok: true, data: purchase('funded') })
+      sendJson(res, 200, { ok: true, data: purchase('funded', state) })
       return
     }
 
@@ -467,7 +469,7 @@ function baseReceipt(hash: string, logs: unknown[] = [], to = CONTRACT) {
   }
 }
 
-function purchase(status: PurchaseStatus) {
+function purchase(status: PurchaseStatus, state: BackendState) {
   const hasCreate = status !== 'initiated'
   const hasFunding = hasCreate && status !== 'created'
   const hasResult = status === 'completed'
@@ -481,6 +483,11 @@ function purchase(status: PurchaseStatus) {
     pieName: 'local-test.pie',
     status,
     completedAt: hasResult ? '2026-06-08T12:00:00.000Z' : null,
+    judgeResult: hasResult
+      ? state.posts.length > 0
+        ? { outcome: 'scored', totalScore: 293 }
+        : { outcome: 'no_score', totalScore: null }
+      : null,
     idempotent: false,
     erc8183: {
       chainId: 56,

@@ -36,7 +36,13 @@ function mockFetchSequence(responses: unknown[]) {
   })
 }
 
-function memeJudgePurchase(status: string) {
+function memeJudgePurchase(
+  status: string,
+  judgeResult:
+    | { outcome: 'scored'; totalScore: number }
+    | { outcome: 'no_score'; totalScore: null }
+    | null = null,
+) {
   return {
     serviceSlug: 'social-meme-booster-judge',
     serviceId: 'social-meme-booster-judge',
@@ -47,6 +53,7 @@ function memeJudgePurchase(status: string) {
     campaignSlug: 'bnb-survivor-quest',
     campaignDay: '2026-06-08',
     completedAt: status === 'completed' ? '2026-06-08T12:00:00.000Z' : null,
+    judgeResult,
     erc8183: {
       chainId: 56,
       commerceAddress: '0x1234567890123456789012345678901234567890',
@@ -135,7 +142,9 @@ describe('pieverse PurrfectYap staged commands', () => {
   })
 
   it('treats completed no-posts judge results as ready', async () => {
-    const mock = mockFetchSequence([ok(memeJudgePurchase('completed'))])
+    const mock = mockFetchSequence([
+      ok(memeJudgePurchase('completed', { outcome: 'no_score', totalScore: null })),
+    ])
     Object.defineProperty(globalThis, 'fetch', {
       value: mock,
       configurable: true,
@@ -148,6 +157,24 @@ describe('pieverse PurrfectYap staged commands', () => {
     expect(result.erc8183?.txHashes.fund).toBe(HASHES.fund)
     expect(result.erc8183?.txHashes.submit).toBe(HASHES.submit)
     expect(result.erc8183?.txHashes.complete).toBe(HASHES.complete)
+    expect(result.judgeResult).toEqual({ outcome: 'no_score', totalScore: null })
+    expect(mock).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns accepted scored judge summaries from completed purchases', async () => {
+    const mock = mockFetchSequence([
+      ok(memeJudgePurchase('completed', { outcome: 'scored', totalScore: 848 })),
+    ])
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
+
+    const result = await getPieverseMemeJudgeResult({ purchaseId: PURCHASE_ID, wait: true })
+
+    expect(result.status).toBe('completed')
+    expect(result.judgeResult).toEqual({ outcome: 'scored', totalScore: 848 })
     expect(mock).toHaveBeenCalledTimes(1)
   })
 })

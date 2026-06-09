@@ -89,14 +89,31 @@ export interface SocialMemeBoosterJudgePurchase extends Erc8183ServicePurchase {
   judgeResult: SocialMemeBoosterJudgeResult | null
 }
 
+export interface SocialMemeBoosterJudgePostResult {
+  postId: string
+  tweetId: string
+  tweetUrl: string | null
+  textPreview: string | null
+  tweetCreatedAt: string | null
+  likes: number | null
+  reposts: number | null
+  replies: number | null
+  comments: number | null
+  quotes: number | null
+  impressions: number | null
+  points: number
+}
+
 export type SocialMemeBoosterJudgeResult =
   | {
       outcome: 'scored'
       totalScore: number
+      posts?: SocialMemeBoosterJudgePostResult[]
     }
   | {
       outcome: 'no_score'
       totalScore: null
+      posts?: []
     }
 
 export interface SocialMemeBoosterJudgeInputPost {

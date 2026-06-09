@@ -127,9 +127,28 @@ async function runHappyPathScenario() {
       resultPollMs: 10,
       resultTimeoutMs: 2_000,
     })
-    assert.equal(result.status, 'completed')
-    assert.equal(result.completedAt, '2026-06-08T12:00:00.000Z')
-    assert.deepEqual(result.judgeResult, { outcome: 'scored', totalScore: 293 })
+    assert.equal(result.status, 'submitted')
+    assert.equal(result.completedAt, null)
+    assert.deepEqual(result.judgeResult, {
+      outcome: 'scored',
+      totalScore: 293,
+      posts: [
+        {
+          postId: 'post-1',
+          tweetId: '2059000000000000000',
+          tweetUrl: 'https://x.com/local/status/2059000000000000000',
+          textPreview: 'Meme booster post',
+          tweetCreatedAt: '2026-06-08T11:00:00.000Z',
+          likes: 4,
+          reposts: 2,
+          replies: 3,
+          comments: 3,
+          quotes: 1,
+          impressions: 2500,
+          points: 293,
+        },
+      ],
+    })
 
     assert.deepEqual(state.progressCalls, ['created', 'funded'])
     assert.deepEqual(
@@ -145,7 +164,7 @@ async function runHappyPathScenario() {
 }
 
 async function runNoPostsScenario() {
-  await runLocalScenario('no-posts-completed', createBackendState({ posts: [] }), async (state) => {
+  await runLocalScenario('no-posts-submitted', createBackendState({ posts: [] }), async (state) => {
     const started = await purchasePieverseMemeJudge()
     assert.equal(started.status, 'initiated')
 
@@ -172,14 +191,14 @@ async function runNoPostsScenario() {
       resultPollMs: 10,
       resultTimeoutMs: 2_000,
     })
-    assert.equal(result.status, 'completed')
-    assert.deepEqual(result.judgeResult, { outcome: 'no_score', totalScore: null })
+    assert.equal(result.status, 'submitted')
+    assert.deepEqual(result.judgeResult, { outcome: 'no_score', totalScore: null, posts: [] })
     assert.equal(result.erc8183?.txHashes.fund, HASHES.fund)
     assert.equal(result.erc8183?.txHashes.submit, HASHES.submit)
-    assert.equal(result.erc8183?.txHashes.complete, HASHES.complete)
+    assert.equal(result.erc8183?.txHashes.complete, null)
 
     assert.deepEqual(state.progressCalls, ['created', 'funded'])
-    console.log('[pieverse-meme-judge-local-e2e] no-posts-completed PASS')
+    console.log('[pieverse-meme-judge-local-e2e] no-posts-submitted PASS')
   })
 }
 
@@ -246,8 +265,8 @@ async function handleApi(
   if (method === 'GET' && url.pathname === `${basePath}/purchases/${PURCHASE_ID}`) {
     state.purchaseReads++
     if (state.status === 'funded' && state.purchaseReads >= 4) {
-      state.status = 'completed'
-      state.jobStatus = JOB_STATUS.COMPLETED
+      state.status = 'submitted'
+      state.jobStatus = JOB_STATUS.SUBMITTED
     }
     sendJson(res, 200, { ok: true, data: purchase(state.status, state) })
     return
@@ -472,7 +491,7 @@ function baseReceipt(hash: string, logs: unknown[] = [], to = CONTRACT) {
 function purchase(status: PurchaseStatus, state: BackendState) {
   const hasCreate = status !== 'initiated'
   const hasFunding = hasCreate && status !== 'created'
-  const hasResult = status === 'completed'
+  const hasResult = status === 'submitted' || status === 'completed'
   return {
     serviceSlug: 'social-meme-booster-judge',
     serviceId: 'social-meme-booster-judge',
@@ -482,11 +501,24 @@ function purchase(status: PurchaseStatus, state: BackendState) {
     campaignDay: '2026-06-08',
     pieName: 'local-test.pie',
     status,
-    completedAt: hasResult ? '2026-06-08T12:00:00.000Z' : null,
+    completedAt: status === 'completed' ? '2026-06-08T12:00:00.000Z' : null,
     judgeResult: hasResult
       ? state.posts.length > 0
-        ? { outcome: 'scored', totalScore: 293 }
-        : { outcome: 'no_score', totalScore: null }
+        ? {
+            outcome: 'scored',
+            totalScore: 293,
+            posts: state.posts.map((post) => ({
+              ...post,
+              likes: 4,
+              reposts: 2,
+              replies: 3,
+              comments: 3,
+              quotes: 1,
+              impressions: 2500,
+              points: 293,
+            })),
+          }
+        : { outcome: 'no_score', totalScore: null, posts: [] }
       : null,
     idempotent: false,
     erc8183: {
@@ -502,7 +534,9 @@ function purchase(status: PurchaseStatus, state: BackendState) {
       paymentTokenSymbol: 'USDT',
       budgetAmount: '1000000',
       jobUri: `https://local.purr.test/v1/erc8183/services/social-meme-booster-judge/purchases/${PURCHASE_ID}/input`,
-      deliverableUri: hasResult ? `https://local.purr.test/judgements/${PURCHASE_ID}` : null,
+      deliverableUri: hasResult
+        ? `https://local.purr.test/v1/erc8183/services/social-meme-booster-judge/purchases/${PURCHASE_ID}/input`
+        : null,
       jobExpirationSeconds: 86400,
       onChainJobId: hasCreate ? JOB_ID : null,
       status,
@@ -512,7 +546,7 @@ function purchase(status: PurchaseStatus, state: BackendState) {
         approve: hasFunding ? HASHES.approve : null,
         fund: hasFunding ? HASHES.fund : null,
         submit: hasResult ? HASHES.submit : null,
-        complete: hasResult ? HASHES.complete : null,
+        complete: status === 'completed' ? HASHES.complete : null,
         reject: null,
       },
     },

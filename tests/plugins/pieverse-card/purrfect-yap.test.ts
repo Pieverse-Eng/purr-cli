@@ -18,6 +18,27 @@ const HASHES = {
   reject: `0x${'09'.repeat(32)}`,
 }
 
+type TestJudgeResult =
+  | {
+      outcome: 'scored'
+      totalScore: number
+      posts?: Array<{
+        postId: string
+        tweetId: string
+        tweetUrl: string | null
+        textPreview: string | null
+        tweetCreatedAt: string | null
+        likes: number | null
+        reposts: number | null
+        replies: number | null
+        comments: number | null
+        quotes: number | null
+        impressions: number | null
+        points: number
+      }>
+    }
+  | { outcome: 'no_score'; totalScore: null; posts?: [] }
+
 function ok<T>(data: T) {
   return { ok: true, data }
 }
@@ -36,13 +57,7 @@ function mockFetchSequence(responses: unknown[]) {
   })
 }
 
-function memeJudgePurchase(
-  status: string,
-  judgeResult:
-    | { outcome: 'scored'; totalScore: number }
-    | { outcome: 'no_score'; totalScore: null }
-    | null = null,
-) {
+function memeJudgePurchase(status: string, judgeResult: TestJudgeResult | null = null) {
   return {
     serviceSlug: 'social-meme-booster-judge',
     serviceId: 'social-meme-booster-judge',
@@ -68,7 +83,9 @@ function memeJudgePurchase(
       budgetAmount: '1000000',
       jobUri: `https://purr.example/v1/erc8183/services/social-meme-booster-judge/purchases/${PURCHASE_ID}/input`,
       deliverableUri:
-        status === 'completed' ? 'https://purr.example/judgements/no-posts.json' : null,
+        status === 'submitted' || status === 'completed'
+          ? `https://purr.example/v1/erc8183/services/social-meme-booster-judge/purchases/${PURCHASE_ID}/input`
+          : null,
       jobExpirationSeconds: 86400,
       onChainJobId: status === 'initiated' ? null : '42',
       status,
@@ -158,6 +175,92 @@ describe('pieverse PurrfectYap staged commands', () => {
     expect(result.erc8183?.txHashes.submit).toBe(HASHES.submit)
     expect(result.erc8183?.txHashes.complete).toBe(HASHES.complete)
     expect(result.judgeResult).toEqual({ outcome: 'no_score', totalScore: null })
+    expect(mock).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats submitted scored judge results with post details as ready', async () => {
+    const mock = mockFetchSequence([
+      ok(
+        memeJudgePurchase('submitted', {
+          outcome: 'scored',
+          totalScore: 293,
+          posts: [
+            {
+              postId: 'post-1',
+              tweetId: '1932323309963534633',
+              tweetUrl: 'https://x.com/booster/status/1932323309963534633',
+              textPreview: '#PurrfectYap linwe.pie',
+              tweetCreatedAt: '2026-06-08T11:59:00.000Z',
+              likes: 4,
+              reposts: 2,
+              replies: 3,
+              comments: 3,
+              quotes: 1,
+              impressions: 2500,
+              points: 293,
+            },
+          ],
+        }),
+      ),
+    ])
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
+
+    const result = await getPieverseMemeJudgeResult({ purchaseId: PURCHASE_ID, wait: true })
+
+    expect(result.status).toBe('submitted')
+    expect(result.erc8183?.txHashes.fund).toBe(HASHES.fund)
+    expect(result.erc8183?.txHashes.submit).toBe(HASHES.submit)
+    expect(result.erc8183?.txHashes.complete).toBeNull()
+    expect(result.judgeResult).toMatchObject({
+      outcome: 'scored',
+      totalScore: 293,
+      posts: [
+        {
+          tweetId: '1932323309963534633',
+          likes: 4,
+          reposts: 2,
+          replies: 3,
+          comments: 3,
+          quotes: 1,
+          impressions: 2500,
+          points: 293,
+        },
+      ],
+    })
+    expect(mock).toHaveBeenCalledTimes(1)
+  })
+
+  it('treats submitted no-score judge results with empty post details as ready', async () => {
+    const mock = mockFetchSequence([
+      ok(
+        memeJudgePurchase('submitted', {
+          outcome: 'no_score',
+          totalScore: null,
+          posts: [],
+        }),
+      ),
+    ])
+    Object.defineProperty(globalThis, 'fetch', {
+      value: mock,
+      configurable: true,
+      writable: true,
+    })
+
+    const result = await getPieverseMemeJudgeResult({ purchaseId: PURCHASE_ID, wait: true })
+
+    expect(result.status).toBe('submitted')
+    expect(result.erc8183?.txHashes.fund).toBe(HASHES.fund)
+    expect(result.erc8183?.txHashes.submit).toBe(HASHES.submit)
+    expect(result.erc8183?.txHashes.complete).toBeNull()
+    expect(result.judgeResult).toEqual({
+      outcome: 'no_score',
+      totalScore: null,
+      posts: [],
+    })
     expect(mock).toHaveBeenCalledTimes(1)
   })
 

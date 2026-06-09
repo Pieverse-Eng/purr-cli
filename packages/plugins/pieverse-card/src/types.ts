@@ -88,6 +88,39 @@ export interface SocialMemeBoosterJudgePurchase extends Erc8183ServicePurchase {
   campaignDay: string
 }
 
+export interface SocialMemeBoosterJudgeInputPost {
+  postId: string
+  tweetId: string
+  tweetUrl: string | null
+  textPreview: string | null
+  tweetCreatedAt: string | null
+}
+
+export interface SocialMemeBoosterJudgeInput {
+  serviceSlug: string
+  serviceId: string
+  purchaseId: string
+  jobId: string | null
+  campaignSlug: string
+  campaignDay: string
+  instanceId: string
+  pieName: string
+  posts: SocialMemeBoosterJudgeInputPost[]
+  requirements: {
+    engagementSnapshot: {
+      source: 'x_live_fetch'
+      timing: 'after_payment_before_completion'
+      staleDiscoveryMetricsAllowed: false
+      requiredMetrics: readonly ['likes', 'reposts', 'replies', 'quotes', 'impressions']
+      endpoint: {
+        method: 'POST'
+        href: string
+        authorization: 'bearer_token_required'
+      } | null
+    }
+  }
+}
+
 export type PurchaseIntent = NonNullable<Erc8183ServicePurchase['erc8183']>
 
 export interface PieverseCardPurchaseRequest {

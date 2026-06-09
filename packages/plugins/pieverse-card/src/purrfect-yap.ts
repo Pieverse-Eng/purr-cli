@@ -8,7 +8,7 @@ import {
   refundPieverseMemeJudge,
 } from './flow.js'
 import { parseMemeJudgeOptions } from './options.js'
-import type { PieverseMemeJudgeResult } from './types.js'
+import type { PieverseMemeJudgeResult, SocialMemeBoosterJudgeInput } from './types.js'
 
 const CARD_ONLY_ARGS = ['partner', 'channel', 'lv', 'pie-name', 'pieName'] as const
 
@@ -24,6 +24,7 @@ export {
 export type {
   PieverseMemeJudgeOptions,
   PieverseMemeJudgeResult,
+  SocialMemeBoosterJudgeInput,
   SocialMemeBoosterJudgePurchase,
 } from './types.js'
 
@@ -44,7 +45,7 @@ export async function pieversePurrfectYap(
     }
   }
   const options = parseMemeJudgeOptions(args)
-  let result: PieverseMemeJudgeResult | unknown
+  let result: PieverseMemeJudgeResult | SocialMemeBoosterJudgeInput
 
   switch (command) {
     case 'purchase':

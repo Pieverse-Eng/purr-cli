@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { walletTransfer } from '@pieverseio/purr-plugin-wallet/transfer'
+import { executeWalletTransfer, walletTransfer } from '@pieverseio/purr-plugin-wallet/transfer'
 import { mockFetch } from '../../helpers.js'
 
 describe('walletTransfer', () => {
@@ -80,6 +80,36 @@ describe('walletTransfer', () => {
       chainId: 56,
       assetType: 'native',
     })
+  })
+
+  it('returns transfer data from the reusable executor without printing', async () => {
+    const mock = mockFetch({
+      ok: true,
+      data: {
+        from: '0x1',
+        to: '0x2',
+        amount: '0.01',
+        hash: '0xabc',
+        chainId: 56,
+        chainType: 'ethereum',
+        assetType: 'native',
+      },
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    const result = await executeWalletTransfer({ to: '0x2', amount: '0.01', 'chain-id': '56' })
+
+    expect(result).toEqual({
+      from: '0x1',
+      to: '0x2',
+      amount: '0.01',
+      hash: '0xabc',
+      chainId: 56,
+      chainType: 'ethereum',
+      assetType: 'native',
+    })
+    expect(log).not.toHaveBeenCalled()
   })
 
   // ── EVM ERC-20 transfer ──

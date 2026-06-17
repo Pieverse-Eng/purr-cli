@@ -2,21 +2,25 @@ import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 import { parseChainId } from '@pieverseio/purr-core/shared'
 import { SOLANA_CHAIN_ID, resolveToken } from '@pieverseio/purr-core/token-registry'
 
+export interface WalletTransferData {
+  from: string
+  to: string
+  amount: string
+  hash: string
+  chainId?: number
+  chainType: string
+  assetType: string
+}
+
 interface WalletTransferResponse {
   ok: boolean
-  data: {
-    from: string
-    to: string
-    amount: string
-    hash: string
-    chainId?: number
-    chainType: string
-    assetType: string
-  }
+  data: WalletTransferData
   error?: string
 }
 
-export async function walletTransfer(args: Record<string, string>): Promise<void> {
+export async function executeWalletTransfer(
+  args: Record<string, string>,
+): Promise<WalletTransferData> {
   const { instanceId } = resolveCredentials()
 
   const to = args.to
@@ -68,5 +72,10 @@ export async function walletTransfer(args: Record<string, string>): Promise<void
     throw new Error(res.error ?? 'Transfer failed')
   }
 
-  console.log(JSON.stringify(res.data))
+  return res.data
+}
+
+export async function walletTransfer(args: Record<string, string>): Promise<void> {
+  const data = await executeWalletTransfer(args)
+  console.log(JSON.stringify(data))
 }

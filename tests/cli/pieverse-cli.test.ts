@@ -41,10 +41,16 @@ describe('Pieverse CLI routing', () => {
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('')
     expect(result.stdout).toContain('pieverse          Pieverse campaign card flow')
-    expect(result.stdout).toContain('pns               Pie Name Service lookup helpers')
+    expect(result.stdout).toContain(
+      'pns               Pie Name Service and identity lookup helpers',
+    )
+    expect(result.stdout).toContain(
+      '.pie              Resolve .pie identities and transfer to their wallets',
+    )
     expect(result.stdout).toContain('purr pieverse card purchase')
     expect(result.stdout).toContain('purr pieverse purrfect-yap purchase')
     expect(result.stdout).toContain('purr pns resolve alice')
+    expect(result.stdout).toContain('purr .pie transfer --pie alice.pie')
   })
 
   it('routes pieverse card commands through the card handler', async () => {

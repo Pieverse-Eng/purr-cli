@@ -4,9 +4,10 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 const API_TOKEN = 'test-token'
+const INSTANCE_ID = 'inst-123'
 const WALLET_ADDRESS = '0x1234567890123456789012345678901234567890'
 
 interface CommandResult {
@@ -52,7 +53,6 @@ async function runPurr(port: number, tmpHome: string, args: string[]): Promise<C
     delete cleanEnv.https_proxy
     delete cleanEnv.ALL_PROXY
     delete cleanEnv.all_proxy
-    delete cleanEnv.INSTANCE_ID
 
     const child = spawn('bun', ['packages/cli/src/linux-macos.ts', ...args], {
       cwd: process.cwd(),
@@ -63,6 +63,7 @@ async function runPurr(port: number, tmpHome: string, args: string[]): Promise<C
         no_proxy: '*',
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: API_TOKEN,
+        INSTANCE_ID,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -96,17 +97,68 @@ describe('PNS CLI e2e', () => {
       })
 
       assert.equal(req.method, 'GET')
-      assert.equal(req.url, '/v2/handles/alice')
       assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
 
-      writeJson(res, 200, {
-        ok: true,
-        data: {
-          kind: 'handle',
-          handle: 'alice',
-          renderedHandle: 'alice.pie',
-          walletAddress: WALLET_ADDRESS,
-        },
+      if (req.url === '/v2/handles/alice') {
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            kind: 'handle',
+            handle: 'alice',
+            renderedHandle: 'alice.pie',
+            walletAddress: WALLET_ADDRESS,
+          },
+        })
+        return
+      }
+
+      if (
+        req.url ===
+        `/v2/instances/${INSTANCE_ID}/pie-identities/by-account?channel=line&account=line-user`
+      ) {
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            pieName: 'alice.pie',
+          },
+        })
+        return
+      }
+
+      if (req.url === `/v2/instances/${INSTANCE_ID}/pie-identities/alice/accounts`) {
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            accounts: [{ channel: 'line', accountId: 'line-user', username: 'Line Alice' }],
+          },
+        })
+        return
+      }
+
+      if (req.url === `/v2/instances/${INSTANCE_ID}/pie-identities/alice.pie/profile`) {
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            pieName: 'alice.pie',
+            agentType: 'hosted',
+            runtimeType: 'hermes',
+            walletAddress: WALLET_ADDRESS,
+            active: true,
+            gatewayStatus: 'running',
+            merchant: {
+              enabled: false,
+              useUpstreamSkill: false,
+              agentCard: null,
+              agentCardStatus: 'not_enabled',
+            },
+          },
+        })
+        return
+      }
+
+      writeJson(res, 404, {
+        ok: false,
+        error: 'Not found',
       })
     } catch {
       writeJson(res, 500, {
@@ -119,6 +171,11 @@ describe('PNS CLI e2e', () => {
   beforeAll(async () => {
     tmpHome = mkdtempSync(join(tmpdir(), 'purr-pns-e2e-'))
     port = await listen(server)
+  })
+
+  beforeEach(() => {
+    requestCount = 0
+    requests.length = 0
   })
 
   afterAll(async () => {
@@ -136,6 +193,62 @@ describe('PNS CLI e2e', () => {
     expect(requests[0]).toEqual({
       method: 'GET',
       url: '/v2/handles/alice',
+      authorization: `Bearer ${API_TOKEN}`,
+    })
+  })
+
+  it('resolves a paired account and prints only the pie name', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'pns',
+      'by-account',
+      '--channel',
+      'line',
+      '--account',
+      'line-user',
+    ])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toBe('alice.pie')
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v2/instances/${INSTANCE_ID}/pie-identities/by-account?channel=line&account=line-user`,
+      authorization: `Bearer ${API_TOKEN}`,
+    })
+  })
+
+  it('prints paired accounts as JSON', async () => {
+    const result = await runPurr(port, tmpHome, ['pns', 'accounts', 'alice'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual({
+      accounts: [{ channel: 'line', accountId: 'line-user', username: 'Line Alice' }],
+    })
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v2/instances/${INSTANCE_ID}/pie-identities/alice/accounts`,
+      authorization: `Bearer ${API_TOKEN}`,
+    })
+  })
+
+  it('prints a pie identity profile as JSON', async () => {
+    const result = await runPurr(port, tmpHome, ['pns', 'profile', 'alice.pie'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      pieName: 'alice.pie',
+      agentType: 'hosted',
+      runtimeType: 'hermes',
+      walletAddress: WALLET_ADDRESS,
+      active: true,
+      gatewayStatus: 'running',
+    })
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v2/instances/${INSTANCE_ID}/pie-identities/alice.pie/profile`,
       authorization: `Bearer ${API_TOKEN}`,
     })
   })

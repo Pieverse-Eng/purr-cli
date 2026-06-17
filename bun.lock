@@ -17,7 +17,7 @@
     },
     "packages/cli": {
       "name": "@pieverseio/purr-cli-internal",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
@@ -31,14 +31,14 @@
     },
     "packages/core": {
       "name": "@pieverseio/purr-core",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "viem": "^2.46.0",
       },
     },
     "packages/plugins/evm": {
       "name": "@pieverseio/purr-plugin-evm",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -46,7 +46,7 @@
     },
     "packages/plugins/ows": {
       "name": "@pieverseio/purr-plugin-ows",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@open-wallet-standard/core": "1.2.4",
         "@pieverseio/purr-core": "workspace:*",
@@ -57,7 +57,7 @@
     },
     "packages/plugins/pieverse-card": {
       "name": "@pieverseio/purr-plugin-pieverse-card",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -65,18 +65,18 @@
     },
     "packages/plugins/pns": {
       "name": "@pieverseio/purr-plugin-pns",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
     },
     "packages/plugins/store": {
       "name": "@pieverseio/purr-plugin-store",
-      "version": "0.2.17",
+      "version": "0.2.18",
     },
     "packages/plugins/vendors": {
       "name": "@pieverseio/purr-plugin-vendors",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -84,7 +84,7 @@
     },
     "packages/plugins/wallet": {
       "name": "@pieverseio/purr-plugin-wallet",
-      "version": "0.2.17",
+      "version": "0.2.18",
       "dependencies": {
         "@okxweb3/x402-core": "^0.1.0",
         "@okxweb3/x402-evm": "^0.1.0",

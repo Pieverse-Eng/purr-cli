@@ -13,7 +13,12 @@ import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
 import { pieverseCard } from '@pieverseio/purr-plugin-pieverse-card/card'
 import { pieversePurrfectYap } from '@pieverseio/purr-plugin-pieverse-card/purrfect-yap'
-import { pnsResolve } from '@pieverseio/purr-plugin-pns/resolve'
+import {
+  pnsAccounts,
+  pnsByAccount,
+  pnsProfile,
+  pnsResolve,
+} from '@pieverseio/purr-plugin-pns/resolve'
 import {
   createOrder,
   getNetworks,
@@ -82,6 +87,7 @@ import {
   treasureCodeVault,
 } from '@pieverseio/purr-plugin-wallet/treasure-code'
 import { handleInstanceCommand } from './instance.js'
+import { pieTransfer } from './pie.js'
 import type { PluginId, PluginRuntimeMap, PurrCliOptions } from './types.js'
 
 const pluginLoaders: { [K in PluginId]: () => Promise<PluginRuntimeMap[K]> } = {
@@ -313,7 +319,8 @@ Groups:
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaign card flow
-  pns               Pie Name Service lookup helpers
+  pns               Pie Name Service and identity lookup helpers
+  .pie              Resolve .pie identities and transfer to their wallets
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance billing status and trusted-wallet renewal
@@ -355,6 +362,12 @@ Examples:
   purr pieverse purrfect-yap fund --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse purrfect-yap result --purchase-id 00000000-0000-0000-0000-000000000000 --wait
   purr pns resolve alice
+  purr pns by-account --channel telegram --account @alice
+  purr pns accounts alice.pie
+  purr pns profile alice.pie
+  purr .pie transfer --pie alice.pie --amount 0.01 --chain-id 56
+  purr .pie transfer --channel telegram --account @alice --amount 0.01 --chain-id 56
+  purr .pie transfer --channel line --account line-user --amount 100 --chain-id 56 --token USDT
   purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   OWS_PASSPHRASE=ows_key_... purr ows-wallet sign-transaction --ows-wallet treasury --txs-json-file /tmp/order.json
   purr ows-execute --steps-file /tmp/steps.json --ows-wallet treasury
@@ -873,8 +886,35 @@ Examples:
           }
           await pnsResolve(rest[0])
           return
+        case 'by-account':
+          await pnsByAccount(parseArgs(rest))
+          return
+        case 'accounts':
+          if (rest.length !== 1 || rest[0].startsWith('--')) {
+            throw new Error('Usage: purr pns accounts <handle>')
+          }
+          await pnsAccounts(rest[0])
+          return
+        case 'profile':
+          if (rest.length !== 1 || rest[0].startsWith('--')) {
+            throw new Error('Usage: purr pns profile <handle>')
+          }
+          await pnsProfile(rest[0])
+          return
         default:
-          throw new Error(`Unknown pns command: ${command}. Use: resolve`)
+          throw new Error(
+            `Unknown pns command: ${command}. Use: resolve, by-account, accounts, profile`,
+          )
+      }
+    }
+
+    case '.pie': {
+      switch (command) {
+        case 'transfer':
+          await pieTransfer(args)
+          return
+        default:
+          throw new Error(`Unknown .pie command: ${command}. Use: transfer`)
       }
     }
 
@@ -1234,7 +1274,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, evm, wallet, treasure-code, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, treasure-code, instance, execute, config, version, store`,
       )
   }
 

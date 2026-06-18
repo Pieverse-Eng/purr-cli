@@ -16,7 +16,6 @@ import {
 } from './api.js'
 import {
   EMPTY_BYTES,
-  ERC8183_SPONSORED_GAS_PRICE,
   ERC8183_JOB_STATUS,
   SUBMITTED_POLL_MS,
   SUBMITTED_TIMEOUT_MS,
@@ -92,11 +91,10 @@ function isMemeJudgeResultReady(purchase: SocialMemeBoosterJudgePurchase): boole
   return hasPlatformResultPosts || hasLegacyCompletionProof
 }
 
-function sponsoredErc8183Step(step: TxStep): TxStep {
+function paymasterErc8183Step(step: TxStep): TxStep {
   return {
     ...step,
-    gasPrice: ERC8183_SPONSORED_GAS_PRICE,
-    execution: { mode: 'paymaster', fallback: false },
+    execution: { mode: 'paymaster' },
   }
 }
 
@@ -266,7 +264,7 @@ async function createJob<TPurchase extends Erc8183ServicePurchase>(
   } else {
     const jobExpirationSeconds = Math.max(intent.jobExpirationSeconds, MIN_JOB_EXPIRATION_SECONDS)
     const expiredAt = Math.floor(Date.now() / 1000) + jobExpirationSeconds
-    const step = sponsoredErc8183Step({
+    const step = paymasterErc8183Step({
       to: requireEvmAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
       data: encodeFunctionData({
         abi: ERC8183_ABI,
@@ -294,7 +292,7 @@ async function createJob<TPurchase extends Erc8183ServicePurchase>(
     const receipt = await waitForReceipt(intent.chainId, registerTxHash, options)
     assertRegisteredJob(receipt, purchase, createdJobId)
   } else {
-    const registerStep = sponsoredErc8183Step({
+    const registerStep = paymasterErc8183Step({
       to: requireEvmAddress(intent.routerAddress, 'erc8183.routerAddress'),
       data: encodeFunctionData({
         abi: ERC8183_ROUTER_ABI,
@@ -349,7 +347,7 @@ async function fundJob<TPurchase extends Erc8183ServicePurchase>(
   }
 
   const steps: TxStep[] = [
-    sponsoredErc8183Step({
+    paymasterErc8183Step({
       to: requireEvmAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
       data: encodeFunctionData({
         abi: ERC8183_ABI,
@@ -366,7 +364,7 @@ async function fundJob<TPurchase extends Erc8183ServicePurchase>(
   if (paymentTokenAddress && !isNative(paymentTokenAddress) && budgetAmount > 0n) {
     const token = requireEvmAddress(paymentTokenAddress, 'erc8183.paymentTokenAddress')
     steps.push(
-      sponsoredErc8183Step({
+      paymasterErc8183Step({
         to: token,
         data: encodeFunctionData({
           abi: ERC20_ABI,
@@ -390,7 +388,7 @@ async function fundJob<TPurchase extends Erc8183ServicePurchase>(
   }
 
   steps.push(
-    sponsoredErc8183Step({
+    paymasterErc8183Step({
       to: requireEvmAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
       data: encodeFunctionData({
         abi: ERC8183_ABI,
@@ -490,7 +488,7 @@ async function claimRefundIfEligible(
   const job = await readOnChainJob(intent, jobId)
   if (!job || !shouldClaimRefundForJob(job)) return null
 
-  const refundStep = sponsoredErc8183Step({
+  const refundStep = paymasterErc8183Step({
     to: requireEvmAddress(intent.commerceAddress, 'erc8183.commerceAddress'),
     data: encodeFunctionData({
       abi: ERC8183_ABI,

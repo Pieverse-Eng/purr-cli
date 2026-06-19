@@ -1,4 +1,5 @@
-import { encodeAbiParameters, encodeFunctionData, keccak256, parseAbi } from 'viem'
+import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import { encodeFunctionData, parseAbi } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import {
   buildApprovalStep,
@@ -10,31 +11,160 @@ import type { StepOutput } from '@pieverseio/purr-core/types'
 
 // ---------------------------------------------------------------------------
 // V3 API — build, sign, call in one shot
-// Uses the official asterdex/api-docs v3-demo/tx.py signing protocol:
-//   1. JSON-encode params (sorted keys, compact, all values as strings)
-//   2. ABI-encode: (string, address, address, uint256) = (json, user, signer, nonce)
-//   3. keccak256 the ABI-encoded data
-//   4. personal_sign the resulting hash with the signer private key
-//   5. Call fapi.asterdex.com with all params + signature
+// Uses the official Aster V3 signing protocol:
+//   1. Build an application/x-www-form-urlencoded param string without signature
+//   2. Put that string in EIP-712 Message.msg
+//   3. Sign typed data with the authorized API wallet
+//   4. Call fapi.asterdex.com with all params + signature
 // ---------------------------------------------------------------------------
 
 const FAPI_BASE = 'https://fapi.asterdex.com'
+const ASTER_EIP712_DOMAIN = {
+  name: 'AsterSignTransaction',
+  version: '1',
+  chainId: 1666,
+  verifyingContract: '0x0000000000000000000000000000000000000000',
+} as const
+const ASTER_EIP712_TYPES = {
+  EIP712Domain: [
+    { name: 'name', type: 'string' },
+    { name: 'version', type: 'string' },
+    { name: 'chainId', type: 'uint256' },
+    { name: 'verifyingContract', type: 'address' },
+  ],
+  Message: [{ name: 'msg', type: 'string' }],
+} as const
+const ASTER_LOCAL_SIGN_DOMAIN = {
+  ...ASTER_EIP712_DOMAIN,
+  chainId: 1666n,
+} as const
+const ASTER_LOCAL_SIGN_TYPES = {
+  Message: ASTER_EIP712_TYPES.Message,
+} as const
+
+let lastAsterNonce = 0n
 
 export interface AsterApiArgs {
   method: string
   endpoint: string
   user: string
-  privateKey: string
+  privateKey?: string
+  signer?: string
   baseUrl?: string
   params?: Record<string, string>
 }
 
+interface WalletEnsureResponse {
+  ok: boolean
+  data: {
+    address: string
+    chainId: number
+    chainType: string
+  }
+  error?: string
+}
+
+interface WalletSignTypedDataResponse {
+  ok: boolean
+  data: {
+    address: string
+    signature: string
+  }
+  error?: string
+}
+
+interface PlatformAsterSigner {
+  instanceId: string
+  signer: string
+}
+
+function nextAsterNonce(): bigint {
+  const now = BigInt(Date.now()) * 1000n
+  lastAsterNonce = now > lastAsterNonce ? now : lastAsterNonce + 1n
+  return lastAsterNonce
+}
+
+function paramsToString(params: Record<string, string>): string {
+  return new URLSearchParams(
+    Object.entries(params).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  ).toString()
+}
+
+function buildAsterTypedData(paramString: string) {
+  return {
+    domain: ASTER_EIP712_DOMAIN,
+    types: ASTER_EIP712_TYPES,
+    primaryType: 'Message',
+    message: { msg: paramString },
+  } as const
+}
+
+async function resolvePlatformAsterSigner(expectedSigner?: string): Promise<PlatformAsterSigner> {
+  const { instanceId } = resolveCredentials()
+  const expected = expectedSigner ? requireAddress(expectedSigner, 'signer') : undefined
+
+  const ensure = await apiPost<WalletEnsureResponse>(`/v1/instances/${instanceId}/wallet/ensure`, {
+    chainType: 'ethereum',
+    chainId: 56,
+  })
+  if (!ensure.ok) {
+    throw new Error(ensure.error ?? 'Failed to resolve platform wallet')
+  }
+  const signer = requireAddress(ensure.data.address, 'platform wallet address')
+  if (expected && signer.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(
+      `Platform wallet address ${signer} does not match Aster API signer ${expected}`,
+    )
+  }
+
+  return { instanceId, signer }
+}
+
+async function signAsterTypedDataWithPlatformWallet(
+  instanceId: string,
+  typedData: ReturnType<typeof buildAsterTypedData>,
+  signer: string,
+): Promise<`0x${string}`> {
+  const signed = await apiPost<WalletSignTypedDataResponse>(
+    `/v1/instances/${instanceId}/wallet/sign-typed-data`,
+    {
+      ...typedData,
+      intent: {
+        kind: 'typed_data',
+        primaryType: typedData.primaryType,
+        verifyingContract: ASTER_EIP712_DOMAIN.verifyingContract,
+        chainId: 'eip155:56',
+      },
+    },
+  )
+  if (!signed.ok) {
+    throw new Error(signed.error ?? 'Failed to sign Aster API request')
+  }
+  if (signed.data.address.toLowerCase() !== signer.toLowerCase()) {
+    throw new Error(
+      `Aster API signature returned unexpected signer ${signed.data.address}; expected ${signer}`,
+    )
+  }
+
+  const signature = signed.data.signature
+  return (signature.startsWith('0x') ? signature : `0x${signature}`) as `0x${string}`
+}
+
 export async function asterApi(args: AsterApiArgs): Promise<unknown> {
-  const pk = args.privateKey.startsWith('0x') ? args.privateKey : `0x${args.privateKey}`
-  const account = privateKeyToAccount(pk as `0x${string}`)
   const user = requireAddress(args.user, 'user')
-  const signer = account.address
   const base = args.baseUrl ?? FAPI_BASE
+
+  if (args.privateKey && args.signer) {
+    throw new Error('Use either --private-key or --signer, not both')
+  }
+
+  const account = args.privateKey
+    ? privateKeyToAccount(
+        (args.privateKey.startsWith('0x') ? args.privateKey : `0x${args.privateKey}`) as `0x${string}`,
+      )
+    : undefined
+  const platformSigner = account ? undefined : await resolvePlatformAsterSigner(args.signer)
+  const signer = account?.address ?? (platformSigner as PlatformAsterSigner).signer
 
   // -- Build params --
   const apiParams: Record<string, string> = {}
@@ -43,32 +173,37 @@ export async function asterApi(args: AsterApiArgs): Promise<unknown> {
       apiParams[k] = String(v)
     }
   }
-  if (!apiParams.recvWindow) apiParams.recvWindow = '50000'
   apiParams.timestamp = String(Date.now())
 
   // Nonce: microseconds since epoch (matching official: math.trunc(time.time() * 1000000))
-  const nonce = BigInt(Date.now()) * 1000n
-
-  // JSON encode: sorted keys, compact
-  const sorted = Object.fromEntries(
-    Object.entries(apiParams).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-  )
-  const jsonStr = JSON.stringify(sorted)
-
-  // ABI encode → keccak256 → personal_sign
-  const encoded = encodeAbiParameters(
-    [{ type: 'string' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }],
-    [jsonStr, user as `0x${string}`, signer as `0x${string}`, nonce],
-  )
-  const hash = keccak256(encoded)
-  const signature = await account.signMessage({ message: { raw: hash } })
-
-  // -- Call API --
-  const allParams: Record<string, string> = {
+  const nonce = nextAsterNonce()
+  const signedParams: Record<string, string> = {
     ...apiParams,
     nonce: String(nonce),
     user,
     signer,
+  }
+  const typedData = buildAsterTypedData(paramsToString(signedParams))
+
+  let signature: `0x${string}`
+  if (account) {
+    signature = await account.signTypedData({
+      domain: ASTER_LOCAL_SIGN_DOMAIN,
+      types: ASTER_LOCAL_SIGN_TYPES,
+      primaryType: 'Message',
+      message: typedData.message,
+    })
+  } else {
+    signature = await signAsterTypedDataWithPlatformWallet(
+      (platformSigner as PlatformAsterSigner).instanceId,
+      typedData,
+      signer,
+    )
+  }
+
+  // -- Call API --
+  const allParams: Record<string, string> = {
+    ...signedParams,
     signature,
   }
 
@@ -76,13 +211,13 @@ export async function asterApi(args: AsterApiArgs): Promise<unknown> {
   let res: Response
 
   if (method === 'GET') {
-    const qs = new URLSearchParams(allParams).toString()
+    const qs = paramsToString(allParams)
     res = await fetch(`${base}${args.endpoint}?${qs}`)
   } else {
     res = await fetch(`${base}${args.endpoint}`, {
       method,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(allParams).toString(),
+      body: paramsToString(allParams),
     })
   }
 

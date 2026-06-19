@@ -74,6 +74,8 @@ purr opensea buy --wallet <wallet-address> --fulfillment-file <path-to-fulfillme
 purr lista list-vaults --zone <zone>
 purr evm approve --token <token-address> --spender <spender-address> --amount <amount> --chain-id <chain-id>
 purr evm abi-call --to <contract-address> --signature <function-signature> --args <json-args> --chain-id <chain-id>
+purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>
+purr aster deposit --token <token-address> --amount-wei <amount-wei> --wallet <wallet-address> --chain-id <chain-id>
 
 purr execute --steps-file <path-to-steps-json> --dedup-key <dedup-key>
 purr instance status

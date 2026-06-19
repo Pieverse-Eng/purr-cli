@@ -375,8 +375,8 @@ Examples:
   purr ows-wallet build-transfer --ows-wallet treasury --to 0x... --amount 0.01 --chain-id 56
   purr ows-wallet build-transfer --ows-wallet treasury --to 0x... --amount 10 --chain-id 56 --token 0x<erc20-contract>
   # then: ows sign send-tx --chain eip155:56 --wallet treasury --tx <unsignedTxHex from above>
-  purr aster api --endpoint /fapi/v3/balance --user 0x... --private-key 0x...
-  purr aster api --method POST --endpoint /fapi/v3/order --user 0x... --private-key 0x... --symbol BTCUSDT --side BUY --type LIMIT --quantity 0.001 --price 50000 --timeInForce GTC
+  purr aster api --endpoint /fapi/v3/balance --user 0x...
+  purr aster api --method POST --endpoint /fapi/v3/order --user 0x... --symbol BTCUSDT --side BUY --type LIMIT --quantity 0.001 --price 50000 --timeInForce GTC
   purr aster deposit --token 0x... --amount-wei 1000 --wallet 0x... --chain-id 56
   purr wallet address --chain-type ethereum
   purr wallet balance --chain-type ethereum --chain-id 56
@@ -485,7 +485,7 @@ Examples:
 
     case 'aster': {
       if (command === 'api') {
-        const reserved = new Set(['method', 'endpoint', 'user', 'private-key', 'base-url'])
+        const reserved = new Set(['method', 'endpoint', 'user', 'private-key', 'signer', 'base-url'])
         const apiParams: Record<string, string> = {}
         for (const [k, v] of Object.entries(args)) {
           if (!reserved.has(k)) apiParams[k] = v
@@ -494,7 +494,8 @@ Examples:
           method: args.method ?? 'GET',
           endpoint: requireArg(args, 'endpoint'),
           user: requireArg(args, 'user'),
-          privateKey: requireArg(args, 'private-key'),
+          privateKey: args['private-key'],
+          signer: args.signer,
           baseUrl: args['base-url'],
           params: Object.keys(apiParams).length > 0 ? apiParams : undefined,
         })

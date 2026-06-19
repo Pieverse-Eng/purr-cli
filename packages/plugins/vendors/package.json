@@ -5,7 +5,7 @@
   "private": true,
   "exports": {
     "./aster": "./src/aster.ts",
-    "./binance-connect": "./src/binance-connect.ts",
+    "./binance-onchain-pay": "./src/binance-onchain-pay.ts",
     "./fourmeme": "./src/fourmeme.ts",
     "./fourmeme-api": "./src/fourmeme-api.ts",
     "./lista": "./src/lista.ts",

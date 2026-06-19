@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
+import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
 import { NATIVE_EVM, parseChainId } from '@pieverseio/purr-core/shared'
 import { SOLANA_CHAIN_ID, resolveToken } from '@pieverseio/purr-core/token-registry'
 import type { StepOutput } from '@pieverseio/purr-core/types'
@@ -22,10 +23,12 @@ import {
 import {
   createOrder,
   getNetworks,
+  getP2PTradingPairs,
+  getPaymentMethods,
   getQuote,
   getTradingPairs,
   queryOrder,
-} from '@pieverseio/purr-plugin-vendors/binance-connect'
+} from '@pieverseio/purr-plugin-vendors/binance-onchain-pay'
 import {
   buildFourMemeBuySteps,
   buildFourMemeCreateTokenSteps,
@@ -162,6 +165,33 @@ function requireArg(args: Record<string, string>, name: string): string {
   return val
 }
 
+function optionalJsonArg<T extends Record<string, unknown>>(
+  args: Record<string, string>,
+  name: string,
+  fileName: string,
+): T | undefined {
+  if (args[name] === undefined && args[fileName] === undefined) {
+    return undefined
+  }
+  return parseJsonCliArg<T>(
+    requireArgOrFile(args, name, fileName),
+    args[fileName] ? fileName : name,
+  )
+}
+
+function parseAmountTypeArg(value: string | undefined): 1 | 2 | undefined {
+  const parsed = parseIntegerArg(value, 'amount-type')
+  if (parsed === undefined) return undefined
+  if (parsed !== 1 && parsed !== 2) {
+    throw new Error('Invalid --amount-type: expected 1 for fiat amount or 2 for crypto amount')
+  }
+  return parsed
+}
+
+function requireAmountTypeArg(args: Record<string, string>): 1 | 2 {
+  return parseAmountTypeArg(requireArg(args, 'amount-type')) as 1 | 2
+}
+
 const SLUG_RE = /^([a-z0-9-]+:)?[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/i
 function validatedSlug(raw: string): { slug: string } | { error: true; message: string } {
   if (!SLUG_RE.test(raw)) {
@@ -177,6 +207,20 @@ function parseIntegerArg(value: string | undefined, name: string): number | unde
     throw new Error(`Invalid --${name}: "${value}"`)
   }
   return parsed
+}
+
+function parseNumberArg(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  const parsed = Number(trimmed)
+  if (!trimmed || !Number.isFinite(parsed)) {
+    throw new Error(`Invalid --${name}: "${value}"`)
+  }
+  return parsed
+}
+
+function requireNumberArg(args: Record<string, string>, name: string): number {
+  return parseNumberArg(requireArg(args, name), name) as number
 }
 
 function parseBooleanFlag(value: string | undefined): boolean | undefined {
@@ -311,7 +355,7 @@ export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
 
 Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
-  binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
+  binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
   ows-wallet        OWS-backed sign-transaction + build-transfer (drop-in for 'wallet sign-transaction'; build-transfer emits unsigned hex for 'ows sign send-tx')
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
   fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
@@ -339,8 +383,10 @@ Examples:
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea sell --wallet 0x... --fulfillment-file ./fulfillment.json
-  purr binance-connect quote --fiat USD --crypto USDT --amount 50
-  purr binance-connect buy --fiat USD --crypto USDT --amount 50 --network BSC --wallet 0x...
+  purr binance-onchain-pay payment-method-list --fiat USD --crypto USDT --total-amount 50 --amount-type 1 --network BSC
+  purr binance-onchain-pay p2p-trading-pairs --fiat USD
+  purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
+  purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -526,7 +572,7 @@ Examples:
       break
     }
 
-    // login-challenge returns non-StepOutput JSON — early return like binance-connect
+    // login-challenge returns non-StepOutput JSON — early return like binance-onchain-pay
     case 'fourmeme': {
       if (command === 'login-challenge') {
         const challenge = await buildFourMemeLoginChallenge({
@@ -593,42 +639,82 @@ Examples:
       break
     }
 
-    // Binance Connect returns raw API JSON, not StepOutput — early return
-    case 'binance-connect': {
+    // Binance Onchain Pay returns raw API JSON, not StepOutput — early return
+    case 'binance-onchain-pay': {
       let result: unknown
       switch (command) {
-        case 'pairs':
+        case 'trading-pairs':
           result = await getTradingPairs()
           break
-        case 'networks':
+        case 'crypto-network':
           result = await getNetworks()
           break
-        case 'quote':
+        case 'p2p-trading-pairs':
+          result = await getP2PTradingPairs({
+            fiatCurrency: args.fiat,
+          })
+          break
+        case 'payment-method-list':
+          result = await getPaymentMethods({
+            fiatCurrency: args.fiat,
+            cryptoCurrency: args.crypto,
+            totalAmount: parseNumberArg(args['total-amount'], 'total-amount'),
+            amountType: parseAmountTypeArg(args['amount-type']),
+            network: args.network,
+            contractAddress: args['contract-address'],
+            lang: args.lang,
+          })
+          break
+        case 'estimated-quote':
           result = await getQuote({
             fiatCurrency: requireArg(args, 'fiat'),
-            cryptoCurrency: requireArg(args, 'crypto'),
-            fiatAmount: requireArg(args, 'amount'),
+            requestedAmount: requireNumberArg(args, 'requested-amount'),
+            payMethodCode: requireArg(args, 'pay-method-code'),
+            amountType: requireAmountTypeArg(args),
+            cryptoCurrency: args.crypto,
             network: args.network,
-            paymentMethod: args['payment-method'],
+            address: args.address,
+            contractAddress: args['contract-address'],
           })
           break
-        case 'buy':
+        case 'pre-order':
           result = await createOrder({
-            fiatCurrency: requireArg(args, 'fiat'),
-            cryptoCurrency: requireArg(args, 'crypto'),
-            fiatAmount: requireArg(args, 'amount'),
-            cryptoNetwork: requireArg(args, 'network'),
-            walletAddress: requireArg(args, 'wallet'),
-            externalOrderId: args['order-id'],
-            paymentMethod: args['payment-method'],
+            externalOrderId: args['external-order-id'],
+            merchantCode: args['merchant-code'],
+            merchantName: args['merchant-name'],
+            ts: parseIntegerArg(args.ts, 'ts'),
+            fiatCurrency: args.fiat,
+            fiatAmount: parseNumberArg(args['fiat-amount'], 'fiat-amount'),
+            cryptoCurrency: args.crypto,
+            requestedAmount: parseNumberArg(args['requested-amount'], 'requested-amount'),
+            amountType: parseAmountTypeArg(args['amount-type']),
+            address: args.address,
+            network: args.network,
+            payMethodCode: args['pay-method-code'],
+            payMethodSubCode: args['pay-method-sub-code'],
+            redirectUrl: args['redirect-url'],
+            failRedirectUrl: args['fail-redirect-url'],
+            redirectDeepLink: args['redirect-deep-link'],
+            failRedirectDeepLink: args['fail-redirect-deep-link'],
+            contractAddress: args['contract-address'],
+            customization: optionalJsonArg(args, 'customization-json', 'customization-file'),
+            destContractAddress: args['dest-contract-address'],
+            destContractABI: args['dest-contract-abi'],
+            destContractParams: optionalJsonArg(
+              args,
+              'dest-contract-params-json',
+              'dest-contract-params-file',
+            ),
+            affiliateCode: args['affiliate-code'],
+            gtrTemplateCode: args['gtr-template-code'],
           })
           break
-        case 'status':
-          result = await queryOrder(requireArg(args, 'order-id'))
+        case 'order':
+          result = await queryOrder(requireArg(args, 'external-order-id'))
           break
         default:
           throw new Error(
-            `Unknown binance-connect command: ${command}. Use: pairs, networks, quote, buy, status`,
+            `Unknown binance-onchain-pay command: ${command}. Use: trading-pairs, crypto-network, p2p-trading-pairs, payment-method-list, estimated-quote, pre-order, order`,
           )
       }
       console.log(JSON.stringify(result))
@@ -1282,7 +1368,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, treasure-code, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, treasure-code, instance, execute, config, version, store`,
       )
   }
 

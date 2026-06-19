@@ -41,7 +41,7 @@ purr <group> <command> [options]
 | Group | Description |
 |-------|-------------|
 | `aster` | Aster DEX API signing and on-chain deposits |
-| `binance-connect` | Fiat on-ramp quotes, networks, orders, and order status |
+| `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status |
 | `fourmeme` | four.meme BSC login challenge, buy, sell, and token creation flows |
 | `opensea` | OpenSea buy and sell execution helpers |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
@@ -69,7 +69,10 @@ purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-t
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id>
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id> --execute
 purr fourmeme buy --token <token-address> --wallet <wallet-address> --funds <amount>
-purr binance-connect quote --fiat <fiat-symbol> --crypto <crypto-symbol> --amount <amount>
+purr binance-onchain-pay payment-method-list --fiat <fiat-symbol> --crypto <crypto-symbol> --total-amount <amount> --amount-type <1|2> --network <network>
+purr binance-onchain-pay p2p-trading-pairs --fiat <fiat-symbol>
+purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --pay-method-code <pay-method-code>
+purr binance-onchain-pay pre-order --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --network <network> --address <wallet-address> --pay-method-code <pay-method-code>
 purr opensea buy --wallet <wallet-address> --fulfillment-file <path-to-fulfillment-json>
 purr lista list-vaults --zone <zone>
 purr evm approve --token <token-address> --spender <spender-address> --amount <amount> --chain-id <chain-id>

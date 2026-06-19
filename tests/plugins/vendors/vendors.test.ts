@@ -90,7 +90,7 @@ class FakeFourMemeApiClient {
       failLogin?: string
       failCreate?: string
       raisedToken?: typeof FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
-      raisedTokens?: typeof FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG[]
+      raisedTokens?: (typeof FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG)[]
     } = {},
   ) {}
 
@@ -123,8 +123,9 @@ class FakeFourMemeApiClient {
 
   async getRaisedTokenConfigs() {
     return (
-      this.config.raisedTokens ??
-      [this.config.raisedToken ?? FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG]
+      this.config.raisedTokens ?? [
+        this.config.raisedToken ?? FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
+      ]
     )
   }
 

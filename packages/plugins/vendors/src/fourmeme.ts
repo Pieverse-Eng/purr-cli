@@ -247,7 +247,9 @@ function parseFeeRate(feeRate?: number): bigint {
 }
 
 function isBnbRaisedToken(raisedToken: FourMemeRaisedTokenConfig): boolean {
-  return raisedToken.symbol.toUpperCase() === 'BNB' || raisedToken.nativeSymbol.toUpperCase() === 'BNB'
+  return (
+    raisedToken.symbol.toUpperCase() === 'BNB' || raisedToken.nativeSymbol.toUpperCase() === 'BNB'
+  )
 }
 
 function nativeValueHex(quote: `0x${string}`, msgValue: bigint, maxFunds?: bigint): string {

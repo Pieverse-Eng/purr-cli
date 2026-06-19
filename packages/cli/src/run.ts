@@ -30,10 +30,16 @@ import {
   queryOrder,
 } from '@pieverseio/purr-plugin-vendors/binance-onchain-pay'
 import {
+  buildFourMemeBuyWithBnbSteps,
   buildFourMemeBuySteps,
   buildFourMemeCreateTokenSteps,
   buildFourMemeLoginChallenge,
   buildFourMemeSellSteps,
+  buildFourMemeSellForBnbSteps,
+  buildFourMemeTaxClaimSteps,
+  getFourMemeAgentWalletStatus,
+  getFourMemeRaisedTokenConfigs,
+  getFourMemeTaxRewards,
 } from '@pieverseio/purr-plugin-vendors/fourmeme'
 import { asterApi, buildAsterDepositSteps } from '@pieverseio/purr-plugin-vendors/aster'
 import {
@@ -358,7 +364,7 @@ Groups:
   binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
   ows-wallet        OWS-backed sign-transaction + build-transfer (drop-in for 'wallet sign-transaction'; build-transfer emits unsigned hex for 'ows sign send-tx')
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
-  fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
+  fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
@@ -375,10 +381,16 @@ Groups:
 
 Examples:
   purr fourmeme login-challenge --wallet 0x...
+  purr fourmeme raised-tokens
   purr wallet sign-transaction --txs-json '{"orderId":"...","txs":[...]}'
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
+  purr fourmeme buy-with-bnb --token 0x... --wallet 0x... --funds 0.1 --min-amount 1000
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
-  purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
+  purr fourmeme sell-for-bnb --token 0x... --wallet 0x... --amount 1000 --min-funds 0.1
+  purr fourmeme agent-wallet --wallet 0x...
+  purr fourmeme tax-rewards --token 0x... --wallet 0x...
+  purr fourmeme tax-claim --token 0x... --wallet 0x...
+  purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png --raised-token BNB
   purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
@@ -581,6 +593,26 @@ Examples:
         console.log(JSON.stringify(challenge))
         return
       }
+      if (command === 'raised-tokens') {
+        const configs = await getFourMemeRaisedTokenConfigs()
+        console.log(JSON.stringify(configs, null, 2))
+        return
+      }
+      if (command === 'agent-wallet') {
+        const status = await getFourMemeAgentWalletStatus({
+          wallet: requireArg(args, 'wallet'),
+        })
+        console.log(JSON.stringify(status, null, 2))
+        return
+      }
+      if (command === 'tax-rewards') {
+        const rewards = await getFourMemeTaxRewards({
+          token: resolveToken(requireArg(args, 'token'), 56),
+          wallet: requireArg(args, 'wallet'),
+        })
+        console.log(JSON.stringify(rewards, null, 2))
+        return
+      }
       switch (command) {
         case 'buy':
           output = await buildFourMemeBuySteps({
@@ -591,12 +623,37 @@ Examples:
             slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
           })
           break
+        case 'buy-with-bnb':
+          output = await buildFourMemeBuyWithBnbSteps({
+            token: resolveToken(requireArg(args, 'token'), 56),
+            wallet: requireArg(args, 'wallet'),
+            funds: requireArg(args, 'funds'),
+            minAmount: requireArg(args, 'min-amount'),
+          })
+          break
         case 'sell':
           output = await buildFourMemeSellSteps({
             token: resolveToken(requireArg(args, 'token'), 56),
             wallet: requireArg(args, 'wallet'),
             amount: requireArg(args, 'amount'),
             slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
+          })
+          break
+        case 'sell-for-bnb':
+          output = await buildFourMemeSellForBnbSteps({
+            token: resolveToken(requireArg(args, 'token'), 56),
+            wallet: requireArg(args, 'wallet'),
+            amount: requireArg(args, 'amount'),
+            minFunds: requireArg(args, 'min-funds'),
+            to: args.to,
+            feeRate: parseIntegerArg(args['fee-rate'], 'fee-rate'),
+            feeRecipient: args['fee-recipient'],
+          })
+          break
+        case 'tax-claim':
+          output = buildFourMemeTaxClaimSteps({
+            token: resolveToken(requireArg(args, 'token'), 56),
+            wallet: requireArg(args, 'wallet'),
           })
           break
         case 'create-token':
@@ -629,11 +686,12 @@ Examples:
             taxRecipientAddress: args['tax-recipient-address'],
             taxMinSharing: args['tax-min-sharing'],
             creationFee: args['creation-fee'],
+            raisedToken: args['raised-token'],
           })
           break
         default:
           throw new Error(
-            `Unknown fourmeme command: ${command}. Use: login-challenge, buy, sell, create-token`,
+            `Unknown fourmeme command: ${command}. Use: login-challenge, raised-tokens, buy, buy-with-bnb, sell, sell-for-bnb, create-token, agent-wallet, tax-rewards, tax-claim`,
           )
       }
       break

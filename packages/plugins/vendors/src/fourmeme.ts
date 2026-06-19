@@ -20,6 +20,7 @@ import {
   DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
   type FourMemeApiClient,
   type FourMemeCreateTokenPayload,
+  type FourMemeRaisedTokenConfig,
   FOUR_MEME_SUPPORTED_LABELS,
   type FourMemeTokenTaxInfo,
 } from './fourmeme-api.js'
@@ -30,7 +31,9 @@ const BSC_RPC_URL = process.env.BNB_RPC_URL || 'https://bsc-rpc.publicnode.com'
 const DEFAULT_TOKEN_MANAGER_V1 = '0xEC4549caDcE5DA21Df6E6422d448034B5233bFbC'
 const DEFAULT_TOKEN_MANAGER_V2 = '0x5c952063c7fc8610FFDB798152D69F0B9550762b'
 const DEFAULT_TOKEN_MANAGER_HELPER3 = '0xF251F83e40a78868FcfA3FA4599Dad6494E46034'
+const DEFAULT_AGENT_IDENTIFIER = '0x09B44A633de9F9EBF6FB9Bdd5b5629d3DD2cef13'
 const DEFAULT_FOUR_MEME_CREATE_TOKEN_FEE = '0.01'
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const
 
 const ERC20_ABI = parseAbi(['function decimals() view returns (uint8)'])
 
@@ -38,6 +41,9 @@ const FOUR_MEME_HELPER_ABI = parseAbi([
   'function getTokenInfo(address token) view returns (uint256 version, address tokenManager, address quote, uint256 lastPrice, uint256 tradingFeeRate, uint256 minTradingFee, uint256 launchTime, uint256 offers, uint256 maxOffers, uint256 funds, uint256 maxFunds, bool liquidityAdded)',
   'function tryBuy(address token, uint256 amount, uint256 funds) view returns (address tokenManager, address quote, uint256 estimatedAmount, uint256 estimatedCost, uint256 estimatedFee, uint256 amountMsgValue, uint256 amountApproval, uint256 amountFunds)',
   'function trySell(address token, uint256 amount) view returns (address tokenManager, address quote, uint256 funds, uint256 fee)',
+  'function buyWithEth(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
+  'function sellForEth(uint256 origin, address token, uint256 amount, uint256 minFunds, uint256 feeRate, address feeRecipient)',
+  'function sellForEth(uint256 origin, address token, address from, address to, uint256 amount, uint256 minFunds)',
 ])
 
 const FOUR_MEME_V1_ABI = parseAbi([
@@ -54,6 +60,15 @@ const FOUR_MEME_V2_ABI = parseAbi([
   'function buyTokenAMAP(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
   'function sellToken(uint256 origin, address token, uint256 amount, uint256 minFunds)',
   'function createToken(bytes createArg, bytes signature) payable',
+])
+
+const AGENT_IDENTIFIER_ABI = parseAbi(['function isAgent(address wallet) view returns (bool)'])
+
+const TAX_TOKEN_ABI = parseAbi([
+  'function claimableFee(address account) view returns (uint256)',
+  'function claimedFee(address account) view returns (uint256)',
+  'function userInfo(address account) view returns (uint256 share, uint256 rewardDebt, uint256 claimable, uint256 claimed)',
+  'function claimFee()',
 ])
 
 const VALID_TAX_FEE_RATES = new Set([1, 3, 5, 10])
@@ -111,6 +126,23 @@ export interface FourMemeSellArgs {
   slippage?: number
 }
 
+export interface FourMemeBuyWithBnbArgs {
+  token: string
+  wallet: string
+  funds: string
+  minAmount: string
+}
+
+export interface FourMemeSellForBnbArgs {
+  token: string
+  wallet: string
+  amount: string
+  minFunds: string
+  to?: string
+  feeRate?: number
+  feeRecipient?: string
+}
+
 export interface FourMemeLoginChallenge {
   wallet: `0x${string}`
   nonce: string
@@ -146,6 +178,25 @@ export interface FourMemeCreateTokenArgs {
   taxRecipientAddress?: string
   taxMinSharing?: string
   creationFee?: string
+  raisedToken?: string
+}
+
+export interface FourMemeAgentWalletStatus {
+  wallet: `0x${string}`
+  isAgent: boolean
+}
+
+export interface FourMemeTaxRewards {
+  token: `0x${string}`
+  wallet: `0x${string}`
+  claimableFee: string
+  claimedFee: string
+  userInfo: {
+    share: string
+    rewardDebt: string
+    claimable: string
+    claimed: string
+  }
 }
 
 function getClient(client?: ReadClient): ReadClient {
@@ -172,12 +223,31 @@ function getV2ManagerAddress(): `0x${string}` {
   )
 }
 
+function getAgentIdentifierAddress(): `0x${string}` {
+  return requireAddress(
+    process.env.FOUR_MEME_AGENT_IDENTIFIER || DEFAULT_AGENT_IDENTIFIER,
+    'agent-identifier',
+  )
+}
+
 function parseSlippage(slippage?: number): number {
   const resolved = slippage ?? 0.03
   if (!Number.isFinite(resolved) || resolved < 0 || resolved > 1) {
     throw new Error('--slippage must be between 0 and 1')
   }
   return resolved
+}
+
+function parseFeeRate(feeRate?: number): bigint {
+  if (feeRate === undefined) return 0n
+  if (!Number.isInteger(feeRate) || feeRate < 0 || feeRate > 500) {
+    throw new Error('--fee-rate must be an integer between 0 and 500')
+  }
+  return BigInt(feeRate)
+}
+
+function isBnbRaisedToken(raisedToken: FourMemeRaisedTokenConfig): boolean {
+  return raisedToken.symbol.toUpperCase() === 'BNB' || raisedToken.nativeSymbol.toUpperCase() === 'BNB'
 }
 
 function nativeValueHex(quote: `0x${string}`, msgValue: bigint, maxFunds?: bigint): string {
@@ -381,7 +451,10 @@ function buildCreateTokenPayload(
   }
 
   const preSale = args.preSale?.trim() || '0'
-  parseDecimalAmount(preSale, 'preSale')
+  const preSaleWei = parseDecimalAmount(preSale, 'preSale')
+  if (!isBnbRaisedToken(raisedToken) && preSaleWei > 0n) {
+    throw new Error('Non-BNB raised tokens currently require preSale to be 0')
+  }
 
   return {
     name: requireNonEmptyString(args.name, 'name'),
@@ -410,9 +483,10 @@ function getCreateTokenValueWei(
 ): bigint {
   const creationFee =
     args.creationFee ?? process.env.FOUR_MEME_CREATE_TOKEN_FEE ?? DEFAULT_FOUR_MEME_CREATE_TOKEN_FEE
-  return (
-    parseDecimalAmount(creationFee, 'creationFee') + parseDecimalAmount(payload.preSale, 'preSale')
-  )
+  const preSaleValue = isBnbRaisedToken(payload.raisedToken)
+    ? parseDecimalAmount(payload.preSale, 'preSale')
+    : 0n
+  return parseDecimalAmount(creationFee, 'creationFee') + preSaleValue
 }
 
 async function getTokenDecimals(client: ReadClient, token: `0x${string}`): Promise<number> {
@@ -565,6 +639,12 @@ export async function buildFourMemeLoginChallenge(
   }
 }
 
+export async function getFourMemeRaisedTokenConfigs(
+  apiClient: FourMemeApiClient = createFourMemeApiClient(),
+): Promise<FourMemeRaisedTokenConfig[]> {
+  return apiClient.getRaisedTokenConfigs()
+}
+
 export async function buildFourMemeBuySteps(
   args: FourMemeBuyArgs,
   client?: ReadClient,
@@ -701,6 +781,44 @@ export async function buildFourMemeBuySteps(
   return { steps }
 }
 
+export async function buildFourMemeBuyWithBnbSteps(
+  args: FourMemeBuyWithBnbArgs,
+  client?: ReadClient,
+): Promise<StepOutput> {
+  const token = requireAddress(args.token, 'token')
+  const wallet = requireAddress(args.wallet, 'wallet')
+  const rpc = getClient(client)
+  const context = await getFourMemeContext(rpc, token)
+  if (context.version !== 2) {
+    throw new Error('four.meme buy-with-bnb only supports V2 tokens')
+  }
+  if (isNative(context.quote)) {
+    throw new Error('four.meme buy-with-bnb only supports tokens whose quote token is not BNB')
+  }
+
+  const tokenDecimals = await getTokenDecimals(rpc, token)
+  const fundsWei = parseDecimalAmount(args.funds, 'funds')
+  const minAmountWei = parseHumanAmount(args.minAmount, tokenDecimals, 'minAmount')
+  const labelSuffix = describeMode(context)
+  const data = encodeFunctionData({
+    abi: FOUR_MEME_HELPER_ABI,
+    functionName: 'buyWithEth',
+    args: [0n, token, wallet, fundsWei, minAmountWei],
+  })
+
+  return {
+    steps: [
+      {
+        to: getHelperAddress(),
+        data,
+        value: `0x${fundsWei.toString(16)}`,
+        chainId: BSC_CHAIN_ID,
+        label: `four.meme buy with BNB (${labelSuffix})`,
+      },
+    ],
+  }
+}
+
 export async function buildFourMemeSellSteps(
   args: FourMemeSellArgs,
   client?: ReadClient,
@@ -757,22 +875,157 @@ export async function buildFourMemeSellSteps(
   return { steps }
 }
 
+export async function buildFourMemeSellForBnbSteps(
+  args: FourMemeSellForBnbArgs,
+  client?: ReadClient,
+): Promise<StepOutput> {
+  const token = requireAddress(args.token, 'token')
+  const wallet = requireAddress(args.wallet, 'wallet')
+  if (args.to && (args.feeRate !== undefined || args.feeRecipient !== undefined)) {
+    throw new Error('--to cannot be combined with --fee-rate or --fee-recipient')
+  }
+  const rpc = getClient(client)
+  const context = await getFourMemeContext(rpc, token)
+  if (context.version !== 2) {
+    throw new Error('four.meme sell-for-bnb only supports V2 tokens')
+  }
+  if (isNative(context.quote)) {
+    throw new Error('four.meme sell-for-bnb only supports tokens whose quote token is not BNB')
+  }
+
+  const tokenDecimals = await getTokenDecimals(rpc, token)
+  const amountWei = parseHumanAmount(args.amount, tokenDecimals, 'amount')
+  const minFundsWei = parseDecimalAmount(args.minFunds, 'minFunds')
+  const labelSuffix = describeMode(context)
+  const steps: TxStep[] = [
+    buildApprovalStep(
+      token,
+      getHelperAddress(),
+      amountWei.toString(),
+      BSC_CHAIN_ID,
+      `Approve four.meme token sale for BNB (${labelSuffix})`,
+    ),
+  ]
+
+  let data: `0x${string}`
+  if (args.to) {
+    const to = requireAddress(args.to, 'to')
+    data = encodeFunctionData({
+      abi: FOUR_MEME_HELPER_ABI,
+      functionName: 'sellForEth',
+      args: [0n, token, wallet, to, amountWei, minFundsWei],
+    })
+  } else {
+    const feeRate = parseFeeRate(args.feeRate)
+    const feeRecipient =
+      feeRate > 0n ? requireAddress(args.feeRecipient ?? '', 'fee-recipient') : ZERO_ADDRESS
+    data = encodeFunctionData({
+      abi: FOUR_MEME_HELPER_ABI,
+      functionName: 'sellForEth',
+      args: [0n, token, amountWei, minFundsWei, feeRate, feeRecipient],
+    })
+  }
+
+  steps.push({
+    to: getHelperAddress(),
+    data,
+    value: '0x0',
+    chainId: BSC_CHAIN_ID,
+    label: `four.meme sell for BNB (${labelSuffix})`,
+  })
+  return { steps }
+}
+
+export async function getFourMemeAgentWalletStatus(
+  args: { wallet: string },
+  client?: ReadClient,
+): Promise<FourMemeAgentWalletStatus> {
+  const wallet = requireAddress(args.wallet, 'wallet')
+  const rpc = getClient(client)
+  const isAgentWallet = (await rpc.readContract({
+    address: getAgentIdentifierAddress(),
+    abi: AGENT_IDENTIFIER_ABI,
+    functionName: 'isAgent',
+    args: [wallet],
+  })) as boolean
+  return { wallet, isAgent: isAgentWallet }
+}
+
+export async function getFourMemeTaxRewards(
+  args: { token: string; wallet: string },
+  client?: ReadClient,
+): Promise<FourMemeTaxRewards> {
+  const token = requireAddress(args.token, 'token')
+  const wallet = requireAddress(args.wallet, 'wallet')
+  const rpc = getClient(client)
+  const [claimableFee, claimedFee, userInfo] = await Promise.all([
+    rpc.readContract({
+      address: token,
+      abi: TAX_TOKEN_ABI,
+      functionName: 'claimableFee',
+      args: [wallet],
+    }),
+    rpc.readContract({
+      address: token,
+      abi: TAX_TOKEN_ABI,
+      functionName: 'claimedFee',
+      args: [wallet],
+    }),
+    rpc.readContract({
+      address: token,
+      abi: TAX_TOKEN_ABI,
+      functionName: 'userInfo',
+      args: [wallet],
+    }),
+  ])
+  const [share, rewardDebt, claimable, claimed] = userInfo as [bigint, bigint, bigint, bigint]
+  return {
+    token,
+    wallet,
+    claimableFee: (claimableFee as bigint).toString(),
+    claimedFee: (claimedFee as bigint).toString(),
+    userInfo: {
+      share: share.toString(),
+      rewardDebt: rewardDebt.toString(),
+      claimable: claimable.toString(),
+      claimed: claimed.toString(),
+    },
+  }
+}
+
+export function buildFourMemeTaxClaimSteps(args: { token: string; wallet: string }): StepOutput {
+  const token = requireAddress(args.token, 'token')
+  requireAddress(args.wallet, 'wallet')
+  return {
+    steps: [
+      {
+        to: token,
+        data: encodeFunctionData({
+          abi: TAX_TOKEN_ABI,
+          functionName: 'claimFee',
+        }),
+        value: '0x0',
+        chainId: BSC_CHAIN_ID,
+        label: 'four.meme TaxToken claim rewards',
+      },
+    ],
+  }
+}
+
 export async function buildFourMemeCreateTokenSteps(
   args: FourMemeCreateTokenArgs,
   apiClient: FourMemeApiClient = createFourMemeApiClient(),
 ): Promise<StepOutput> {
   const wallet = requireAddress(args.wallet, 'wallet')
   const { imageUrl, imageFile } = resolveImageSource(args)
-  // Validate payload eagerly (before any API calls)
-  buildCreateTokenPayload({ ...args, wallet }, imageUrl || imageFile || 'placeholder')
-  const [accessToken, raisedToken] = await Promise.all([
-    apiClient.loginDex({
-      wallet,
-      nonce: args.loginNonce,
-      signature: args.loginSignature,
-    }),
-    apiClient.getRaisedTokenConfig(),
-  ])
+  const raisedToken = await apiClient.getRaisedTokenConfig(args.raisedToken)
+  // Validate payload eagerly before login, image upload, or create API calls.
+  buildCreateTokenPayload({ ...args, wallet }, imageUrl || imageFile || 'placeholder', raisedToken)
+  const accessToken = await apiClient.loginDex({
+    wallet,
+    nonce: args.loginNonce,
+    signature: args.loginSignature,
+  })
   let imgUrl: string
   if (imageUrl && isFourMemeCdnUrl(imageUrl)) {
     imgUrl = imageUrl
@@ -788,7 +1041,7 @@ export async function buildFourMemeCreateTokenSteps(
   const payload = buildCreateTokenPayload({ ...args, wallet }, imgUrl, raisedToken)
   const create = await apiClient.createToken({ payload, accessToken })
   const value = getCreateTokenValueWei(args, payload)
-  const modeFlags: string[] = [payload.label]
+  const modeFlags: string[] = [payload.label, `raised ${payload.raisedToken.symbol}`]
   if (payload.onlyMPC) modeFlags.push('X Mode')
   if (payload.feePlan) modeFlags.push('AntiSniper')
   if (payload.tokenTaxInfo) modeFlags.push('TaxToken')
@@ -817,6 +1070,7 @@ export const FOUR_MEME_TEST_CONSTANTS = {
   DEFAULT_TOKEN_MANAGER_HELPER3,
   DEFAULT_TOKEN_MANAGER_V1,
   DEFAULT_TOKEN_MANAGER_V2,
+  DEFAULT_AGENT_IDENTIFIER,
   DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
   FOUR_MEME_SUPPORTED_LABELS,
 }

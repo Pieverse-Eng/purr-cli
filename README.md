@@ -42,7 +42,7 @@ purr <group> <command> [options]
 |-------|-------------|
 | `aster` | Aster DEX API signing and on-chain deposits |
 | `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status |
-| `fourmeme` | four.meme BSC login challenge, buy, sell, and token creation flows |
+| `fourmeme` | four.meme BSC login, raised tokens, buy/sell, tax, agent, and token creation flows |
 | `opensea` | OpenSea buy and sell execution helpers |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
@@ -68,7 +68,13 @@ purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-t
 
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id>
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id> --execute
+purr fourmeme raised-tokens
 purr fourmeme buy --token <token-address> --wallet <wallet-address> --funds <amount>
+purr fourmeme buy-with-bnb --token <token-address> --wallet <wallet-address> --funds <bnb-amount> --min-amount <min-token-amount>
+purr fourmeme sell-for-bnb --token <token-address> --wallet <wallet-address> --amount <token-amount> --min-funds <min-bnb-amount>
+purr fourmeme agent-wallet --wallet <wallet-address>
+purr fourmeme tax-rewards --token <token-address> --wallet <wallet-address>
+purr fourmeme tax-claim --token <token-address> --wallet <wallet-address>
 purr binance-onchain-pay payment-method-list --fiat <fiat-symbol> --crypto <crypto-symbol> --total-amount <amount> --amount-type <1|2> --network <network>
 purr binance-onchain-pay p2p-trading-pairs --fiat <fiat-symbol>
 purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --pay-method-code <pay-method-code>

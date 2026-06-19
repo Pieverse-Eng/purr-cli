@@ -79,7 +79,9 @@ describe('asterApi', () => {
         expect(body.domain).toEqual(ASTER_DOMAIN)
         expect(body.types).toEqual(ASTER_TYPES)
         expect(body.primaryType).toBe('Message')
-        expect(body.message.msg).toBe(`nonce=1781827200000000&signer=${SIGNER}&timestamp=1781827200000&user=${USER}`)
+        expect(body.message.msg).toBe(
+          `nonce=1781827200000000&signer=${SIGNER}&timestamp=1781827200000&user=${USER}`,
+        )
         expect(body.intent).toEqual({
           kind: 'typed_data',
           primaryType: 'Message',

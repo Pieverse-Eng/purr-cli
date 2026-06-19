@@ -485,7 +485,14 @@ Examples:
 
     case 'aster': {
       if (command === 'api') {
-        const reserved = new Set(['method', 'endpoint', 'user', 'private-key', 'signer', 'base-url'])
+        const reserved = new Set([
+          'method',
+          'endpoint',
+          'user',
+          'private-key',
+          'signer',
+          'base-url',
+        ])
         const apiParams: Record<string, string> = {}
         for (const [k, v] of Object.entries(args)) {
           if (!reserved.has(k)) apiParams[k] = v

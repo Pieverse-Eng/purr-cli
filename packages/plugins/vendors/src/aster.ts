@@ -112,9 +112,7 @@ async function resolvePlatformAsterSigner(expectedSigner?: string): Promise<Plat
   }
   const signer = requireAddress(ensure.data.address, 'platform wallet address')
   if (expected && signer.toLowerCase() !== expected.toLowerCase()) {
-    throw new Error(
-      `Platform wallet address ${signer} does not match Aster API signer ${expected}`,
-    )
+    throw new Error(`Platform wallet address ${signer} does not match Aster API signer ${expected}`)
   }
 
   return { instanceId, signer }
@@ -160,7 +158,9 @@ export async function asterApi(args: AsterApiArgs): Promise<unknown> {
 
   const account = args.privateKey
     ? privateKeyToAccount(
-        (args.privateKey.startsWith('0x') ? args.privateKey : `0x${args.privateKey}`) as `0x${string}`,
+        (args.privateKey.startsWith('0x')
+          ? args.privateKey
+          : `0x${args.privateKey}`) as `0x${string}`,
       )
     : undefined
   const platformSigner = account ? undefined : await resolvePlatformAsterSigner(args.signer)

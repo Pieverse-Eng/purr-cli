@@ -96,6 +96,12 @@ import { removeFromAgents } from '@pieverseio/purr-plugin-store/skill-dirs'
 import { walletAbiCall } from '@pieverseio/purr-plugin-wallet/abi-call'
 import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
 import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
+import {
+  redpacketClaim,
+  redpacketPending,
+  redpacketSend,
+  redpacketSent,
+} from '@pieverseio/purr-plugin-wallet/redpacket'
 import { walletSign } from '@pieverseio/purr-plugin-wallet/sign'
 import { walletSignOkxX402 } from '@pieverseio/purr-plugin-wallet/sign-okx-x402'
 import { walletSignTransaction } from '@pieverseio/purr-plugin-wallet/sign-transaction'
@@ -383,6 +389,7 @@ Groups:
   pns               Pie Name Service and identity lookup helpers
   .pie              Resolve .pie identities and transfer to their wallets
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call)
+  redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
@@ -455,6 +462,10 @@ Examples:
   purr wallet address --chain-type ethereum
   purr wallet balance --chain-type ethereum --chain-id 56
   purr wallet balance --token 0x55d3...7955 --chain-id 56
+  purr redpacket send --recipient alice.pie --amount 0.1
+  purr redpacket pending --sender bob.pie
+  purr redpacket claim
+  purr redpacket sent --limit 20 --offset 0
   purr instance status
   purr instance renew --chain-id 56 --token-address 0x55d3...7955 --yes
   purr wallet sign --address 0x... --message "Hello"
@@ -1172,6 +1183,25 @@ Examples:
       }
     }
 
+    case 'redpacket': {
+      switch (command) {
+        case 'send':
+          await redpacketSend(args)
+          return
+        case 'pending':
+          await redpacketPending(args)
+          return
+        case 'claim':
+          await redpacketClaim(args)
+          return
+        case 'sent':
+          await redpacketSent(args)
+          return
+        default:
+          throw new Error(`Unknown redpacket command: ${command}. Use: send, pending, claim, sent`)
+      }
+    }
+
     case 'treasure-code': {
       switch (command) {
         case 'vault':
@@ -1487,7 +1517,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, treasure-code, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, execute, config, version, store`,
       )
   }
 

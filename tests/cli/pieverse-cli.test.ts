@@ -47,10 +47,20 @@ describe('Pieverse CLI routing', () => {
     expect(result.stdout).toContain(
       '.pie              Resolve .pie identities and transfer to their wallets',
     )
+    expect(result.stdout).toContain('redpacket         P2P XLayer USDT0 redpackets')
     expect(result.stdout).toContain('purr pieverse card purchase')
     expect(result.stdout).toContain('purr pieverse purrfect-yap purchase')
     expect(result.stdout).toContain('purr pns resolve alice')
+    expect(result.stdout).toContain('purr redpacket send --recipient alice.pie --amount 0.1')
     expect(result.stdout).toContain('purr .pie transfer --pie alice.pie')
+  })
+
+  it('routes redpacket commands through the redpacket handler', async () => {
+    const result = await runPurr(['redpacket', 'unknown-command'])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('Unknown redpacket command')
   })
 
   it('routes pieverse card commands through the card handler', async () => {

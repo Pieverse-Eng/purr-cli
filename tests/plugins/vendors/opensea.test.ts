@@ -623,7 +623,12 @@ describe('buildOpenSeaTransactionSteps', () => {
 
 describe('buildOpenSeaActionSteps', () => {
   const typedData = {
-    domain: { name: 'Seaport', version: '1.6', chainId: 1, verifyingContract: OPENSEA_SEAPORT_V1_6 },
+    domain: {
+      name: 'Seaport',
+      version: '1.6',
+      chainId: 1,
+      verifyingContract: OPENSEA_SEAPORT_V1_6,
+    },
     types: {
       Order: [
         { name: 'offerer', type: 'address' },

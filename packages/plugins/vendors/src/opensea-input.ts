@@ -11,7 +11,9 @@ export function parseOpenSeaFulfillmentInput(
   )
 }
 
-export function parseOpenSeaTransactionInput(args: Record<string, string>): Record<string, unknown> {
+export function parseOpenSeaTransactionInput(
+  args: Record<string, string>,
+): Record<string, unknown> {
   return parseJsonCliArg<Record<string, unknown>>(
     requireArgOrFile(args, 'tx-json', 'tx-file'),
     args['tx-file'] ? 'tx-file' : 'tx-json',

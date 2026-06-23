@@ -448,7 +448,10 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>
 }
 
-function getRecordField(obj: Record<string, unknown>, field: string): Record<string, unknown> | undefined {
+function getRecordField(
+  obj: Record<string, unknown>,
+  field: string,
+): Record<string, unknown> | undefined {
   return asRecord(obj[field])
 }
 
@@ -579,7 +582,11 @@ function getTransactionValue(transaction: Record<string, unknown>): string {
 function getTransactionGasLimit(transaction: Record<string, unknown>): string | undefined {
   const gasLimit = transaction.gasLimit ?? transaction.gas_limit ?? transaction.gas
   if (gasLimit === undefined || gasLimit === null) return undefined
-  if (typeof gasLimit !== 'string' && typeof gasLimit !== 'number' && typeof gasLimit !== 'bigint') {
+  if (
+    typeof gasLimit !== 'string' &&
+    typeof gasLimit !== 'number' &&
+    typeof gasLimit !== 'bigint'
+  ) {
     throw new Error('OpenSea transaction gas limit must be a decimal or 0x-prefixed integer')
   }
   return normalizeHexInt(String(gasLimit), 'gas-limit')
@@ -669,12 +676,12 @@ function extractActions(input: Record<string, unknown>): unknown[] {
     return result.txs.map((transaction) => ({ transaction }))
   }
 
-  throw new Error(
-    'OpenSea actions input must include actions, swap.actions, transactions, or txs',
-  )
+  throw new Error('OpenSea actions input must include actions, swap.actions, transactions, or txs')
 }
 
-function extractActionTypedData(action: Record<string, unknown>): Record<string, unknown> | undefined {
+function extractActionTypedData(
+  action: Record<string, unknown>,
+): Record<string, unknown> | undefined {
   const candidates = [
     action.typedData,
     action.typed_data,
@@ -710,7 +717,9 @@ function assertTypedDataSignerFieldsMatchWallet(
   path = 'message',
 ): void {
   if (Array.isArray(value)) {
-    value.forEach((item, index) => assertTypedDataSignerFieldsMatchWallet(item, wallet, `${path}[${index}]`))
+    value.forEach((item, index) => {
+      assertTypedDataSignerFieldsMatchWallet(item, wallet, `${path}[${index}]`)
+    })
     return
   }
   const obj = asRecord(value)
@@ -718,10 +727,16 @@ function assertTypedDataSignerFieldsMatchWallet(
 
   const signerFields = new Set(['offerer', 'maker', 'signer', 'from', 'payer', 'wallet', 'account'])
   for (const [key, fieldValue] of Object.entries(obj)) {
-    if (signerFields.has(key) && typeof fieldValue === 'string' && /^0x[0-9a-fA-F]{40}$/.test(fieldValue)) {
+    if (
+      signerFields.has(key) &&
+      typeof fieldValue === 'string' &&
+      /^0x[0-9a-fA-F]{40}$/.test(fieldValue)
+    ) {
       const normalized = requireAddress(fieldValue, `${path}.${key}`)
       if (normalized.toLowerCase() !== wallet.toLowerCase()) {
-        throw new Error(`OpenSea typed data ${path}.${key} does not match wallet ${wallet}: ${normalized}`)
+        throw new Error(
+          `OpenSea typed data ${path}.${key} does not match wallet ${wallet}: ${normalized}`,
+        )
       }
     }
     assertTypedDataSignerFieldsMatchWallet(fieldValue, wallet, `${path}.${key}`)

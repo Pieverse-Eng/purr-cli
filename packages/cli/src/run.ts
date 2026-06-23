@@ -686,7 +686,9 @@ Examples:
           return
         }
         case 'x402-sign-solana':
-          throw new Error('Bitget Solana x402 signing is out of scope because it requires partial signing')
+          throw new Error(
+            'Bitget Solana x402 signing is out of scope because it requires partial signing',
+          )
         case 'x402-pay': {
           const data =
             args.data !== undefined || args['data-file'] !== undefined

@@ -17,7 +17,8 @@ function jsonResponse(body: unknown): Response {
     headers: new Headers(),
     json: async () => body,
     text: async () => text,
-    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    arrayBuffer: async () =>
+      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
   } as unknown as Response
 }
 
@@ -219,7 +220,9 @@ describe('bitget execution helpers', () => {
     })
 
     const parsedSig = JSON.parse(submittedSig) as Array<Record<string, unknown>>
-    expect(parsedSig).toEqual([{ hash: `0x${'11'.repeat(32)}`, auth: 'keep-me', sig: '0xsigned-hash' }])
+    expect(parsedSig).toEqual([
+      { hash: `0x${'11'.repeat(32)}`, auth: 'keep-me', sig: '0xsigned-hash' },
+    ])
     expect(result).toMatchObject({
       type: 'bitget-transfer-execute',
       orderId: 'transfer-1',

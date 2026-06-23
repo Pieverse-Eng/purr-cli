@@ -149,7 +149,9 @@ function compactJson(value: unknown): string {
 }
 
 function makeBitgetSign(method: string, path: string, bodyStr: string, ts: string): string {
-  return `0x${createHash('sha256').update(method + path + bodyStr + ts).digest('hex')}`
+  return `0x${createHash('sha256')
+    .update(method + path + bodyStr + ts)
+    .digest('hex')}`
 }
 
 function strip0x(value: string): string {
@@ -159,7 +161,12 @@ function strip0x(value: string): string {
 function verifySecurityHeader(signatureHex: string, data: string | Buffer): boolean {
   try {
     const sig = Buffer.from(strip0x(signatureHex), 'hex')
-    return cryptoVerify('RSA-SHA256', Buffer.isBuffer(data) ? data : Buffer.from(data), SECURITY_PUBLIC_KEY_PEM, sig)
+    return cryptoVerify(
+      'RSA-SHA256',
+      Buffer.isBuffer(data) ? data : Buffer.from(data),
+      SECURITY_PUBLIC_KEY_PEM,
+      sig,
+    )
   } catch {
     return false
   }
@@ -345,10 +352,14 @@ function isTronTxItem(txItem: Record<string, unknown>): boolean {
 
 function assertSupportedOrderTxs(txs: Array<Record<string, unknown>>): void {
   if (txs.some(isSolanaTxItem)) {
-    throw new Error('Bitget Solana order execution is out of scope because it may require partial signing')
+    throw new Error(
+      'Bitget Solana order execution is out of scope because it may require partial signing',
+    )
   }
   if (txs.some(isTronTxItem)) {
-    throw new Error('Bitget Tron order execution is out of scope because platform wallet signing does not support Tron')
+    throw new Error(
+      'Bitget Tron order execution is out of scope because platform wallet signing does not support Tron',
+    )
   }
 }
 
@@ -371,7 +382,10 @@ async function makeOrder(args: BitgetOrderExecuteArgs): Promise<BitgetApiRespons
   })
 }
 
-async function sendOrder(orderId: string, txs: Array<Record<string, unknown>>): Promise<BitgetApiResponse> {
+async function sendOrder(
+  orderId: string,
+  txs: Array<Record<string, unknown>>,
+): Promise<BitgetApiResponse> {
   return bitgetPost('/swap-go/swapx/send', { orderId, txs })
 }
 
@@ -526,7 +540,9 @@ async function signTransferSource(
     return signEvm7702Source(source)
   }
   if (sourceType === 'sol_raw' || sourceType === 'sol_partial') {
-    throw new Error('Bitget Solana transfer execution is out of scope because it requires partial signing')
+    throw new Error(
+      'Bitget Solana transfer execution is out of scope because it requires partial signing',
+    )
   }
   if (sourceType === 'evm_morph_altfee') {
     throw new Error('Bitget Morph AltFee transfer execution is out of scope')
@@ -539,7 +555,7 @@ function assertTransferSafe(data: Record<string, unknown>, gaslessRequested?: bo
     throw new Error('makeTransferOrder returned estimateRevert=true; refusing to sign')
   }
   const noGas = data.noGas as Record<string, unknown> | undefined
-  if (gaslessRequested && (!noGas || noGas.available !== true)) {
+  if (gaslessRequested && noGas?.available !== true) {
     throw new Error('Gasless transfer was requested but Bitget did not mark gasless as available')
   }
 }
@@ -645,9 +661,7 @@ async function assertPlatformSignerMatches(
   const expected = requireEvmAddress(expectedAddress, 'from-address')
   const platformAddress = await resolvePlatformEvmAddress(chainId ?? 56)
   if (platformAddress.toLowerCase() !== expected.toLowerCase()) {
-    throw new Error(
-      `Platform wallet ${platformAddress} does not match --from-address ${expected}`,
-    )
+    throw new Error(`Platform wallet ${platformAddress} does not match --from-address ${expected}`)
   }
 }
 
@@ -687,12 +701,16 @@ export async function bitgetX402SignEip3009(
       nonce: randomNonceHex(),
     },
   }
-  const signed = await signTypedDataViaPlatform(args.chainId, {
-    domain: typedData.domain,
-    types: typedData.types,
-    primaryType: typedData.primaryType,
-    message: typedData.message,
-  }, from)
+  const signed = await signTypedDataViaPlatform(
+    args.chainId,
+    {
+      domain: typedData.domain,
+      types: typedData.types,
+      primaryType: typedData.primaryType,
+      message: typedData.message,
+    },
+    from,
+  )
   return {
     signature: signed.signature,
     authorization: {
@@ -775,7 +793,9 @@ export async function bitgetX402Pay(args: BitgetX402PayArgs): Promise<Record<str
   const req = selectPaymentRequirement(paymentRequired)
   const network = String(req.network ?? '')
   if (network.startsWith('solana:')) {
-    throw new Error('Bitget Solana x402 payment is out of scope because it requires partial signing')
+    throw new Error(
+      'Bitget Solana x402 payment is out of scope because it requires partial signing',
+    )
   }
   if (!network.startsWith('eip155:')) {
     throw new Error(`Unsupported x402 network: ${network || '(missing)'}`)
@@ -796,7 +816,8 @@ export async function bitgetX402Pay(args: BitgetX402PayArgs): Promise<Record<str
     to: requireString(req.payTo as string | undefined, 'payTo'),
     amount: String(req.amount ?? '0'),
     tokenName: args.tokenName ?? (typeof extra.name === 'string' ? extra.name : undefined),
-    tokenVersion: args.tokenVersion ?? (typeof extra.version === 'string' ? extra.version : undefined),
+    tokenVersion:
+      args.tokenVersion ?? (typeof extra.version === 'string' ? extra.version : undefined),
     maxTimeoutSeconds: req.maxTimeoutSeconds,
   })
   const paymentPayload = {

@@ -1,4 +1,9 @@
-import { ApiClientError, apiGet, apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import {
+  ApiClientError,
+  apiGet,
+  apiPost,
+  resolveCredentials,
+} from '@pieverseio/purr-core/api-client'
 import { isAddress } from 'viem'
 
 const REDPACKET_TOKEN_DECIMALS = 6
@@ -126,7 +131,8 @@ function parseLimit(value: string | undefined): number {
 
 function parseNonNegativeInt(value: string | undefined, name: string, fallback: number): number {
   if (value === undefined) return fallback
-  if (!/^\d+$/.test(value)) throw new RedpacketInputError(`--${name} must be a non-negative integer`)
+  if (!/^\d+$/.test(value))
+    throw new RedpacketInputError(`--${name} must be a non-negative integer`)
   const parsed = Number.parseInt(value, 10)
   if (!Number.isFinite(parsed) || parsed < 0) {
     throw new RedpacketInputError(`--${name} must be a non-negative integer`)
@@ -144,10 +150,18 @@ function formatBaseUnits(value: string, decimals: number): string {
   return `${whole.toString()}.${fractionText}`
 }
 
-function parseAmountToBaseUnits(raw: string): string {
-  let text = raw.trim().replace(/,/g, '')
+function stripAmountUnit(raw: string): string {
+  let text = raw.trim().replaceAll(',', '')
   if (text.startsWith('$')) text = text.slice(1).trim()
-  text = text.replace(/\s*(usdt0|usdt|usd)\s*$/i, '').trim()
+  const lower = text.toLowerCase()
+  for (const unit of ['usdt0', 'usdt', 'usd']) {
+    if (lower.endsWith(unit)) return text.slice(0, -unit.length).trim()
+  }
+  return text
+}
+
+function parseAmountToBaseUnits(raw: string): string {
+  const text = stripAmountUnit(raw)
   if (!/^\d+(?:\.\d+)?$/.test(text)) {
     throw new RedpacketInputError('--amount must be a decimal USDT0 amount, e.g. 0.1')
   }

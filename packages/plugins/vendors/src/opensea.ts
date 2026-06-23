@@ -8,12 +8,18 @@ import {
   toFunctionSelector,
 } from 'viem'
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
-import { buildApprovalStep, isNative, requireAddress } from '@pieverseio/purr-core/shared'
+import {
+  buildApprovalStep,
+  isNative,
+  normalizeHexInt,
+  requireAddress,
+} from '@pieverseio/purr-core/shared'
 import type { StepOutput, TxStep } from '@pieverseio/purr-core/types'
 import {
   OPENSEA_CONDUIT_ADDRESS,
   OPENSEA_CONDUIT_KEY,
   OPENSEA_SEAPORT_V1_6,
+  normalizeOpenSeaChain,
   type OpenSeaAdvancedOrder,
   type OpenSeaCriteriaResolver,
   type OpenSeaFulfillmentMatch,
@@ -67,6 +73,26 @@ interface WalletEnsureResponse {
     chainId: number
     chainType: string
     createdNow: boolean
+  }
+  error?: string
+}
+
+interface WalletSignTypedDataResponse {
+  ok: boolean
+  data: {
+    address: string
+    signature: string
+  }
+  error?: string
+}
+
+interface WalletSignMessageResponse {
+  ok: boolean
+  data: {
+    address: string
+    signature: string
+    chainType: string
+    message: string
   }
   error?: string
 }
@@ -228,6 +254,50 @@ export interface OpenSeaSellArgs {
   fulfillment: OpenSeaFulfillmentResponse
 }
 
+export interface OpenSeaTransactionArgs {
+  wallet: string
+  transaction: Record<string, unknown>
+  chainId?: number
+  label?: string
+}
+
+export interface OpenSeaActionsArgs {
+  wallet: string
+  actions: Record<string, unknown>
+  chainId?: number
+}
+
+export interface OpenSeaTypedDataArgs {
+  wallet: string
+  typedData: Record<string, unknown>
+  purpose?: 'order' | 'payment' | 'typed-data'
+}
+
+export interface OpenSeaMessageArgs {
+  wallet: string
+  message: string
+  chainId?: number
+  chainType?: string
+}
+
+export interface OpenSeaSignatureResult {
+  address: string
+  signature: string
+  purpose: 'order' | 'payment' | 'typed-data' | 'message'
+}
+
+export interface OpenSeaSignatureRequest {
+  actionIndex: number
+  kind: 'typed-data' | 'message'
+  label?: string
+  typedData?: Record<string, unknown>
+  message?: string
+}
+
+export interface OpenSeaActionsOutput extends StepOutput {
+  signatureRequests: OpenSeaSignatureRequest[]
+}
+
 interface PaymentDetails {
   itemType: number
   token: string
@@ -371,6 +441,328 @@ function parseNonNegativeUintString(value: string | undefined, fieldName: string
     throw new Error(`Invalid ${fieldName}: "${value}" — must be a non-negative integer`)
   }
   return BigInt(trimmed)
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value as Record<string, unknown>
+}
+
+function getRecordField(obj: Record<string, unknown>, field: string): Record<string, unknown> | undefined {
+  return asRecord(obj[field])
+}
+
+function getStringField(obj: Record<string, unknown>, field: string): string | undefined {
+  const value = obj[field]
+  return typeof value === 'string' ? value : undefined
+}
+
+function looksLikeTransaction(value: unknown): value is Record<string, unknown> {
+  const obj = asRecord(value)
+  if (!obj) return false
+  return typeof obj.to === 'string' || typeof obj.target === 'string'
+}
+
+function looksLikeTypedData(value: unknown): value is Record<string, unknown> {
+  const obj = asRecord(value)
+  if (!obj) return false
+  return (
+    asRecord(obj.domain) !== undefined &&
+    asRecord(obj.types) !== undefined &&
+    typeof obj.primaryType === 'string' &&
+    obj.message !== undefined
+  )
+}
+
+function getNestedRecord(
+  obj: Record<string, unknown>,
+  path: readonly string[],
+): Record<string, unknown> | undefined {
+  let current: Record<string, unknown> | undefined = obj
+  for (const field of path) {
+    if (!current) return undefined
+    current = getRecordField(current, field)
+  }
+  return current
+}
+
+function extractOpenSeaTransactionInput(input: Record<string, unknown>): Record<string, unknown> {
+  const candidates = [
+    input,
+    getRecordField(input, 'transaction'),
+    getRecordField(input, 'transactionSubmissionData'),
+    getNestedRecord(input, ['fulfillment_data', 'transaction']),
+    getNestedRecord(input, ['data', 'transaction']),
+    getNestedRecord(input, ['data', 'transactionSubmissionData']),
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate && looksLikeTransaction(candidate)) return candidate
+  }
+
+  throw new Error(
+    'OpenSea transaction input must include transaction data with at least "to" and "data"',
+  )
+}
+
+function parseOpenSeaChainId(value: unknown, fieldName: string): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.trunc(value)
+  }
+
+  const obj = asRecord(value)
+  if (obj) {
+    if (obj.networkId != null) return parseOpenSeaChainId(obj.networkId, `${fieldName}.networkId`)
+    if (obj.network_id != null) {
+      return parseOpenSeaChainId(obj.network_id, `${fieldName}.network_id`)
+    }
+    if (obj.chainId != null) return parseOpenSeaChainId(obj.chainId, `${fieldName}.chainId`)
+    if (obj.identifier != null) {
+      return parseOpenSeaChainId(obj.identifier, `${fieldName}.identifier`)
+    }
+    if (obj.name != null) return parseOpenSeaChainId(obj.name, `${fieldName}.name`)
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = Number.parseInt(trimmed, 10)
+      if (parsed > 0) return parsed
+    }
+    if (/^0x[0-9a-fA-F]+$/.test(trimmed)) {
+      const parsed = Number.parseInt(trimmed, 16)
+      if (parsed > 0) return parsed
+    }
+    return normalizeOpenSeaChain(trimmed).chainId
+  }
+
+  throw new Error(`OpenSea transaction did not include a valid ${fieldName}`)
+}
+
+function getTransactionChainId(
+  transaction: Record<string, unknown>,
+  fallbackChainId: number | undefined,
+): number {
+  if (transaction.chainId != null) return parseOpenSeaChainId(transaction.chainId, 'chainId')
+  if (transaction.chain_id != null) {
+    return parseOpenSeaChainId(transaction.chain_id, 'chain_id')
+  }
+  if (transaction.chain != null) return parseOpenSeaChainId(transaction.chain, 'chain')
+  if (transaction.network != null) return parseOpenSeaChainId(transaction.network, 'network')
+  if (fallbackChainId !== undefined) return fallbackChainId
+  throw new Error('OpenSea transaction did not include a chainId, chain_id, chain, or network')
+}
+
+function getTransactionCalldata(transaction: Record<string, unknown>): `0x${string}` {
+  const direct = getStringField(transaction, 'data')
+  if (direct !== undefined) return requireHexData(direct, 'transaction.data')
+
+  const inputData = getRecordField(transaction, 'input_data')
+  const nested = inputData ? getStringField(inputData, 'data') : undefined
+  if (nested !== undefined) return requireHexData(nested, 'transaction.input_data.data')
+
+  const calldata = getStringField(transaction, 'calldata')
+  if (calldata !== undefined) return requireHexData(calldata, 'transaction.calldata')
+
+  return '0x'
+}
+
+function getTransactionValue(transaction: Record<string, unknown>): string {
+  const value = transaction.value ?? transaction.valueWei ?? transaction.value_wei
+  if (value === undefined || value === null) return '0x0'
+  if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'bigint') {
+    throw new Error('OpenSea transaction value must be a decimal or 0x-prefixed integer')
+  }
+  return normalizeHexInt(String(value), 'value') ?? '0x0'
+}
+
+function getTransactionGasLimit(transaction: Record<string, unknown>): string | undefined {
+  const gasLimit = transaction.gasLimit ?? transaction.gas_limit ?? transaction.gas
+  if (gasLimit === undefined || gasLimit === null) return undefined
+  if (typeof gasLimit !== 'string' && typeof gasLimit !== 'number' && typeof gasLimit !== 'bigint') {
+    throw new Error('OpenSea transaction gas limit must be a decimal or 0x-prefixed integer')
+  }
+  return normalizeHexInt(String(gasLimit), 'gas-limit')
+}
+
+function assertAddressFieldMatchesWallet(
+  obj: Record<string, unknown>,
+  wallet: `0x${string}`,
+  field: string,
+): void {
+  const value = obj[field]
+  if (typeof value !== 'string') return
+  if (!/^0x[0-9a-fA-F]{40}$/.test(value)) return
+  const normalized = requireAddress(value, field)
+  if (normalized.toLowerCase() !== wallet.toLowerCase()) {
+    throw new Error(`OpenSea ${field} does not match wallet ${wallet}: ${normalized}`)
+  }
+}
+
+function assertTransactionSignerFieldsMatchWallet(
+  transaction: Record<string, unknown>,
+  wallet: `0x${string}`,
+): void {
+  for (const field of ['from', 'sender', 'wallet', 'account']) {
+    assertAddressFieldMatchesWallet(transaction, wallet, field)
+  }
+}
+
+function buildOpenSeaTransactionStep(args: {
+  wallet: `0x${string}`
+  transaction: Record<string, unknown>
+  chainId?: number
+  label?: string
+}): TxStep {
+  const transaction = extractOpenSeaTransactionInput(args.transaction)
+  assertTransactionSignerFieldsMatchWallet(transaction, args.wallet)
+  const chainId = getTransactionChainId(transaction, args.chainId)
+  const to = requireAddress(
+    getStringField(transaction, 'to') ?? getStringField(transaction, 'target') ?? '',
+    'transaction target',
+  )
+
+  return {
+    to,
+    data: getTransactionCalldata(transaction),
+    value: getTransactionValue(transaction),
+    chainId,
+    gasLimit: getTransactionGasLimit(transaction),
+    label:
+      args.label ??
+      getStringField(transaction, 'label') ??
+      getStringField(transaction, 'description') ??
+      'OpenSea transaction',
+  }
+}
+
+function extractActions(input: Record<string, unknown>): unknown[] {
+  if (Array.isArray(input.actions)) return input.actions
+  if (Array.isArray(input.transactions)) {
+    return input.transactions.map((transaction) => ({ transaction }))
+  }
+  if (Array.isArray(input.txs)) {
+    return input.txs.map((transaction) => ({ transaction }))
+  }
+
+  const swap = getRecordField(input, 'swap')
+  if (swap && Array.isArray(swap.actions)) return swap.actions
+  if (swap && Array.isArray(swap.transactions)) {
+    return swap.transactions.map((transaction) => ({ transaction }))
+  }
+
+  const data = getRecordField(input, 'data')
+  if (data && Array.isArray(data.actions)) return data.actions
+  if (data && Array.isArray(data.transactions)) {
+    return data.transactions.map((transaction) => ({ transaction }))
+  }
+  if (data && Array.isArray(data.txs)) {
+    return data.txs.map((transaction) => ({ transaction }))
+  }
+
+  const result = getRecordField(input, 'result')
+  if (result && Array.isArray(result.actions)) return result.actions
+  if (result && Array.isArray(result.transactions)) {
+    return result.transactions.map((transaction) => ({ transaction }))
+  }
+  if (result && Array.isArray(result.txs)) {
+    return result.txs.map((transaction) => ({ transaction }))
+  }
+
+  throw new Error(
+    'OpenSea actions input must include actions, swap.actions, transactions, or txs',
+  )
+}
+
+function extractActionTypedData(action: Record<string, unknown>): Record<string, unknown> | undefined {
+  const candidates = [
+    action.typedData,
+    action.typed_data,
+    action.signData,
+    action.signatureData,
+    action.messageToSign,
+    getNestedRecord(action, ['data', 'typedData']),
+    getNestedRecord(action, ['data', 'typed_data']),
+  ]
+  for (const candidate of candidates) {
+    if (looksLikeTypedData(candidate)) return candidate
+  }
+  return undefined
+}
+
+function extractActionMessage(action: Record<string, unknown>): string | undefined {
+  for (const field of ['message', 'signMessage', 'messageToSign']) {
+    const value = action[field]
+    if (typeof value === 'string') return value
+  }
+  const data = getRecordField(action, 'data')
+  if (!data) return undefined
+  for (const field of ['message', 'signMessage', 'messageToSign']) {
+    const value = data[field]
+    if (typeof value === 'string') return value
+  }
+  return undefined
+}
+
+function assertTypedDataSignerFieldsMatchWallet(
+  value: unknown,
+  wallet: `0x${string}`,
+  path = 'message',
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertTypedDataSignerFieldsMatchWallet(item, wallet, `${path}[${index}]`))
+    return
+  }
+  const obj = asRecord(value)
+  if (!obj) return
+
+  const signerFields = new Set(['offerer', 'maker', 'signer', 'from', 'payer', 'wallet', 'account'])
+  for (const [key, fieldValue] of Object.entries(obj)) {
+    if (signerFields.has(key) && typeof fieldValue === 'string' && /^0x[0-9a-fA-F]{40}$/.test(fieldValue)) {
+      const normalized = requireAddress(fieldValue, `${path}.${key}`)
+      if (normalized.toLowerCase() !== wallet.toLowerCase()) {
+        throw new Error(`OpenSea typed data ${path}.${key} does not match wallet ${wallet}: ${normalized}`)
+      }
+    }
+    assertTypedDataSignerFieldsMatchWallet(fieldValue, wallet, `${path}.${key}`)
+  }
+}
+
+function validateOpenSeaTypedData(
+  typedData: Record<string, unknown>,
+  wallet: `0x${string}`,
+): {
+  domain: Record<string, unknown>
+  types: Record<string, unknown>
+  primaryType: string
+  message: unknown
+} {
+  const domain = asRecord(typedData.domain)
+  const types = asRecord(typedData.types)
+  const primaryType = typedData.primaryType
+  if (!domain || !types || typeof primaryType !== 'string' || typedData.message === undefined) {
+    throw new Error('OpenSea typed data must contain domain, types, primaryType, and message')
+  }
+
+  assertTypedDataSignerFieldsMatchWallet(typedData.message, wallet)
+  return { domain, types, primaryType, message: typedData.message }
+}
+
+function getTypedDataChainId(domain: Record<string, unknown>): number | undefined {
+  const chainId = domain.chainId
+  if (chainId === undefined || chainId === null) return undefined
+  return parseOpenSeaChainId(chainId, 'typed data domain.chainId')
+}
+
+function stringifyBigInts(value: unknown): unknown {
+  if (typeof value === 'bigint') return value.toString()
+  if (Array.isArray(value)) return value.map(stringifyBigInts)
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [key, inner] of Object.entries(value)) out[key] = stringifyBigInts(inner)
+    return out
+  }
+  return value
 }
 
 function extractTransaction(fulfillment: OpenSeaFulfillmentResponse) {
@@ -1147,5 +1539,156 @@ export async function buildOpenSeaSellSteps(args: OpenSeaSellArgs): Promise<Step
         label: 'OpenSea sell NFT',
       },
     ],
+  }
+}
+
+export function buildOpenSeaTransactionSteps(args: OpenSeaTransactionArgs): StepOutput {
+  const wallet = requireAddress(args.wallet, 'wallet')
+  return {
+    steps: [
+      buildOpenSeaTransactionStep({
+        wallet,
+        transaction: args.transaction,
+        chainId: args.chainId,
+        label: args.label,
+      }),
+    ],
+  }
+}
+
+export function buildOpenSeaActionSteps(args: OpenSeaActionsArgs): OpenSeaActionsOutput {
+  const wallet = requireAddress(args.wallet, 'wallet')
+  const steps: TxStep[] = []
+  const signatureRequests: OpenSeaSignatureRequest[] = []
+
+  extractActions(args.actions).forEach((rawAction, actionIndex) => {
+    const action = asRecord(rawAction)
+    if (!action) {
+      throw new Error(`OpenSea action ${actionIndex} must be a JSON object`)
+    }
+
+    const actionType =
+      getStringField(action, 'type') ??
+      getStringField(action, 'actionType') ??
+      getStringField(action, 'action_type')
+    const label =
+      getStringField(action, 'label') ??
+      getStringField(action, 'description') ??
+      (actionType ? `OpenSea ${actionType}` : `OpenSea action ${actionIndex + 1}`)
+
+    const txCandidate =
+      getRecordField(action, 'transaction') ??
+      getRecordField(action, 'transactionSubmissionData') ??
+      getNestedRecord(action, ['data', 'transaction']) ??
+      getNestedRecord(action, ['data', 'transactionSubmissionData']) ??
+      (looksLikeTransaction(action) ? action : undefined)
+    if (txCandidate) {
+      steps.push(
+        buildOpenSeaTransactionStep({
+          wallet,
+          transaction: txCandidate,
+          chainId: args.chainId,
+          label,
+        }),
+      )
+    }
+
+    const typedData = extractActionTypedData(action)
+    if (typedData) {
+      validateOpenSeaTypedData(typedData, wallet)
+      signatureRequests.push({
+        actionIndex,
+        kind: 'typed-data',
+        label,
+        typedData,
+      })
+    } else {
+      const message = extractActionMessage(action)
+      if (message !== undefined) {
+        signatureRequests.push({
+          actionIndex,
+          kind: 'message',
+          label,
+          message,
+        })
+      }
+    }
+  })
+
+  if (steps.length === 0 && signatureRequests.length === 0) {
+    throw new Error('OpenSea actions did not include transaction, typed-data, or message actions')
+  }
+
+  return { steps, signatureRequests }
+}
+
+export async function signOpenSeaTypedData(
+  args: OpenSeaTypedDataArgs,
+): Promise<OpenSeaSignatureResult> {
+  const wallet = requireAddress(args.wallet, 'wallet')
+  const typedData = validateOpenSeaTypedData(args.typedData, wallet)
+  const chainId = getTypedDataChainId(typedData.domain)
+  if (chainId !== undefined) {
+    await ensureInstanceWalletMatches(wallet, chainId)
+  }
+  const { instanceId } = resolveCredentials()
+  const res = await apiPost<WalletSignTypedDataResponse>(
+    `/v1/instances/${instanceId}/wallet/sign-typed-data`,
+    {
+      domain: stringifyBigInts(typedData.domain),
+      types: stringifyBigInts(typedData.types),
+      primaryType: typedData.primaryType,
+      message: stringifyBigInts(typedData.message),
+    },
+  )
+  if (!res.ok) {
+    throw new Error(res.error ?? 'OpenSea typed data signing failed')
+  }
+  const returnedAddress = requireAddress(res.data.address, 'signing address')
+  if (returnedAddress.toLowerCase() !== wallet.toLowerCase()) {
+    throw new Error(
+      `OpenSea typed data signature returned unexpected address ${returnedAddress}; expected ${wallet}`,
+    )
+  }
+
+  return {
+    address: returnedAddress,
+    signature: res.data.signature,
+    purpose: args.purpose ?? 'typed-data',
+  }
+}
+
+export async function signOpenSeaMessage(
+  args: OpenSeaMessageArgs,
+): Promise<OpenSeaSignatureResult> {
+  const wallet = requireAddress(args.wallet, 'wallet')
+  if (!args.message.trim()) {
+    throw new Error('OpenSea message must be non-empty')
+  }
+  if (args.chainId !== undefined) {
+    await ensureInstanceWalletMatches(wallet, args.chainId)
+  }
+  const { instanceId } = resolveCredentials()
+  const body: Record<string, unknown> = { message: args.message }
+  if (args.chainType) body.chainType = args.chainType
+
+  const res = await apiPost<WalletSignMessageResponse>(
+    `/v1/instances/${instanceId}/wallet/sign`,
+    body,
+  )
+  if (!res.ok) {
+    throw new Error(res.error ?? 'OpenSea message signing failed')
+  }
+  const returnedAddress = requireAddress(res.data.address, 'signing address')
+  if (returnedAddress.toLowerCase() !== wallet.toLowerCase()) {
+    throw new Error(
+      `OpenSea message signature returned unexpected address ${returnedAddress}; expected ${wallet}`,
+    )
+  }
+
+  return {
+    address: returnedAddress,
+    signature: res.data.signature,
+    purpose: 'message',
   }
 }

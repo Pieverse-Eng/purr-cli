@@ -63,11 +63,22 @@ import {
 } from '@pieverseio/purr-plugin-vendors/pancake'
 import {
   buildOpenSeaBuySteps,
+  buildOpenSeaActionSteps,
+  buildOpenSeaTransactionSteps,
   ensureOpenSeaExecutionWalletMatches,
+  signOpenSeaMessage,
+  signOpenSeaTypedData,
   buildOpenSeaSellSteps,
   OpenSeaCliError,
 } from '@pieverseio/purr-plugin-vendors/opensea'
-import { parseOpenSeaFulfillmentInput } from '@pieverseio/purr-plugin-vendors/opensea-input'
+import {
+  parseOpenSeaActionsInput,
+  parseOpenSeaFulfillmentInput,
+  parseOpenSeaMessageInput,
+  parseOpenSeaPaymentInput,
+  parseOpenSeaTransactionInput,
+  parseOpenSeaTypedDataInput,
+} from '@pieverseio/purr-plugin-vendors/opensea-input'
 import {
   findBySlug,
   findInstallConflict,
@@ -395,6 +406,11 @@ Examples:
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea sell --wallet 0x... --fulfillment-file ./fulfillment.json
+  purr opensea tx --wallet 0x... --chain-id 8453 --tx-json '{"transaction":{"to":"0x...","data":"0x..."}}'
+  purr opensea actions --wallet 0x... --chain-id 8453 --actions-file ./opensea-actions.json
+  purr opensea sign-order --wallet 0x... --typed-data-file ./seaport-order.json
+  purr opensea sign-message --wallet 0x... --message "Sign in with Ethereum..."
+  purr opensea sign-payment --wallet 0x... --payment-file ./x402-typed-data.json  # signs payment typed data only
   purr binance-onchain-pay payment-method-list --fiat USD --crypto USDT --total-amount 50 --amount-type 1 --network BSC
   purr binance-onchain-pay p2p-trading-pairs --fiat USD
   purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
@@ -793,8 +809,53 @@ Examples:
             fulfillment: parseOpenSeaFulfillmentInput(args),
           })
           break
+        case 'tx':
+          output = buildOpenSeaTransactionSteps({
+            wallet: requireArg(args, 'wallet'),
+            transaction: parseOpenSeaTransactionInput(args),
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+            label: args.label,
+          })
+          break
+        case 'actions':
+          output = buildOpenSeaActionSteps({
+            wallet: requireArg(args, 'wallet'),
+            actions: parseOpenSeaActionsInput(args),
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+          })
+          break
+        case 'sign-order': {
+          const result = await signOpenSeaTypedData({
+            wallet: requireArg(args, 'wallet'),
+            typedData: parseOpenSeaTypedDataInput(args),
+            purpose: 'order',
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'sign-payment': {
+          const result = await signOpenSeaTypedData({
+            wallet: requireArg(args, 'wallet'),
+            typedData: parseOpenSeaPaymentInput(args),
+            purpose: 'payment',
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'sign-message': {
+          const result = await signOpenSeaMessage({
+            wallet: requireArg(args, 'wallet'),
+            message: parseOpenSeaMessageInput(args),
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+            chainType: args['chain-type'],
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
         default:
-          throw new Error(`Unknown opensea command: ${command}. Use: buy, sell`)
+          throw new Error(
+            `Unknown opensea command: ${command}. Use: buy, sell, tx, actions, sign-order, sign-message, sign-payment`,
+          )
       }
       break
     }
@@ -1431,6 +1492,18 @@ Examples:
   }
 
   if (executeFlag) {
+    if (
+      group === 'opensea' &&
+      command === 'actions' &&
+      output &&
+      'signatureRequests' in output &&
+      Array.isArray(output.signatureRequests) &&
+      output.signatureRequests.length > 0
+    ) {
+      throw new Error(
+        'OpenSea actions include signature requests; refusing --execute to avoid partially executing only transaction steps. Sign the returned typed-data/message requests first.',
+      )
+    }
     if (group === 'opensea' && args.wallet && output && Array.isArray(output.steps)) {
       await ensureOpenSeaExecutionWalletMatches(args.wallet, output.steps)
     }

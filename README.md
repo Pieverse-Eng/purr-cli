@@ -41,6 +41,7 @@ purr <group> <command> [options]
 | Group | Description |
 |-------|-------------|
 | `aster` | Aster DEX API signing and on-chain deposits |
+| `bitget` | Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing |
 | `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status |
 | `fourmeme` | four.meme BSC login, raised tokens, buy/sell, tax, agent, and token creation flows |
 | `opensea` | OpenSea buy and sell execution helpers |
@@ -75,6 +76,9 @@ purr fourmeme sell-for-bnb --token <token-address> --wallet <wallet-address> --a
 purr fourmeme agent-wallet --wallet <wallet-address>
 purr fourmeme tax-rewards --token <token-address> --wallet <wallet-address>
 purr fourmeme tax-claim --token <token-address> --wallet <wallet-address>
+purr bitget order-execute --order-id <order-id> --from-chain bnb --from-contract <token-address> --from-symbol USDT --from-address <wallet-address> --to-chain bnb --to-contract "" --to-symbol BNB --to-address <wallet-address> --from-amount <amount> --slippage <slippage> --market <market-id> --protocol <protocol-id>
+purr bitget transfer-execute --chain base --contract <token-address> --from-address <wallet-address> --to-address <recipient-address> --amount <amount> --gasless true
+purr bitget x402-pay --url <paid-resource-url> --method POST --data <json-body>
 purr binance-onchain-pay payment-method-list --fiat <fiat-symbol> --crypto <crypto-symbol> --total-amount <amount> --amount-type <1|2> --network <network>
 purr binance-onchain-pay p2p-trading-pairs --fiat <fiat-symbol>
 purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --pay-method-code <pay-method-code>

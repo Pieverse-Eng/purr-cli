@@ -43,6 +43,12 @@ import {
 } from '@pieverseio/purr-plugin-vendors/fourmeme'
 import { asterApi, buildAsterDepositSteps } from '@pieverseio/purr-plugin-vendors/aster'
 import {
+  bitgetOrderExecute,
+  bitgetTransferExecute,
+  bitgetX402Pay,
+  bitgetX402SignEip3009,
+} from '@pieverseio/purr-plugin-vendors/bitget'
+import {
   buildListaDepositSteps,
   buildListaRedeemSteps,
   buildListaWithdrawSteps,
@@ -168,7 +174,7 @@ function parseArgs(argv: string[]): Record<string, string> {
         result[raw.slice(0, eqIdx)] = raw.slice(eqIdx + 1)
       } else {
         const next = argv[i + 1]
-        if (next && !next.startsWith('--')) {
+        if (next !== undefined && !next.startsWith('--')) {
           result[raw] = next
           i++
         } else {
@@ -378,6 +384,7 @@ export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
 
 Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
+  bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing
   binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
   ows-wallet        OWS-backed sign-transaction + build-transfer (drop-in for 'wallet sign-transaction'; build-transfer emits unsigned hex for 'ows sign send-tx')
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
@@ -409,6 +416,9 @@ Examples:
   purr fourmeme tax-rewards --token 0x... --wallet 0x...
   purr fourmeme tax-claim --token 0x... --wallet 0x...
   purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png --raised-token BNB
+  purr bitget order-execute --order-id <id> --from-chain bnb --from-contract <token> --from-symbol USDT --from-address 0x... --to-chain bnb --to-contract "" --to-symbol BNB --to-address 0x... --from-amount 5 --slippage 0.03 --market <id> --protocol <id>
+  purr bitget transfer-execute --chain base --contract 0x... --from-address 0x... --to-address 0x... --amount 10 --gasless true
+  purr bitget x402-pay --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
   purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
@@ -609,6 +619,97 @@ Examples:
           throw new Error(`Unknown aster command: ${command}. Use: api, deposit`)
       }
       break
+    }
+
+    case 'bitget': {
+      switch (command) {
+        case 'order-execute': {
+          const makeOrderJson =
+            args['make-order-json'] !== undefined || args['make-order-file'] !== undefined
+              ? requireArgOrFile(args, 'make-order-json', 'make-order-file')
+              : undefined
+          const result = await bitgetOrderExecute({
+            orderId: args['order-id'],
+            fromChain: args['from-chain'],
+            fromContract: args['from-contract'],
+            fromSymbol: args['from-symbol'],
+            fromAddress: args['from-address'],
+            toChain: args['to-chain'],
+            toContract: args['to-contract'],
+            toSymbol: args['to-symbol'],
+            toAddress: args['to-address'],
+            fromAmount: args['from-amount'],
+            slippage: args.slippage,
+            market: args.market,
+            protocol: args.protocol,
+            source: args.source,
+            chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+            makeOrderJson,
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'transfer-execute': {
+          const transferOrderJson =
+            args['transfer-order-json'] !== undefined || args['transfer-order-file'] !== undefined
+              ? requireArgOrFile(args, 'transfer-order-json', 'transfer-order-file')
+              : undefined
+          const result = await bitgetTransferExecute({
+            chain: args.chain,
+            contract: args.contract,
+            fromAddress: args['from-address'],
+            toAddress: args['to-address'],
+            amount: args.amount,
+            memo: args.memo,
+            gasless: parseBooleanFlag(args.gasless),
+            gaslessPayToken: args['gasless-pay-token'],
+            override7702: parseBooleanFlag(args['override-7702']),
+            chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+            transferOrderJson,
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'x402-sign-eip3009': {
+          const result = await bitgetX402SignEip3009({
+            token: requireArg(args, 'token'),
+            chainId: parseChainId(requireArg(args, 'chain-id')),
+            to: requireArg(args, 'to'),
+            amount: requireArg(args, 'amount'),
+            tokenName: args['token-name'],
+            tokenVersion: args['token-version'],
+            maxTimeoutSeconds: parseIntegerArg(args['max-timeout'], 'max-timeout'),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'x402-sign-solana':
+          throw new Error('Bitget Solana x402 signing is out of scope because it requires partial signing')
+        case 'x402-pay': {
+          const data =
+            args.data !== undefined || args['data-file'] !== undefined
+              ? requireArgOrFile(args, 'data', 'data-file')
+              : undefined
+          const result = await bitgetX402Pay({
+            url: requireArg(args, 'url'),
+            method: args.method,
+            data,
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+            maxAmountBaseUnits: args['max-amount-base-units'],
+            responseTextLimit: parseIntegerArg(args['response-text-limit'], 'response-text-limit'),
+            tokenName: args['token-name'],
+            tokenVersion: args['token-version'],
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        default:
+          throw new Error(
+            `Unknown bitget command: ${command}. Use: order-execute, transfer-execute, x402-sign-eip3009, x402-pay`,
+          )
+      }
     }
 
     // login-challenge returns non-StepOutput JSON — early return like binance-onchain-pay

@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-wallet",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "type": "module",
   "private": true,
   "exports": {

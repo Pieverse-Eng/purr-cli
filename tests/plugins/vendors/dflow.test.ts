@@ -6,11 +6,7 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from '@solana/web3.js'
-import {
-  dflowExecuteOrder,
-  dflowOrder,
-  dflowStatus,
-} from '@pieverseio/purr-plugin-vendors/dflow'
+import { dflowExecuteOrder, dflowOrder, dflowStatus } from '@pieverseio/purr-plugin-vendors/dflow'
 
 const originalFetch = globalThis.fetch
 const SOLANA_ADDRESS = 'DZttmKxhq1H7v5fFVPbejCkqHiTDjq9J6Q1muQT2ouWD'
@@ -98,7 +94,9 @@ describe('dflow execution helpers', () => {
         if (url.startsWith('https://dev-quote-api.dflow.net/order?')) {
           const parsed = new URL(url)
           expect(parsed.searchParams.get('userPublicKey')).toBe(SOLANA_ADDRESS)
-          expect(parsed.searchParams.get('inputMint')).toBe('So11111111111111111111111111111111111111112')
+          expect(parsed.searchParams.get('inputMint')).toBe(
+            'So11111111111111111111111111111111111111112',
+          )
           expect(parsed.searchParams.get('outputMint')).toBe(
             'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           )

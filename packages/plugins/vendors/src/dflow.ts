@@ -388,9 +388,7 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
   requireSinglePlatformSigner(tx, platformAddress)
   const signed = await signSolanaTransactionViaPlatform(transaction)
   if (signed.address !== platformAddress) {
-    throw new Error(
-      `purr signer returned address ${signed.address}; expected ${platformAddress}`,
-    )
+    throw new Error(`purr signer returned address ${signed.address}; expected ${platformAddress}`)
   }
   const connection = new Connection(rpcUrl, 'confirmed')
   const signedBytes = Buffer.from(signed.signedTransaction, 'base64')
@@ -404,7 +402,9 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
     'confirmed',
   )
   if (confirmation.value.err) {
-    throw new Error(`DFlow transaction failed confirmation: ${JSON.stringify(confirmation.value.err)}`)
+    throw new Error(
+      `DFlow transaction failed confirmation: ${JSON.stringify(confirmation.value.err)}`,
+    )
   }
 
   const orderAddress = getOrderAddress(order)

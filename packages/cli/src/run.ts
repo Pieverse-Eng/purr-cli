@@ -48,11 +48,7 @@ import {
   bitgetX402Pay,
   bitgetX402SignEip3009,
 } from '@pieverseio/purr-plugin-vendors/bitget'
-import {
-  dflowExecuteOrder,
-  dflowOrder,
-  dflowStatus,
-} from '@pieverseio/purr-plugin-vendors/dflow'
+import { dflowExecuteOrder, dflowOrder, dflowStatus } from '@pieverseio/purr-plugin-vendors/dflow'
 import {
   buildListaDepositSteps,
   buildListaRedeemSteps,
@@ -299,6 +295,12 @@ function formatOpenSeaError(err: unknown): string {
     null,
     2,
   )
+}
+
+function omitApiKeyPresence<T extends Record<string, unknown>>(value: T): Omit<T, 'apiKeyPresent'> {
+  const safeValue: Record<string, unknown> = { ...value }
+  delete safeValue.apiKeyPresent
+  return safeValue as Omit<T, 'apiKeyPresent'>
 }
 
 export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
@@ -740,6 +742,7 @@ Examples:
             raw: parseBooleanFlag(args.raw),
           })
           if (parseBooleanFlag(args.execute) === true) {
+            const safeResult = omitApiKeyPresence(result)
             const executed = await dflowExecuteOrder({
               orderJson: JSON.stringify(result.order),
               rpcUrl: args['rpc-url'],
@@ -750,10 +753,10 @@ Examples:
               pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
               raw: parseBooleanFlag(args.raw),
             })
-            console.log(JSON.stringify({ ...result, execution: executed }, null, 2))
+            console.log(JSON.stringify({ ...safeResult, execution: executed }, null, 2))
             return
           }
-          console.log(JSON.stringify(result, null, 2))
+          console.log(JSON.stringify(omitApiKeyPresence(result), null, 2))
           return
         }
         case 'execute-order': {

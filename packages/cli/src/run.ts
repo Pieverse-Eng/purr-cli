@@ -47,6 +47,7 @@ import {
   bitgetTransferExecute,
   bitgetX402Pay,
   bitgetX402SignEip3009,
+  type BitgetWalletSigner,
 } from '@pieverseio/purr-plugin-vendors/bitget'
 import { dflowExecuteOrder, dflowOrder, dflowStatus } from '@pieverseio/purr-plugin-vendors/dflow'
 import {
@@ -303,6 +304,28 @@ function omitApiKeyPresence<T extends Record<string, unknown>>(value: T): Omit<T
   return safeValue as Omit<T, 'apiKeyPresent'>
 }
 
+function owsBitgetSigner(
+  ows: PluginRuntimeMap['ows'],
+  args: Record<string, string>,
+): BitgetWalletSigner {
+  const owsWallet = requireArg(args, 'ows-wallet')
+  const owsToken = args['ows-token'] ?? process.env.OWS_PASSPHRASE
+  return {
+    label: 'OWS wallet',
+    supportsRawDigest: false,
+    signTransactions: (payload, chainId) =>
+      ows.signTransaction(JSON.stringify(payload), chainId, {
+        owsWallet,
+        owsToken,
+      }),
+    resolveEvmAddress: async () =>
+      ows.address({
+        owsWallet,
+        chainType: 'ethereum',
+      }).address,
+  }
+}
+
 export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
   const [group, command, ...rest] = process.argv.slice(2)
 
@@ -394,7 +417,7 @@ Groups:
   bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing
   binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
   dflow           DFlow Solana order execution through purr signing
-  ows-wallet        OWS-backed sign-transaction + build-transfer (drop-in for 'wallet sign-transaction'; build-transfer emits unsigned hex for 'ows sign send-tx')
+  ows-wallet        OWS-backed wallet ops and OWS-scoped Bitget execution
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
   fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
@@ -427,6 +450,9 @@ Examples:
   purr bitget order-execute --order-id <id> --from-chain bnb --from-contract <token> --from-symbol USDT --from-address 0x... --to-chain bnb --to-contract "" --to-symbol BNB --to-address 0x... --from-amount 5 --slippage 0.03 --market <id> --protocol <id>
   purr bitget transfer-execute --chain base --contract 0x... --from-address 0x... --to-address 0x... --amount 10 --gasless true
   purr bitget x402-pay --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
+  purr ows-wallet bitget-order-execute --ows-wallet treasury --order-id <id> --from-chain bnb --from-contract <token> --from-symbol USDT --from-address 0x... --to-chain bnb --to-contract "" --to-symbol BNB --to-address 0x... --from-amount 5 --slippage 0.03 --market <id> --protocol <id>
+  purr ows-wallet bitget-transfer-execute --ows-wallet treasury --chain base --contract 0x... --from-address 0x... --to-address 0x... --amount 10
+  purr ows-wallet bitget-x402-pay --ows-wallet treasury --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
   purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --params-json '{"slippageBps":"auto"}'
   purr dflow execute-order --order-file /tmp/dflow-order.json
   purr dflow status --order-address <addr> --poll true
@@ -584,8 +610,94 @@ Examples:
         console.log(JSON.stringify(result, null, 2))
         return
       }
+      if (command === 'bitget-order-execute') {
+        const makeOrderJson =
+          args['make-order-json'] !== undefined || args['make-order-file'] !== undefined
+            ? requireArgOrFile(args, 'make-order-json', 'make-order-file')
+            : undefined
+        const result = await bitgetOrderExecute({
+          orderId: args['order-id'],
+          fromChain: args['from-chain'],
+          fromContract: args['from-contract'],
+          fromSymbol: args['from-symbol'],
+          fromAddress: requireArg(args, 'from-address'),
+          toChain: args['to-chain'],
+          toContract: args['to-contract'],
+          toSymbol: args['to-symbol'],
+          toAddress: args['to-address'],
+          fromAmount: args['from-amount'],
+          slippage: args.slippage,
+          market: args.market,
+          protocol: args.protocol,
+          source: args.source,
+          chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+          makeOrderJson,
+          raw: parseBooleanFlag(args.raw),
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      if (command === 'bitget-transfer-execute') {
+        const transferOrderJson =
+          args['transfer-order-json'] !== undefined || args['transfer-order-file'] !== undefined
+            ? requireArgOrFile(args, 'transfer-order-json', 'transfer-order-file')
+            : undefined
+        const result = await bitgetTransferExecute({
+          chain: args.chain,
+          contract: args.contract,
+          fromAddress: requireArg(args, 'from-address'),
+          toAddress: args['to-address'],
+          amount: args.amount,
+          memo: args.memo,
+          gasless: parseBooleanFlag(args.gasless),
+          gaslessPayToken: args['gasless-pay-token'],
+          override7702: parseBooleanFlag(args['override-7702']),
+          chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+          transferOrderJson,
+          raw: parseBooleanFlag(args.raw),
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      if (command === 'bitget-x402-sign-eip3009') {
+        const result = await bitgetX402SignEip3009({
+          token: requireArg(args, 'token'),
+          chainId: parseChainId(requireArg(args, 'chain-id')),
+          to: requireArg(args, 'to'),
+          amount: requireArg(args, 'amount'),
+          fromAddress: args['from-address'],
+          tokenName: args['token-name'],
+          tokenVersion: args['token-version'],
+          maxTimeoutSeconds: parseIntegerArg(args['max-timeout'], 'max-timeout'),
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      if (command === 'bitget-x402-pay') {
+        const data =
+          args.data !== undefined || args['data-file'] !== undefined
+            ? requireArgOrFile(args, 'data', 'data-file')
+            : undefined
+        const result = await bitgetX402Pay({
+          url: requireArg(args, 'url'),
+          method: args.method,
+          data,
+          chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+          fromAddress: args['from-address'],
+          maxAmountBaseUnits: args['max-amount-base-units'],
+          responseTextLimit: parseIntegerArg(args['response-text-limit'], 'response-text-limit'),
+          tokenName: args['token-name'],
+          tokenVersion: args['token-version'],
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
       throw new Error(
-        `Unknown ows-wallet command: ${command}. Use: sign-transaction, build-transfer`,
+        `Unknown ows-wallet command: ${command}. Use: sign-transaction, build-transfer, bitget-order-execute, bitget-transfer-execute, bitget-x402-sign-eip3009, bitget-x402-pay`,
       )
     }
 

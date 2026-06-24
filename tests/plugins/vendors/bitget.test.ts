@@ -3,6 +3,7 @@ import {
   bitgetOrderExecute,
   bitgetTransferExecute,
   bitgetX402SignEip3009,
+  type BitgetWalletSigner,
 } from '@pieverseio/purr-plugin-vendors/bitget'
 
 const originalFetch = globalThis.fetch
@@ -20,6 +21,28 @@ function jsonResponse(body: unknown): Response {
     arrayBuffer: async () =>
       bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
   } as unknown as Response
+}
+
+function makeOwsSigner(
+  signedPayloads: Array<{ orderId?: string; txs: Array<Record<string, unknown>> }>,
+  address = WALLET,
+): BitgetWalletSigner {
+  return {
+    label: 'OWS wallet',
+    supportsRawDigest: false,
+    resolveEvmAddress: async () => address,
+    signTransactions: async (payload) => {
+      signedPayloads.push(payload)
+      return {
+        ...(payload.orderId ? { orderId: payload.orderId } : {}),
+        address,
+        txs: payload.txs.map((tx) => ({
+          ...tx,
+          sig: tx.function === 'signTypeData' ? '0xows-typed-data' : '0xows-signed-tx',
+        })),
+      }
+    },
+  }
 }
 
 describe('bitget execution helpers', () => {
@@ -306,6 +329,219 @@ describe('bitget execution helpers', () => {
         }),
       }),
     ).rejects.toThrow(/Solana order execution is out of scope/)
+  })
+
+  it('signs a prepared Bitget order with an OWS signer and submits it', async () => {
+    const calls: Array<{ url: string; body: unknown }> = []
+    const signedPayloads: Array<{ orderId?: string; txs: Array<Record<string, unknown>> }> = []
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined
+        calls.push({ url, body })
+
+        if (url.endsWith('/swap-go/swapx/send')) {
+          expect(body).toMatchObject({
+            orderId: 'ows-order-1',
+            txs: [{ sig: '0xows-signed-tx' }],
+          })
+          return jsonResponse({
+            status: 0,
+            error_code: 0,
+            data: { orderId: 'ows-order-1', state: 'submitted' },
+          })
+        }
+        throw new Error(`unexpected fetch ${url}`)
+      }),
+      configurable: true,
+      writable: true,
+    })
+
+    const result = await bitgetOrderExecute({
+      fromAddress: WALLET,
+      signer: makeOwsSigner(signedPayloads),
+      makeOrderJson: JSON.stringify({
+        data: {
+          orderId: 'ows-order-1',
+          txs: [
+            {
+              chainId: 56,
+              deriveTransaction: {
+                to: '0x2222222222222222222222222222222222222222',
+                calldata: '0x',
+                gasLimit: '21000',
+                gasPrice: '1000000000',
+                nonce: 1,
+                chainId: 56,
+                value: '0',
+              },
+            },
+          ],
+        },
+      }),
+    })
+
+    expect(result).toMatchObject({
+      type: 'bitget-order-execute',
+      orderId: 'ows-order-1',
+      signerAddress: WALLET,
+      txCount: 1,
+    })
+    expect(signedPayloads).toHaveLength(1)
+    expect(signedPayloads[0].orderId).toBe('ows-order-1')
+    expect(calls.map((c) => c.url)).toEqual(['https://bitget.example.com/swap-go/swapx/send'])
+  })
+
+  it('signs an EVM transfer source with an OWS signer and submits it', async () => {
+    const signedPayloads: Array<{ orderId?: string; txs: Array<Record<string, unknown>> }> = []
+    let submittedSig = ''
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined
+
+        if (url.endsWith('/userv2/order/submitTransferOrder')) {
+          submittedSig = (body as { sig: string }).sig
+          return jsonResponse({
+            status: 0,
+            error_code: 0,
+            data: { orderId: 'ows-transfer-1', orderStatus: 'PROCESSING' },
+          })
+        }
+        throw new Error(`unexpected fetch ${url}`)
+      }),
+      configurable: true,
+      writable: true,
+    })
+
+    const result = await bitgetTransferExecute({
+      fromAddress: WALLET,
+      signer: makeOwsSigner(signedPayloads),
+      transferOrderJson: JSON.stringify({
+        data: {
+          orderId: 'ows-transfer-1',
+          source: {
+            type: 'evm_1559',
+            from: WALLET,
+            evm: {
+              to: '0x2222222222222222222222222222222222222222',
+              data: '0x',
+              gasLimit: '21000',
+              maxFeePerGas: '1000000000',
+              maxPriorityFeePerGas: '100000000',
+              nonce: 1,
+              chainId: 8453,
+              value: '0',
+            },
+          },
+        },
+      }),
+    })
+
+    expect(submittedSig).toBe('0xows-signed-tx')
+    expect(signedPayloads).toHaveLength(1)
+    expect(signedPayloads[0].txs[0]).toHaveProperty('deriveTransaction')
+    expect(result).toMatchObject({
+      type: 'bitget-transfer-execute',
+      orderId: 'ows-transfer-1',
+      sourceType: 'evm_1559',
+    })
+  })
+
+  it('rejects OWS transfer signatures when the signed address does not match from-address', async () => {
+    const signedPayloads: Array<{ orderId?: string; txs: Array<Record<string, unknown>> }> = []
+
+    await expect(
+      bitgetTransferExecute({
+        fromAddress: WALLET,
+        signer: makeOwsSigner(signedPayloads, '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'),
+        transferOrderJson: JSON.stringify({
+          data: {
+            orderId: 'ows-transfer-mismatch',
+            source: {
+              type: 'evm_1559',
+              from: WALLET,
+              evm: {
+                to: '0x2222222222222222222222222222222222222222',
+                data: '0x',
+                gasLimit: '21000',
+                maxFeePerGas: '1000000000',
+                maxPriorityFeePerGas: '100000000',
+                nonce: 1,
+                chainId: 8453,
+                value: '0',
+              },
+            },
+          },
+        }),
+      }),
+    ).rejects.toThrow(/does not match --from-address/)
+    expect(signedPayloads).toHaveLength(0)
+  })
+
+  it('rejects Bitget EVM 7702 transfer payloads with an OWS signer', async () => {
+    const signedPayloads: Array<{ orderId?: string; txs: Array<Record<string, unknown>> }> = []
+
+    await expect(
+      bitgetTransferExecute({
+        fromAddress: WALLET,
+        signer: makeOwsSigner(signedPayloads),
+        transferOrderJson: JSON.stringify({
+          data: {
+            orderId: 'ows-7702-transfer',
+            source: {
+              type: 'evm_7702',
+              from: WALLET,
+              evm7702: {
+                msgToSign: [{ hash: `0x${'11'.repeat(32)}` }],
+              },
+            },
+          },
+        }),
+      }),
+    ).rejects.toThrow(/OWS wallet cannot sign Bitget EVM 7702 raw-digest payloads/)
+    expect(signedPayloads).toHaveLength(0)
+  })
+
+  it('builds EIP-3009 x402 authorization through an OWS signer', async () => {
+    const signedPayloads: Array<{ orderId?: string; txs: Array<Record<string, unknown>> }> = []
+
+    const result = await bitgetX402SignEip3009({
+      token: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      chainId: 8453,
+      to: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      amount: '1000',
+      signer: makeOwsSigner(signedPayloads),
+    })
+
+    expect(signedPayloads).toHaveLength(1)
+    expect(signedPayloads[0].txs[0]).toMatchObject({
+      function: 'signTypeData',
+      signTypeData: {
+        types: {
+          EIP712Domain: [
+            { name: 'name', type: 'string' },
+            { name: 'version', type: 'string' },
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' },
+          ],
+        },
+        primaryType: 'TransferWithAuthorization',
+        message: {
+          from: WALLET,
+          to: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          value: '1000',
+        },
+      },
+    })
+    expect(result).toMatchObject({
+      signature: '0xows-typed-data',
+      authorization: {
+        from: WALLET,
+        to: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        value: '1000',
+      },
+    })
   })
 
   it('builds EIP-3009 x402 authorization through platform typed-data signing', async () => {

@@ -18,7 +18,7 @@
     "test:e2e:pieverse-meme-judge-local": "HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= http_proxy= https_proxy= all_proxy= bun scripts/pieverse-meme-judge-local-e2e.ts"
   },
   "devDependencies": {
-    "@open-wallet-standard/core": "1.2.4",
+    "@open-wallet-standard/core": "1.4.2",
     "@solana/web3.js": "^1.95.0",
     "@types/node": "^22.0.0",
     "bs58": "^6.0.0",

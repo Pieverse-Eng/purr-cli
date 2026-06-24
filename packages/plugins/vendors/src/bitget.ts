@@ -38,6 +38,7 @@ export interface BitgetOrderExecuteArgs {
   chainId?: number
   makeOrderJson?: string
   raw?: boolean
+  signer?: BitgetWalletSigner
 }
 
 export interface BitgetTransferExecuteArgs {
@@ -53,6 +54,7 @@ export interface BitgetTransferExecuteArgs {
   chainId?: number
   transferOrderJson?: string
   raw?: boolean
+  signer?: BitgetWalletSigner
 }
 
 export interface BitgetX402SignEip3009Args {
@@ -60,9 +62,11 @@ export interface BitgetX402SignEip3009Args {
   chainId: number
   to: string
   amount: string
+  fromAddress?: string
   tokenName?: string
   tokenVersion?: string
   maxTimeoutSeconds?: number
+  signer?: BitgetWalletSigner
 }
 
 export interface BitgetX402PayArgs {
@@ -70,10 +74,40 @@ export interface BitgetX402PayArgs {
   method?: string
   data?: string
   chainId?: number
+  fromAddress?: string
   maxAmountBaseUnits?: string
   responseTextLimit?: number
   tokenName?: string
   tokenVersion?: string
+  signer?: BitgetWalletSigner
+}
+
+export interface BitgetSignedTransactions {
+  orderId?: string
+  txs: Array<Record<string, unknown>>
+  address: string
+}
+
+export interface BitgetTypedDataPayload {
+  domain: Record<string, unknown>
+  types: Record<string, unknown>
+  primaryType: string
+  message: Record<string, unknown>
+}
+
+export interface BitgetWalletSigner {
+  label: string
+  supportsRawDigest: boolean
+  signTransactions: (
+    payload: { orderId?: string; txs: Array<Record<string, unknown>> },
+    chainId?: number,
+  ) => Promise<BitgetSignedTransactions>
+  resolveEvmAddress?: (chainId: number) => Promise<string>
+  signTypedData?: (
+    chainId: number,
+    typedData: BitgetTypedDataPayload,
+    expectedAddress?: string,
+  ) => Promise<{ address: string; signature: string }>
 }
 
 interface BitgetApiResponse {
@@ -242,7 +276,7 @@ async function bitgetPost(path: string, body: Record<string, unknown>): Promise<
 async function signTransactionsViaPlatform(
   payload: { orderId?: string; txs: Array<Record<string, unknown>> },
   chainId?: number,
-): Promise<{ orderId?: string; txs: Array<Record<string, unknown>>; address: string }> {
+): Promise<BitgetSignedTransactions> {
   if (!Array.isArray(payload.txs) || payload.txs.length === 0) {
     throw new Error('Cannot sign empty txs array')
   }
@@ -280,12 +314,7 @@ async function resolvePlatformEvmAddress(chainId: number): Promise<string> {
 
 async function signTypedDataViaPlatform(
   chainId: number,
-  typedData: {
-    domain: Record<string, unknown>
-    types: Record<string, unknown>
-    primaryType: string
-    message: Record<string, unknown>
-  },
+  typedData: BitgetTypedDataPayload,
   expectedAddress?: string,
 ): Promise<{ address: string; signature: string }> {
   const { instanceId } = resolveCredentials()
@@ -303,6 +332,74 @@ async function signTypedDataViaPlatform(
     )
   }
   return signed.data
+}
+
+function platformWalletSigner(): BitgetWalletSigner {
+  return {
+    label: 'Platform wallet',
+    supportsRawDigest: true,
+    signTransactions: signTransactionsViaPlatform,
+    resolveEvmAddress: resolvePlatformEvmAddress,
+    signTypedData: signTypedDataViaPlatform,
+  }
+}
+
+function resolveSigner(signer: BitgetWalletSigner | undefined): BitgetWalletSigner {
+  return signer ?? platformWalletSigner()
+}
+
+async function assertSignerAddressBeforeSigning(
+  signer: BitgetWalletSigner,
+  expectedAddress: string | undefined,
+  chainId?: number,
+): Promise<void> {
+  if (!expectedAddress || !signer.resolveEvmAddress) return
+  const expected = requireEvmAddress(expectedAddress, 'from-address')
+  const signerAddress = await signer.resolveEvmAddress(chainId ?? 56)
+  if (signerAddress.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(`${signer.label} ${signerAddress} does not match --from-address ${expected}`)
+  }
+}
+
+function assertSignedAddressMatches(
+  signer: BitgetWalletSigner,
+  expectedAddress: string | undefined,
+  signedAddress: string,
+): void {
+  if (!expectedAddress) return
+  const expected = requireEvmAddress(expectedAddress, 'from-address')
+  if (signedAddress.toLowerCase() !== expected.toLowerCase()) {
+    throw new Error(`${signer.label} ${signedAddress} does not match --from-address ${expected}`)
+  }
+}
+
+async function signTypedDataWithSigner(
+  signer: BitgetWalletSigner,
+  chainId: number,
+  typedData: BitgetTypedDataPayload,
+  expectedAddress?: string,
+): Promise<{ address: string; signature: string }> {
+  if (signer.signTypedData) {
+    return signer.signTypedData(chainId, typedData, expectedAddress)
+  }
+
+  const signed = await signer.signTransactions(
+    {
+      txs: [
+        {
+          function: 'signTypeData',
+          signTypeData: typedData,
+        },
+      ],
+    },
+    chainId,
+  )
+  assertSignedAddressMatches(signer, expectedAddress, signed.address)
+  const sig = signed.txs[0]?.sig
+  if (typeof sig !== 'string' || sig.length === 0) {
+    throw new Error(`${signer.label} returned no typed-data signature`)
+  }
+  return { address: signed.address, signature: sig }
 }
 
 function unwrapBitgetData(resp: Record<string, unknown>): Record<string, unknown> {
@@ -420,6 +517,7 @@ function normalizedOrderOutput(input: {
 export async function bitgetOrderExecute(
   args: BitgetOrderExecuteArgs,
 ): Promise<Record<string, unknown>> {
+  const signer = resolveSigner(args.signer)
   const makeOrderResponse = args.makeOrderJson
     ? parseJsonObject(args.makeOrderJson, '--make-order-json')
     : await makeOrder(args)
@@ -430,8 +528,13 @@ export async function bitgetOrderExecute(
 
   const { orderId, txs } = txsFromMakeOrderResponse(makeOrderResponse)
   assertSupportedOrderTxs(txs)
-  await assertPlatformSignerMatches(args.fromAddress, args.chainId ?? inferEvmChainIdFromTxs(txs))
-  const signedOrder = await signTransactionsViaPlatform({ orderId, txs }, args.chainId)
+  await assertSignerAddressBeforeSigning(
+    signer,
+    args.fromAddress,
+    args.chainId ?? inferEvmChainIdFromTxs(txs),
+  )
+  const signedOrder = await signer.signTransactions({ orderId, txs }, args.chainId)
+  assertSignedAddressMatches(signer, args.fromAddress, signedOrder.address)
   const sendResponse = await sendOrder(orderId, signedOrder.txs)
   assertBitgetOk(sendResponse, 'send')
 
@@ -496,7 +599,13 @@ function evmSourceToTxItem(source: Record<string, unknown>): Record<string, unkn
   }
 }
 
-async function signEvm7702Source(source: Record<string, unknown>): Promise<string> {
+async function signEvm7702Source(
+  source: Record<string, unknown>,
+  signer: BitgetWalletSigner,
+): Promise<string> {
+  if (!signer.supportsRawDigest) {
+    throw new Error(`${signer.label} cannot sign Bitget EVM 7702 raw-digest payloads`)
+  }
   const evm7702 = source.evm7702 as Record<string, unknown> | undefined
   const msgToSign = evm7702?.msgToSign
   if (!Array.isArray(msgToSign) || msgToSign.length === 0) {
@@ -507,10 +616,10 @@ async function signEvm7702Source(source: Record<string, unknown>): Promise<strin
     ...msg,
     signType: typeof msg.signType === 'string' ? msg.signType : 'eth_sign',
   }))
-  const signed = await signTransactionsViaPlatform({ txs: [{ msgs: signingMsgs }] })
+  const signed = await signer.signTransactions({ txs: [{ msgs: signingMsgs }] })
   const signedMsgs = signed.txs[0]?.msgs as Array<Record<string, unknown>> | undefined
   if (!Array.isArray(signedMsgs) || signedMsgs.length !== originalMsgs.length) {
-    throw new Error('Platform signer returned invalid evm_7702 signatures')
+    throw new Error(`${signer.label} returned invalid evm_7702 signatures`)
   }
   return JSON.stringify(
     originalMsgs.map((msg, index) => ({
@@ -523,21 +632,24 @@ async function signEvm7702Source(source: Record<string, unknown>): Promise<strin
 async function signTransferSource(
   source: Record<string, unknown>,
   fallbackChainId?: number,
+  signer: BitgetWalletSigner = platformWalletSigner(),
+  expectedAddress?: string,
 ): Promise<string> {
   const sourceType = String(source.type ?? '')
   if (sourceType === 'evm_legacy' || sourceType === 'evm_1559') {
-    const signed = await signTransactionsViaPlatform(
+    const signed = await signer.signTransactions(
       { txs: [evmSourceToTxItem(source)] },
       fallbackChainId,
     )
+    assertSignedAddressMatches(signer, expectedAddress, signed.address)
     const sig = signed.txs[0]?.sig
     if (typeof sig !== 'string' || sig.length === 0) {
-      throw new Error('Platform signer returned no EVM transfer signature')
+      throw new Error(`${signer.label} returned no EVM transfer signature`)
     }
     return sig
   }
   if (sourceType === 'evm_7702') {
-    return signEvm7702Source(source)
+    return signEvm7702Source(source, signer)
   }
   if (sourceType === 'sol_raw' || sourceType === 'sol_partial') {
     throw new Error(
@@ -589,6 +701,7 @@ function normalizedTransferOutput(input: {
 export async function bitgetTransferExecute(
   args: BitgetTransferExecuteArgs,
 ): Promise<Record<string, unknown>> {
+  const signer = resolveSigner(args.signer)
   const makeTransferResponse = args.transferOrderJson
     ? parseJsonObject(args.transferOrderJson, '--transfer-order-json')
     : await makeTransferOrder(args)
@@ -601,17 +714,17 @@ export async function bitgetTransferExecute(
   const orderId = data.orderId as string
   const source = data.source as Record<string, unknown>
   const sourceType = String(source.type ?? '')
+  let expectedFrom: string | undefined
+  let sourceChainId: number | undefined
   if (sourceType === 'evm_legacy' || sourceType === 'evm_1559' || sourceType === 'evm_7702') {
-    const expectedFrom =
+    expectedFrom =
       args.fromAddress ??
       (typeof data.from === 'string' ? data.from : undefined) ??
       (typeof source.from === 'string' ? source.from : undefined)
-    await assertPlatformSignerMatches(
-      expectedFrom,
-      args.chainId ?? inferEvmChainIdFromSource(source),
-    )
+    sourceChainId = args.chainId ?? inferEvmChainIdFromSource(source)
+    await assertSignerAddressBeforeSigning(signer, expectedFrom, sourceChainId)
   }
-  const sig = await signTransferSource(source, args.chainId)
+  const sig = await signTransferSource(source, sourceChainId ?? args.chainId, signer, expectedFrom)
   const submitResponse = await submitTransferOrder(orderId, sig)
   assertBitgetOk(submitResponse, 'submitTransferOrder')
   return normalizedTransferOutput({
@@ -653,27 +766,23 @@ function inferEvmChainIdFromSource(source: Record<string, unknown>): number | un
   return parseMaybeChainId(evm?.chainId)
 }
 
-async function assertPlatformSignerMatches(
-  expectedAddress: string | undefined,
-  chainId?: number,
-): Promise<void> {
-  if (!expectedAddress) return
-  const expected = requireEvmAddress(expectedAddress, 'from-address')
-  const platformAddress = await resolvePlatformEvmAddress(chainId ?? 56)
-  if (platformAddress.toLowerCase() !== expected.toLowerCase()) {
-    throw new Error(`Platform wallet ${platformAddress} does not match --from-address ${expected}`)
-  }
-}
-
 export async function bitgetX402SignEip3009(
   args: BitgetX402SignEip3009Args,
 ): Promise<Record<string, unknown>> {
+  const signer = resolveSigner(args.signer)
   const now = Math.floor(Date.now() / 1000)
   const validAfter = now - 600
   const validBefore = now + (args.maxTimeoutSeconds ?? 60)
   const token = requireEvmAddress(args.token, 'token')
   const to = requireEvmAddress(args.to, 'to')
-  const from = await resolvePlatformEvmAddress(args.chainId)
+  const from = args.fromAddress
+    ? requireEvmAddress(args.fromAddress, 'from-address')
+    : signer.resolveEvmAddress
+      ? await signer.resolveEvmAddress(args.chainId)
+      : undefined
+  if (!from) {
+    throw new Error(`Missing --from-address for ${signer.label}`)
+  }
   const typedData = {
     domain: {
       name: args.tokenName ?? 'USD Coin',
@@ -682,6 +791,12 @@ export async function bitgetX402SignEip3009(
       verifyingContract: token,
     },
     types: {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' },
+      ],
       TransferWithAuthorization: [
         { name: 'from', type: 'address' },
         { name: 'to', type: 'address' },
@@ -701,7 +816,8 @@ export async function bitgetX402SignEip3009(
       nonce: randomNonceHex(),
     },
   }
-  const signed = await signTypedDataViaPlatform(
+  const signed = await signTypedDataWithSigner(
+    signer,
     args.chainId,
     {
       domain: typedData.domain,
@@ -819,6 +935,8 @@ export async function bitgetX402Pay(args: BitgetX402PayArgs): Promise<Record<str
     tokenVersion:
       args.tokenVersion ?? (typeof extra.version === 'string' ? extra.version : undefined),
     maxTimeoutSeconds: req.maxTimeoutSeconds,
+    fromAddress: args.fromAddress,
+    signer: args.signer,
   })
   const paymentPayload = {
     x402Version: 2,
@@ -866,4 +984,5 @@ export const __testing = {
   transferDataFromResponse,
   decodePaymentRequiredHeader,
   selectPaymentRequirement,
+  signTypedDataWithSigner,
 }

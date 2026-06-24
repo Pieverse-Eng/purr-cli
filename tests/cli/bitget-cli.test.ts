@@ -187,4 +187,91 @@ describe('Bitget CLI argument parsing', () => {
       contract: '',
     })
   })
+
+  it('requires from-address for OWS prepared order execution before signing or submit', async () => {
+    let requestCount = 0
+
+    await withBitgetServer(
+      async (_req, res) => {
+        requestCount += 1
+        writeJson(res, 500, { status: -1, error_code: -1, msg: 'should not be called' })
+      },
+      async (port) => {
+        const result = await runPurr(port, [
+          'ows-wallet',
+          'bitget-order-execute',
+          '--ows-wallet',
+          'treasury',
+          '--make-order-json',
+          JSON.stringify({
+            data: {
+              orderId: 'prepared-order-1',
+              txs: [
+                {
+                  chainId: 56,
+                  deriveTransaction: {
+                    to: '0x2222222222222222222222222222222222222222',
+                    calldata: '0x',
+                    gasLimit: '21000',
+                    gasPrice: '1000000000',
+                    nonce: 1,
+                    chainId: 56,
+                    value: '0',
+                  },
+                },
+              ],
+            },
+          }),
+        ])
+
+        expect(result.code).not.toBe(0)
+        expect(result.stderr).toContain('Missing required argument: --from-address')
+      },
+    )
+
+    expect(requestCount).toBe(0)
+  })
+
+  it('requires from-address for OWS prepared transfer execution before signing or submit', async () => {
+    let requestCount = 0
+
+    await withBitgetServer(
+      async (_req, res) => {
+        requestCount += 1
+        writeJson(res, 500, { status: -1, error_code: -1, msg: 'should not be called' })
+      },
+      async (port) => {
+        const result = await runPurr(port, [
+          'ows-wallet',
+          'bitget-transfer-execute',
+          '--ows-wallet',
+          'treasury',
+          '--transfer-order-json',
+          JSON.stringify({
+            data: {
+              orderId: 'prepared-transfer-1',
+              source: {
+                type: 'evm_1559',
+                evm: {
+                  to: '0x2222222222222222222222222222222222222222',
+                  data: '0x',
+                  gasLimit: '21000',
+                  maxFeePerGas: '1000000000',
+                  maxPriorityFeePerGas: '100000000',
+                  nonce: 1,
+                  chainId: 8453,
+                  value: '0',
+                },
+              },
+            },
+          }),
+        ])
+
+        expect(result.code).not.toBe(0)
+        expect(result.stderr).toContain('Missing required argument: --from-address')
+      },
+    )
+
+    expect(requestCount).toBe(0)
+  })
 })

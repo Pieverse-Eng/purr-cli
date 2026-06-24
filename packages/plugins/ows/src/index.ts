@@ -5,6 +5,7 @@ import {
 } from './sign-transaction.js'
 import { OwsStepExecutionError, owsExecuteSteps } from './execute-steps.js'
 import { owsBuildTransfer } from './build-transfer.js'
+import { owsWalletAddress } from './address.js'
 
 export {
   EXIT_CODE_GASPAYMASTER_UNSUPPORTED,
@@ -13,10 +14,12 @@ export {
   owsBuildTransfer,
   owsExecuteSteps,
   owsWalletSignTransaction,
+  owsWalletAddress,
 }
 
 export const owsRuntime = {
   signTransaction: owsWalletSignTransaction,
+  address: owsWalletAddress,
   buildTransfer: owsBuildTransfer,
   executeSteps: owsExecuteSteps,
   isGasPayMasterUnsupportedError: (err: unknown) => err instanceof GasPayMasterUnsupportedError,

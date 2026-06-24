@@ -21,6 +21,47 @@ describe('Windows CLI entrypoint', () => {
     expect(JSON.parse(stdout).steps[0].to).toBe('0x0000000000000000000000000000000000000001')
   })
 
+  it('refuses to partially execute OpenSea actions that include signature requests', async () => {
+    const actions = JSON.stringify({
+      actions: [
+        {
+          type: 'approval',
+          transactionSubmissionData: {
+            to: '0x0000000000000000000000000000000000000001',
+            data: '0x',
+            chainId: 1,
+          },
+        },
+        {
+          type: 'signature',
+          typedData: {
+            domain: { name: 'Seaport', chainId: 1 },
+            types: { Order: [{ name: 'offerer', type: 'address' }] },
+            primaryType: 'Order',
+            message: {
+              offerer: '0x1234567890123456789012345678901234567890',
+            },
+          },
+        },
+      ],
+    })
+
+    await expect(
+      execFileAsync('bun', [
+        entrypoint,
+        'opensea',
+        'actions',
+        '--wallet',
+        '0x1234567890123456789012345678901234567890',
+        '--actions-json',
+        actions,
+        '--execute',
+      ]),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining('refusing --execute'),
+    })
+  })
+
   it('disables OWS commands without loading the OWS plugin', async () => {
     await expect(
       execFileAsync('bun', [

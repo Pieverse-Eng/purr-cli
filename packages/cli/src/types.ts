@@ -4,6 +4,11 @@ interface OwsStepExecutionLike extends Error {
 }
 
 export interface OwsRuntime {
+  address: (input: { owsWallet: string; chainType?: 'ethereum' | 'solana' }) => {
+    address: string
+    chainType: 'ethereum' | 'solana'
+    chainId: string
+  }
   signTransaction: (
     txsJson: string,
     chainId: number | undefined,

@@ -1,12 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import bs58 from 'bs58'
 import { __testing, OwsStepExecutionError } from '@pieverseio/purr-plugin-ows/execute-steps'
 
 const {
   parseEvmSig,
   resolveRpcUrl,
+  resolveSolanaRpcUrl,
   owsEvmChainId,
   normalizeHex,
   validateStep,
+  validateSolanaStep,
+  isSolanaStep,
+  extractSolanaTxHex,
   SUPPORTED_CHAIN_IDS,
 } = __testing
 
@@ -60,6 +65,29 @@ describe('resolveRpcUrl', () => {
 
   it('throws for unknown chainId without override', () => {
     expect(() => resolveRpcUrl(99999)).toThrow(/No RPC URL for chainId 99999/)
+  })
+})
+
+describe('resolveSolanaRpcUrl', () => {
+  const ORIG = { ...process.env }
+  afterEach(() => {
+    delete process.env.SOLANA_RPC_URL
+    Object.assign(process.env, ORIG)
+  })
+
+  it('uses explicit override when provided', () => {
+    expect(resolveSolanaRpcUrl('https://custom-solana-rpc.example')).toBe(
+      'https://custom-solana-rpc.example',
+    )
+  })
+
+  it('uses SOLANA_RPC_URL env when no override', () => {
+    process.env.SOLANA_RPC_URL = 'https://my-solana-rpc'
+    expect(resolveSolanaRpcUrl()).toBe('https://my-solana-rpc')
+  })
+
+  it('falls back to Solana mainnet public RPC', () => {
+    expect(resolveSolanaRpcUrl()).toBe('https://api.mainnet-beta.solana.com')
   })
 })
 
@@ -239,6 +267,68 @@ describe('validateStep', () => {
         0,
       ),
     ).toThrow(/conditional.amount/)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Solana step detection + extraction
+// ---------------------------------------------------------------------------
+
+describe('Solana execute step helpers', () => {
+  it('detects explicit Solana markers', () => {
+    expect(isSolanaStep({ chainType: 'solana', data: 'abc' })).toBe(true)
+    expect(isSolanaStep({ chain: 'SOL', data: 'abc' })).toBe(true)
+    expect(isSolanaStep({ chainId: 501, data: 'abc' })).toBe(true)
+    expect(isSolanaStep({ deriveTransaction: { chainId: '501' }, data: 'abc' })).toBe(true)
+  })
+
+  it('detects serialized transaction fields without misclassifying EVM calldata', () => {
+    expect(isSolanaStep({ unsignedTxHex: '0x0102' })).toBe(false)
+    expect(isSolanaStep({ chain: 'solana', unsignedTxHex: '0x0102' })).toBe(true)
+    expect(isSolanaStep({ deriveTransaction: { serializedTransaction: 'abc' } })).toBe(true)
+    expect(
+      isSolanaStep({
+        to: '0x0000000000000000000000000000000000000001',
+        data: '0xa9059cbb',
+        value: '0x0',
+        chainId: 8453,
+      }),
+    ).toBe(false)
+    expect(
+      isSolanaStep({
+        chain: 'eip155:8453',
+        kind: 'evm-eip1559',
+        unsignedTxHex: '0x0102',
+      }),
+    ).toBe(false)
+  })
+
+  it('extracts hex with or without 0x', () => {
+    expect(extractSolanaTxHex({ unsignedTxHex: '0x010203' })).toBe('010203')
+    expect(extractSolanaTxHex({ serializedTx: '010203' })).toBe('010203')
+  })
+
+  it('extracts base58 serialized transactions', () => {
+    const encoded = bs58.encode(Uint8Array.from([1, 2, 3]))
+    expect(extractSolanaTxHex({ deriveTransaction: { serializedTransaction: encoded } })).toBe(
+      '010203',
+    )
+  })
+
+  it('treats serializedTransaction as base58 even when it looks hex-like', () => {
+    expect(extractSolanaTxHex({ serializedTransaction: '1234' })).toBe(
+      Buffer.from(bs58.decode('1234')).toString('hex'),
+    )
+  })
+
+  it('rejects invalid explicit Solana hex', () => {
+    expect(() => extractSolanaTxHex({ unsignedTxHex: 'not-hex' })).toThrow(/hex is invalid/)
+  })
+
+  it('validates presence of a serialized Solana transaction', () => {
+    expect(() => validateSolanaStep({ chainType: 'solana' }, 0)).toThrow(
+      /unsignedTxHex or serializedTransaction/,
+    )
   })
 })
 

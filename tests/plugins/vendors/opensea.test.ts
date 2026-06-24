@@ -9,8 +9,12 @@ import {
 } from '@pieverseio/purr-plugin-vendors/opensea-api'
 import {
   buildOpenSeaBuySteps,
+  buildOpenSeaActionSteps,
+  buildOpenSeaTransactionSteps,
   buildOpenSeaSellSteps,
   OpenSeaCliError,
+  signOpenSeaMessage,
+  signOpenSeaTypedData,
 } from '@pieverseio/purr-plugin-vendors/opensea'
 
 const WALLET = '0x1234567890123456789012345678901234567890'
@@ -20,6 +24,7 @@ const NATIVE = '0x0000000000000000000000000000000000000000'
 const ADDR_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const ADDR_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 const ADDR_C = '0xcccccccccccccccccccccccccccccccccccccccc'
+const originalFetch = globalThis.fetch
 
 const BASIC_ORDER_ABI = parseAbi([
   'function fulfillBasicOrder_efficient_6GL6yc((address,uint256,uint256,address,address,address,uint256,uint256,uint8,uint256,uint256,bytes32,uint256,bytes32,bytes32,uint256,(uint256,address)[],bytes))',
@@ -523,6 +528,335 @@ describe('buildOpenSeaSellSteps', () => {
       data: result.steps[0].data as `0x${string}`,
     })
     expect(approval.args).toEqual([OPENSEA_CONDUIT_ADDRESS, 1234n])
+  })
+})
+
+describe('buildOpenSeaTransactionSteps', () => {
+  it('builds a platform-executable step from OpenSea transaction JSON', () => {
+    const result = buildOpenSeaTransactionSteps({
+      wallet: WALLET,
+      transaction: {
+        transaction: {
+          to: OPENSEA_SEAPORT_V1_6,
+          data: '0x1234',
+          value: '1000',
+          chain: 'base',
+          from: WALLET,
+          gasLimit: '21000',
+        },
+      },
+    })
+
+    expect(result.steps).toEqual([
+      {
+        to: OPENSEA_SEAPORT_V1_6,
+        data: '0x1234',
+        value: '0x3e8',
+        chainId: 8453,
+        gasLimit: '0x5208',
+        label: 'OpenSea transaction',
+      },
+    ])
+  })
+
+  it('accepts swap transactionSubmissionData shape', () => {
+    const result = buildOpenSeaTransactionSteps({
+      wallet: WALLET,
+      transaction: {
+        transactionSubmissionData: {
+          to: ADDR_A,
+          data: '0xabcd',
+          value: '0x0',
+          chain: {
+            networkId: 8453,
+            identifier: 'base',
+          },
+          sender: WALLET,
+        },
+      },
+      label: 'OpenSea swap',
+    })
+
+    expect(result.steps[0]).toMatchObject({
+      to: ADDR_A,
+      data: '0xabcd',
+      value: '0x0',
+      chainId: 8453,
+      label: 'OpenSea swap',
+    })
+  })
+
+  it('uses an explicit chainId fallback when OpenSea tx JSON omits chain metadata', () => {
+    const result = buildOpenSeaTransactionSteps({
+      wallet: WALLET,
+      chainId: 8453,
+      transaction: {
+        to: ADDR_A,
+        data: '0xabcd',
+        value: '0',
+        from: WALLET,
+      },
+    })
+
+    expect(result.steps[0]).toMatchObject({
+      to: ADDR_A,
+      data: '0xabcd',
+      value: '0x0',
+      chainId: 8453,
+    })
+  })
+
+  it('rejects transaction signer fields that do not match the requested wallet', () => {
+    expect(() =>
+      buildOpenSeaTransactionSteps({
+        wallet: WALLET,
+        transaction: {
+          to: ADDR_A,
+          data: '0xabcd',
+          chainId: 1,
+          from: ADDR_B,
+        },
+      }),
+    ).toThrow('from does not match wallet')
+  })
+})
+
+describe('buildOpenSeaActionSteps', () => {
+  const typedData = {
+    domain: {
+      name: 'Seaport',
+      version: '1.6',
+      chainId: 1,
+      verifyingContract: OPENSEA_SEAPORT_V1_6,
+    },
+    types: {
+      Order: [
+        { name: 'offerer', type: 'address' },
+        { name: 'salt', type: 'uint256' },
+      ],
+    },
+    primaryType: 'Order',
+    message: {
+      offerer: WALLET,
+      salt: '1',
+    },
+  }
+
+  it('extracts transaction steps and signature requests from OpenSea actions', () => {
+    const result = buildOpenSeaActionSteps({
+      wallet: WALLET,
+      actions: {
+        actions: [
+          {
+            type: 'approval',
+            transactionSubmissionData: {
+              to: ADDR_A,
+              data: '0xabcd',
+              value: '0',
+              from: WALLET,
+            },
+          },
+          {
+            type: 'signature',
+            typedData,
+          },
+          {
+            type: 'message',
+            message: 'Sign in with Ethereum',
+          },
+        ],
+      },
+      chainId: 1,
+    })
+
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].chainId).toBe(1)
+    expect(result.signatureRequests).toHaveLength(2)
+    expect(result.signatureRequests[0]).toMatchObject({
+      actionIndex: 1,
+      kind: 'typed-data',
+    })
+    expect(result.signatureRequests[1]).toMatchObject({
+      actionIndex: 2,
+      kind: 'message',
+      message: 'Sign in with Ethereum',
+    })
+  })
+
+  it('extracts swap.actions from a full OpenSea swap quote response', () => {
+    const result = buildOpenSeaActionSteps({
+      wallet: WALLET,
+      actions: {
+        swapQuote: {
+          totalPrice: { usd: 47.4 },
+        },
+        swap: {
+          actions: [
+            {
+              transactionSubmissionData: {
+                to: ADDR_A,
+                data: '0xabcd',
+                value: '20000000000000000',
+                chain: {
+                  networkId: 8453,
+                  identifier: 'base',
+                },
+                from: WALLET,
+              },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0]).toMatchObject({
+      to: ADDR_A,
+      data: '0xabcd',
+      value: '0x470de4df820000',
+      chainId: 8453,
+    })
+    expect(result.signatureRequests).toHaveLength(0)
+  })
+
+  it('treats transaction arrays as ordered executable actions', () => {
+    const result = buildOpenSeaActionSteps({
+      wallet: WALLET,
+      chainId: 8453,
+      actions: {
+        transactions: [
+          {
+            to: ADDR_A,
+            data: '0xaaaa',
+            value: '0',
+            from: WALLET,
+          },
+          {
+            to: ADDR_B,
+            data: '0xbbbb',
+            value: '1',
+            from: WALLET,
+          },
+        ],
+      },
+    })
+
+    expect(result.steps.map((step) => step.to)).toEqual([ADDR_A, ADDR_B])
+    expect(result.steps.map((step) => step.chainId)).toEqual([8453, 8453])
+    expect(result.steps.map((step) => step.value)).toEqual(['0x0', '0x1'])
+    expect(result.signatureRequests).toHaveLength(0)
+  })
+
+  it('rejects typed-data actions with a mismatched signer', () => {
+    expect(() =>
+      buildOpenSeaActionSteps({
+        wallet: WALLET,
+        actions: {
+          actions: [
+            {
+              type: 'signature',
+              typedData: {
+                ...typedData,
+                message: {
+                  offerer: ADDR_A,
+                  salt: '1',
+                },
+              },
+            },
+          ],
+        },
+      }),
+    ).toThrow('typed data message.offerer does not match wallet')
+  })
+})
+
+describe('OpenSea signing helpers', () => {
+  afterEach(() => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    vi.restoreAllMocks()
+    Object.defineProperty(globalThis, 'fetch', {
+      value: originalFetch,
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  it('signs OpenSea typed data through the platform wallet', async () => {
+    process.env.WALLET_API_URL = 'https://test.example.com'
+    process.env.WALLET_API_TOKEN = 'test-token'
+    process.env.INSTANCE_ID = 'test-instance'
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () =>
+          ({
+            ok: true,
+            data: {
+              address: WALLET,
+              signature: '0xsig',
+            },
+          }) as const,
+        text: async () => 'ok',
+      })),
+      configurable: true,
+      writable: true,
+    })
+
+    const result = await signOpenSeaTypedData({
+      wallet: WALLET,
+      purpose: 'order',
+      typedData: {
+        domain: { name: 'Seaport', chainId: 1 },
+        types: { Order: [{ name: 'offerer', type: 'address' }] },
+        primaryType: 'Order',
+        message: { offerer: WALLET },
+      },
+    })
+
+    expect(result).toEqual({
+      address: WALLET,
+      signature: '0xsig',
+      purpose: 'order',
+    })
+  })
+
+  it('signs OpenSea messages through the platform wallet', async () => {
+    process.env.WALLET_API_URL = 'https://test.example.com'
+    process.env.WALLET_API_TOKEN = 'test-token'
+    process.env.INSTANCE_ID = 'test-instance'
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () =>
+          ({
+            ok: true,
+            data: {
+              address: WALLET,
+              signature: '0xmessage',
+              chainType: 'ethereum',
+              message: 'Sign in with Ethereum',
+            },
+          }) as const,
+        text: async () => 'ok',
+      })),
+      configurable: true,
+      writable: true,
+    })
+
+    const result = await signOpenSeaMessage({
+      wallet: WALLET,
+      message: 'Sign in with Ethereum',
+    })
+
+    expect(result).toEqual({
+      address: WALLET,
+      signature: '0xmessage',
+      purpose: 'message',
+    })
   })
 })
 

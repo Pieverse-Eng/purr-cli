@@ -3,22 +3,24 @@ import * as opensea from '@pieverseio/purr-plugin-vendors/opensea'
 import * as openseaApi from '@pieverseio/purr-plugin-vendors/opensea-api'
 
 describe('opensea vendor scope', () => {
-  it('only exposes buy/sell execution helpers, not submission or order creation flows', () => {
+  it('only exposes custody adapter helpers, not OpenSea API lookup or submission flows', () => {
     expect(opensea).not.toHaveProperty('buildOpenSeaCancelOfferPreview')
-    expect(opensea).not.toHaveProperty('buildOpenSeaCancelOfferSteps')
+    expect(opensea).not.toHaveProperty('submitOpenSeaCancelOffer')
     expect(opensea).not.toHaveProperty('buildOpenSeaCancelListingPreview')
-    expect(opensea).not.toHaveProperty('buildOpenSeaCancelListingSteps')
     expect(opensea).not.toHaveProperty('cancelOpenSeaOffer')
     expect(opensea).not.toHaveProperty('cancelOpenSeaListing')
     expect(opensea).not.toHaveProperty('buildOpenSeaOfferPreview')
     expect(opensea).not.toHaveProperty('buildOpenSeaListingPreview')
     expect(opensea).not.toHaveProperty('createOpenSeaOffer')
     expect(opensea).not.toHaveProperty('createOpenSeaListing')
-    expect(opensea).not.toHaveProperty('buildOpenSeaSwapSteps')
     expect(opensea).not.toHaveProperty('submitOpenSeaOffer')
     expect(opensea).not.toHaveProperty('submitOpenSeaListing')
     expect(opensea).toHaveProperty('buildOpenSeaBuySteps')
     expect(opensea).toHaveProperty('buildOpenSeaSellSteps')
+    expect(opensea).toHaveProperty('buildOpenSeaTransactionSteps')
+    expect(opensea).toHaveProperty('buildOpenSeaActionSteps')
+    expect(opensea).toHaveProperty('signOpenSeaTypedData')
+    expect(opensea).toHaveProperty('signOpenSeaMessage')
   })
 })
 

@@ -17,9 +17,11 @@
  *   - No DB / instance lookup — wallet address comes from OWS getWallet
  *   - No platform dedup — agent is responsible
  *   - JSON-RPC over fetch (not Privy plugin) — direct EVM RPC calls
- *   - Skip Solana — TxStep is EVM-only by design (see types.ts)
+ *   - Solana support accepts serialized unsigned transaction steps and lets
+ *     OWS sign + broadcast them through the configured Solana RPC.
  */
 
+import bs58 from 'bs58'
 import {
   type TransactionSerializable,
   encodeFunctionData,
@@ -28,6 +30,7 @@ import {
   parseAbi,
   serializeTransaction,
 } from 'viem'
+import { Connection } from '@solana/web3.js'
 
 import { parseEvmSig } from '@pieverseio/purr-core/shared'
 
@@ -43,6 +46,8 @@ import {
 const MAX_STEPS = 10
 const RECEIPT_POLL_MS = 2_000
 const RECEIPT_MAX_ATTEMPTS = 60 // 2 min total
+const SOLANA_CHAIN_ID = 501
+const DEFAULT_SOLANA_RPC = 'https://api.mainnet-beta.solana.com'
 
 // Default public RPCs — mirror api-server services/evm.ts CHAIN_CONFIG.
 // Keep this list aligned with server SUPPORTED_CHAIN_IDS so behavior matches.
@@ -88,11 +93,11 @@ export function normalizeHex(hex: string): string {
 }
 
 /**
- * Validate a TxStep BEFORE building / signing — fail fast on malformed input.
+ * Validate an EVM TxStep BEFORE building / signing — fail fast on malformed input.
  * Mirrors trusted-wallet-service.ts validation (~L1060–1088): `to`, `data`,
  * `value`, `gasLimit` must all be valid hex/address strings if present.
  */
-function validateStep(step: TxStep, idx: number): void {
+function validateEvmStep(step: TxStep, idx: number): void {
   if (typeof step !== 'object' || step === null) {
     throw new Error(`Step ${idx}: not an object`)
   }
@@ -138,6 +143,118 @@ function validateStep(step: TxStep, idx: number): void {
   }
 }
 
+function validateSolanaStep(step: SolanaTxStep, idx: number): void {
+  if (typeof step !== 'object' || step === null) {
+    throw new Error(`Step ${idx}: not an object`)
+  }
+  extractSolanaTxHex(step, idx)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function normalizeSolanaChainId(chainId: unknown): number | undefined {
+  if (chainId == null) return undefined
+  if (typeof chainId === 'number' && Number.isFinite(chainId)) return chainId
+  if (typeof chainId !== 'string') return undefined
+  if (chainId === 'solana' || chainId.startsWith('solana:')) return SOLANA_CHAIN_ID
+  const parsed = Number(chainId)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function pickSerializedString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+type SolanaSerializedValue = {
+  value: string
+  encoding: 'hex' | 'base58'
+}
+
+function pickSolanaHex(value: unknown): SolanaSerializedValue | undefined {
+  const picked = pickSerializedString(value)
+  return picked ? { value: picked, encoding: 'hex' } : undefined
+}
+
+function pickSolanaBase58(value: unknown): SolanaSerializedValue | undefined {
+  const picked = pickSerializedString(value)
+  return picked ? { value: picked, encoding: 'base58' } : undefined
+}
+
+function solanaSerializedValue(step: SolanaTxStep): SolanaSerializedValue | undefined {
+  return (
+    solanaExplicitSerializedValue(step) ??
+    pickSolanaBase58(typeof step.data === 'string' ? step.data : undefined)
+  )
+}
+
+function solanaExplicitSerializedValue(step: SolanaTxStep): SolanaSerializedValue | undefined {
+  const data = isRecord(step.data) ? step.data : undefined
+  return (
+    pickSolanaHex(step.unsignedTxHex) ??
+    pickSolanaBase58(step.serializedTransaction) ??
+    pickSolanaHex(step.serializedTx) ??
+    pickSolanaHex(data?.serializedTx) ??
+    pickSolanaBase58(data?.serializedTransaction) ??
+    pickSolanaBase58(step.source?.serializedTransaction) ??
+    pickSolanaBase58(step.deriveTransaction?.source?.serializedTransaction) ??
+    pickSolanaBase58(step.deriveTransaction?.serializedTransaction)
+  )
+}
+
+export function isSolanaStep(step: unknown): step is SolanaTxStep {
+  if (!isRecord(step)) return false
+
+  const chainType = String(step.chainType ?? '').toLowerCase()
+  if (chainType === 'solana') return true
+
+  const chain = String(step.chain ?? '').toLowerCase()
+  if (chain === 'sol' || chain === 'solana') return true
+
+  const derive = isRecord(step.deriveTransaction) ? step.deriveTransaction : undefined
+  const chainId = normalizeSolanaChainId(step.chainId ?? derive?.chainId)
+  if (chainId === SOLANA_CHAIN_ID) return true
+
+  const solanaStep = step as SolanaTxStep
+  return (
+    solanaStep.serializedTransaction !== undefined ||
+    (isRecord(solanaStep.data) && solanaStep.data.serializedTransaction !== undefined) ||
+    solanaStep.source?.serializedTransaction !== undefined ||
+    solanaStep.deriveTransaction?.source?.serializedTransaction !== undefined ||
+    solanaStep.deriveTransaction?.serializedTransaction !== undefined
+  )
+}
+
+function isLikelyHexString(value: string): boolean {
+  const raw = value.startsWith('0x') ? value.slice(2) : value
+  return raw.length > 0 && raw.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(raw)
+}
+
+export function extractSolanaTxHex(step: SolanaTxStep, idx = 0): string {
+  const serializedTx = solanaSerializedValue(step)
+  if (!serializedTx) {
+    throw new Error(`Step ${idx}: Solana step must include unsignedTxHex or serializedTransaction`)
+  }
+
+  if (serializedTx.encoding === 'hex') {
+    if (!isLikelyHexString(serializedTx.value)) {
+      throw new Error(`Step ${idx}: Solana unsigned transaction hex is invalid`)
+    }
+    return serializedTx.value.startsWith('0x') ? serializedTx.value.slice(2) : serializedTx.value
+  }
+
+  try {
+    return Buffer.from(bs58.decode(serializedTx.value)).toString('hex')
+  } catch (err) {
+    throw new Error(
+      `Step ${idx}: Solana serializedTransaction must be base58: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types — mirror purr-core types.ts and api-server step-executor.ts
 // ---------------------------------------------------------------------------
@@ -159,6 +276,27 @@ export interface TxStep {
   conditional?: ConditionalCheck
 }
 
+export interface SolanaTxStep {
+  chainType?: 'solana'
+  chain?: string
+  chainId?: number | string
+  label?: string
+  unsignedTxHex?: string
+  serializedTransaction?: string
+  serializedTx?: string
+  data?: string | { serializedTx?: string; serializedTransaction?: string }
+  source?: { serializedTransaction?: string }
+  deriveTransaction?: {
+    serializedTransaction?: string
+    source?: { serializedTransaction?: string }
+    chainId?: number | string
+    [key: string]: unknown
+  }
+  [key: string]: unknown
+}
+
+type ExecutableStep = TxStep | SolanaTxStep
+
 export interface StepResult {
   stepIndex: number
   label?: string
@@ -178,7 +316,7 @@ export interface ExecuteStepsOwsResult {
   results: StepResult[]
   from: string
   chainId: number
-  chainType: 'ethereum'
+  chainType: 'ethereum' | 'solana'
 }
 
 export class OwsStepExecutionError extends Error {
@@ -291,6 +429,14 @@ async function waitForReceipt(rpcUrl: string, hash: string): Promise<RpcReceipt>
   throw new Error(`Tx receipt timed out for ${hash}`)
 }
 
+async function waitForSolanaConfirmation(rpcUrl: string, signature: string): Promise<void> {
+  const connection = new Connection(rpcUrl, 'confirmed')
+  const confirmation = await connection.confirmTransaction(signature, 'confirmed')
+  if (confirmation.value.err) {
+    throw new Error(`Solana transaction failed: ${JSON.stringify(confirmation.value.err)}`)
+  }
+}
+
 // ---------------------------------------------------------------------------
 // OWS signing — viem build → OWS signAndSend
 // ---------------------------------------------------------------------------
@@ -368,6 +514,35 @@ async function signAndBroadcastStep(args: {
   return hash
 }
 
+async function signAndBroadcastSolanaStep(args: {
+  walletName: string
+  token: string | undefined
+  vaultPath?: string
+  rpcUrl: string
+  step: SolanaTxStep
+  stepIndex: number
+}): Promise<string> {
+  const { walletName, token, vaultPath, rpcUrl, step, stepIndex } = args
+  const txHex = extractSolanaTxHex(step, stepIndex)
+  const owsTxHex = txHex.startsWith('0x') ? txHex : `0x${txHex}`
+
+  const result = owsCoreSignAndSend(
+    walletName,
+    'solana',
+    owsTxHex,
+    token,
+    undefined, // index
+    rpcUrl,
+    vaultPath,
+  ) as { txHash?: string; hash?: string }
+
+  const hash = result.txHash ?? result.hash
+  if (typeof hash !== 'string' || hash.length === 0) {
+    throw new Error('OWS signAndSend returned no txHash')
+  }
+  return hash
+}
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -385,6 +560,10 @@ export function resolveRpcUrl(chainId: number, override?: string): string {
   return def
 }
 
+export function resolveSolanaRpcUrl(override?: string): string {
+  return override ?? process.env.SOLANA_RPC_URL ?? DEFAULT_SOLANA_RPC
+}
+
 export async function owsExecuteSteps(input: ExecuteStepsOwsInput): Promise<ExecuteStepsOwsResult> {
   let parsed: { steps?: unknown }
   try {
@@ -392,25 +571,98 @@ export async function owsExecuteSteps(input: ExecuteStepsOwsInput): Promise<Exec
   } catch {
     throw new Error('Invalid --steps-json: not valid JSON')
   }
-  const steps = (parsed.steps ?? parsed) as unknown
+  const rawSteps = (parsed.steps ?? parsed) as unknown
+  const steps = Array.isArray(rawSteps) ? rawSteps : isSolanaStep(rawSteps) ? [rawSteps] : rawSteps
   if (!Array.isArray(steps) || steps.length === 0) {
     throw new Error('--steps-json must contain a non-empty steps array')
   }
-  const stepArr = steps as TxStep[]
+  const stepArr = steps as ExecutableStep[]
   if (stepArr.length > MAX_STEPS) {
     throw new Error(`Too many steps: ${stepArr.length} (max ${MAX_STEPS})`)
   }
 
+  const solanaFlags = stepArr.map((step) => isSolanaStep(step))
+  const hasSolanaSteps = solanaFlags.some(Boolean)
+  const hasEvmSteps = solanaFlags.some((isSolana) => !isSolana)
+  if (hasSolanaSteps && hasEvmSteps) {
+    throw new Error('Mixed chainTypes: solana and ethereum. All steps must match.')
+  }
+
+  if (hasSolanaSteps) {
+    const solanaSteps = stepArr as SolanaTxStep[]
+    for (let i = 0; i < solanaSteps.length; i++) {
+      validateSolanaStep(solanaSteps[i], i)
+    }
+
+    const rpcUrl = resolveSolanaRpcUrl(input.rpcUrl)
+    const wallet = owsGetWallet(input.owsWallet, input.vaultPath)
+    const solanaAccount = wallet.accounts.find((a) => a.chainId.startsWith('solana:'))
+    if (!solanaAccount) {
+      throw new Error(`OWS wallet "${input.owsWallet}" has no Solana account`)
+    }
+
+    const results: StepResult[] = []
+    for (let i = 0; i < solanaSteps.length; i++) {
+      const step = solanaSteps[i]
+
+      let hash: string
+      try {
+        hash = await signAndBroadcastSolanaStep({
+          walletName: input.owsWallet,
+          token: input.owsToken,
+          vaultPath: input.vaultPath,
+          rpcUrl,
+          step,
+          stepIndex: i,
+        })
+      } catch (err) {
+        throw new OwsStepExecutionError(
+          `Step ${i} (${step.label ?? 'unnamed'}) signAndSend failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          results,
+          i,
+        )
+      }
+
+      const isLast = i === solanaSteps.length - 1
+      if (!isLast) {
+        try {
+          await waitForSolanaConfirmation(rpcUrl, hash)
+        } catch (err) {
+          throw new OwsStepExecutionError(
+            `Step ${i} (${step.label ?? 'unnamed'}) confirmation error: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+            results,
+            i,
+          )
+        }
+      }
+
+      results.push({ stepIndex: i, label: step.label, hash, status: 'success' })
+    }
+
+    return {
+      results,
+      from: solanaAccount.address,
+      chainId: SOLANA_CHAIN_ID,
+      chainType: 'solana',
+    }
+  }
+
+  const evmSteps = stepArr as TxStep[]
+
   // Per-step structural validation — fail fast on malformed input (mirrors
   // server's trusted-wallet-service.ts validation).
-  for (let i = 0; i < stepArr.length; i++) {
-    validateStep(stepArr[i], i)
+  for (let i = 0; i < evmSteps.length; i++) {
+    validateEvmStep(evmSteps[i], i)
   }
 
   // All steps must target the same chain + chain must be in the supported
   // set (mirror api-server step-executor.ts L91 + L94-103).
-  const chainId = stepArr[0].chainId
-  for (const s of stepArr) {
+  const chainId = evmSteps[0].chainId
+  for (const s of evmSteps) {
     if (s.chainId !== chainId) {
       throw new Error(`Mixed chainIds: ${chainId} and ${s.chainId}. All steps must match.`)
     }
@@ -450,8 +702,8 @@ export async function owsExecuteSteps(input: ExecuteStepsOwsInput): Promise<Exec
 
   const results: StepResult[] = []
 
-  for (let i = 0; i < stepArr.length; i++) {
-    const step = stepArr[i]
+  for (let i = 0; i < evmSteps.length; i++) {
+    const step = evmSteps[i]
 
     // Conditional check: skip if ERC-20 allowance already sufficient
     if (step.conditional?.type === 'allowance_lt') {
@@ -488,7 +740,7 @@ export async function owsExecuteSteps(input: ExecuteStepsOwsInput): Promise<Exec
       )
     }
 
-    const isLast = i === stepArr.length - 1
+    const isLast = i === evmSteps.length - 1
     if (!isLast) {
       try {
         const receipt = await waitForReceipt(rpcUrl, hash)
@@ -521,6 +773,11 @@ export const __testing = {
   resolveRpcUrl,
   owsEvmChainId,
   normalizeHex,
-  validateStep,
+  validateStep: validateEvmStep,
+  validateEvmStep,
+  validateSolanaStep,
+  isSolanaStep,
+  extractSolanaTxHex,
+  resolveSolanaRpcUrl,
   SUPPORTED_CHAIN_IDS,
 }

@@ -75,7 +75,8 @@ export interface FourMemeApiClient {
     createArg: `0x${string}`
     signature: `0x${string}`
   }>
-  getRaisedTokenConfig(): Promise<FourMemeRaisedTokenConfig>
+  getRaisedTokenConfigs(): Promise<FourMemeRaisedTokenConfig[]>
+  getRaisedTokenConfig(raisedToken?: string): Promise<FourMemeRaisedTokenConfig>
 }
 
 export const DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG: FourMemeRaisedTokenConfig = {
@@ -143,6 +144,25 @@ function getMimeType(filePath: string): string {
   if (normalized.endsWith('.bmp')) return 'image/bmp'
   if (normalized.endsWith('.webp')) return 'image/webp'
   return 'application/octet-stream'
+}
+
+function raisedTokenMatches(config: FourMemeRaisedTokenConfig, raisedToken: string): boolean {
+  const normalized = raisedToken.trim().toLowerCase()
+  return [config.symbol, config.nativeSymbol, config.symbolAddress].some(
+    (value) => value.toLowerCase() === normalized,
+  )
+}
+
+export function selectFourMemeRaisedTokenConfig(
+  configs: FourMemeRaisedTokenConfig[],
+  raisedToken = 'BNB',
+): FourMemeRaisedTokenConfig {
+  const trimmed = raisedToken.trim()
+  if (!trimmed) throw new Error('raisedToken is required')
+  const match = configs.find((config) => raisedTokenMatches(config, trimmed))
+  if (match) return match
+  const supported = configs.map((config) => config.symbol).join(', ')
+  throw new Error(`Unsupported four.meme raised token: "${raisedToken}". Supported: ${supported}`)
 }
 
 export function buildFourMemeLoginMessage(nonce: string): string {
@@ -222,8 +242,17 @@ export function createFourMemeApiClient(): FourMemeApiClient {
       }
     },
 
-    async getRaisedTokenConfig() {
-      return DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
+    async getRaisedTokenConfigs() {
+      const res = await fetch(`${BASE_URL}/v1/public/config`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      })
+      return ensureSuccess<FourMemeRaisedTokenConfig[]>(res)
+    },
+
+    async getRaisedTokenConfig(raisedToken) {
+      const configs = await this.getRaisedTokenConfigs()
+      return selectFourMemeRaisedTokenConfig(configs, raisedToken)
     },
   }
 }

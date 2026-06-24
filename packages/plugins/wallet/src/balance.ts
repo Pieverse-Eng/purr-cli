@@ -1,5 +1,5 @@
 import { apiGet, resolveCredentials } from '@pieverseio/purr-core/api-client'
-import { inferChainId, resolveToken } from '@pieverseio/purr-core/token-registry'
+import { SOLANA_CHAIN_ID, inferChainId, resolveToken } from '@pieverseio/purr-core/token-registry'
 
 interface WalletBalanceResponse {
   ok: boolean
@@ -24,7 +24,8 @@ export async function walletBalance(args: Record<string, string>): Promise<void>
   params.set('balance', 'true')
 
   if (args.token) {
-    params.set('token', resolveToken(args.token, inferChainId(args)))
+    const tokenChainId = args['chain-type'] === 'solana' ? SOLANA_CHAIN_ID : inferChainId(args)
+    params.set('token', resolveToken(args.token, tokenChainId))
     params.set('chain_type', args['chain-type'] ?? 'ethereum')
   } else if (args['chain-type']) {
     params.set('chain_type', args['chain-type'])

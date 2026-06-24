@@ -1,12 +1,13 @@
 {
   "name": "@pieverseio/purr-plugin-wallet",
-  "version": "0.2.19",
+  "version": "0.2.20",
   "type": "module",
   "private": true,
   "exports": {
     "./abi-call": "./src/abi-call.ts",
     "./address": "./src/address.ts",
     "./balance": "./src/balance.ts",
+    "./redpacket": "./src/redpacket.ts",
     "./sign": "./src/sign.ts",
     "./sign-okx-x402": "./src/sign-okx-x402.ts",
     "./sign-transaction": "./src/sign-transaction.ts",

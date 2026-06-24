@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
+import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
 import { NATIVE_EVM, parseChainId } from '@pieverseio/purr-core/shared'
 import { SOLANA_CHAIN_ID, resolveToken } from '@pieverseio/purr-core/token-registry'
 import type { StepOutput } from '@pieverseio/purr-core/types'
@@ -22,17 +23,33 @@ import {
 import {
   createOrder,
   getNetworks,
+  getP2PTradingPairs,
+  getPaymentMethods,
   getQuote,
   getTradingPairs,
   queryOrder,
-} from '@pieverseio/purr-plugin-vendors/binance-connect'
+} from '@pieverseio/purr-plugin-vendors/binance-onchain-pay'
 import {
+  buildFourMemeBuyWithBnbSteps,
   buildFourMemeBuySteps,
   buildFourMemeCreateTokenSteps,
   buildFourMemeLoginChallenge,
   buildFourMemeSellSteps,
+  buildFourMemeSellForBnbSteps,
+  buildFourMemeTaxClaimSteps,
+  getFourMemeAgentWalletStatus,
+  getFourMemeRaisedTokenConfigs,
+  getFourMemeTaxRewards,
 } from '@pieverseio/purr-plugin-vendors/fourmeme'
 import { asterApi, buildAsterDepositSteps } from '@pieverseio/purr-plugin-vendors/aster'
+import {
+  bitgetOrderExecute,
+  bitgetTransferExecute,
+  bitgetX402Pay,
+  bitgetX402SignEip3009,
+  type BitgetWalletSigner,
+} from '@pieverseio/purr-plugin-vendors/bitget'
+import { dflowExecuteOrder, dflowOrder, dflowStatus } from '@pieverseio/purr-plugin-vendors/dflow'
 import {
   buildListaDepositSteps,
   buildListaRedeemSteps,
@@ -54,11 +71,22 @@ import {
 } from '@pieverseio/purr-plugin-vendors/pancake'
 import {
   buildOpenSeaBuySteps,
+  buildOpenSeaActionSteps,
+  buildOpenSeaTransactionSteps,
   ensureOpenSeaExecutionWalletMatches,
+  signOpenSeaMessage,
+  signOpenSeaTypedData,
   buildOpenSeaSellSteps,
   OpenSeaCliError,
 } from '@pieverseio/purr-plugin-vendors/opensea'
-import { parseOpenSeaFulfillmentInput } from '@pieverseio/purr-plugin-vendors/opensea-input'
+import {
+  parseOpenSeaActionsInput,
+  parseOpenSeaFulfillmentInput,
+  parseOpenSeaMessageInput,
+  parseOpenSeaPaymentInput,
+  parseOpenSeaTransactionInput,
+  parseOpenSeaTypedDataInput,
+} from '@pieverseio/purr-plugin-vendors/opensea-input'
 import {
   findBySlug,
   findInstallConflict,
@@ -76,6 +104,12 @@ import { removeFromAgents } from '@pieverseio/purr-plugin-store/skill-dirs'
 import { walletAbiCall } from '@pieverseio/purr-plugin-wallet/abi-call'
 import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
 import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
+import {
+  redpacketClaim,
+  redpacketPending,
+  redpacketSend,
+  redpacketSent,
+} from '@pieverseio/purr-plugin-wallet/redpacket'
 import { walletSign } from '@pieverseio/purr-plugin-wallet/sign'
 import { walletSignOkxX402 } from '@pieverseio/purr-plugin-wallet/sign-okx-x402'
 import { walletSignTransaction } from '@pieverseio/purr-plugin-wallet/sign-transaction'
@@ -142,7 +176,7 @@ function parseArgs(argv: string[]): Record<string, string> {
         result[raw.slice(0, eqIdx)] = raw.slice(eqIdx + 1)
       } else {
         const next = argv[i + 1]
-        if (next && !next.startsWith('--')) {
+        if (next !== undefined && !next.startsWith('--')) {
           result[raw] = next
           i++
         } else {
@@ -162,6 +196,33 @@ function requireArg(args: Record<string, string>, name: string): string {
   return val
 }
 
+function optionalJsonArg<T extends Record<string, unknown>>(
+  args: Record<string, string>,
+  name: string,
+  fileName: string,
+): T | undefined {
+  if (args[name] === undefined && args[fileName] === undefined) {
+    return undefined
+  }
+  return parseJsonCliArg<T>(
+    requireArgOrFile(args, name, fileName),
+    args[fileName] ? fileName : name,
+  )
+}
+
+function parseAmountTypeArg(value: string | undefined): 1 | 2 | undefined {
+  const parsed = parseIntegerArg(value, 'amount-type')
+  if (parsed === undefined) return undefined
+  if (parsed !== 1 && parsed !== 2) {
+    throw new Error('Invalid --amount-type: expected 1 for fiat amount or 2 for crypto amount')
+  }
+  return parsed
+}
+
+function requireAmountTypeArg(args: Record<string, string>): 1 | 2 {
+  return parseAmountTypeArg(requireArg(args, 'amount-type')) as 1 | 2
+}
+
 const SLUG_RE = /^([a-z0-9-]+:)?[a-z0-9]([a-z0-9._-]*[a-z0-9])?$/i
 function validatedSlug(raw: string): { slug: string } | { error: true; message: string } {
   if (!SLUG_RE.test(raw)) {
@@ -177,6 +238,20 @@ function parseIntegerArg(value: string | undefined, name: string): number | unde
     throw new Error(`Invalid --${name}: "${value}"`)
   }
   return parsed
+}
+
+function parseNumberArg(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  const parsed = Number(trimmed)
+  if (!trimmed || !Number.isFinite(parsed)) {
+    throw new Error(`Invalid --${name}: "${value}"`)
+  }
+  return parsed
+}
+
+function requireNumberArg(args: Record<string, string>, name: string): number {
+  return parseNumberArg(requireArg(args, name), name) as number
 }
 
 function parseBooleanFlag(value: string | undefined): boolean | undefined {
@@ -221,6 +296,34 @@ function formatOpenSeaError(err: unknown): string {
     null,
     2,
   )
+}
+
+function omitApiKeyPresence<T extends Record<string, unknown>>(value: T): Omit<T, 'apiKeyPresent'> {
+  const safeValue: Record<string, unknown> = { ...value }
+  delete safeValue.apiKeyPresent
+  return safeValue as Omit<T, 'apiKeyPresent'>
+}
+
+function owsBitgetSigner(
+  ows: PluginRuntimeMap['ows'],
+  args: Record<string, string>,
+): BitgetWalletSigner {
+  const owsWallet = requireArg(args, 'ows-wallet')
+  const owsToken = args['ows-token'] ?? process.env.OWS_PASSPHRASE
+  return {
+    label: 'OWS wallet',
+    supportsRawDigest: false,
+    signTransactions: (payload, chainId) =>
+      ows.signTransaction(JSON.stringify(payload), chainId, {
+        owsWallet,
+        owsToken,
+      }),
+    resolveEvmAddress: async () =>
+      ows.address({
+        owsWallet,
+        chainType: 'ethereum',
+      }).address,
+  }
 }
 
 export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
@@ -311,10 +414,12 @@ export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
 
 Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
-  binance-connect   Fiat on-ramp via Binance Connect (buy crypto with fiat)
-  ows-wallet        OWS-backed sign-transaction + build-transfer (drop-in for 'wallet sign-transaction'; build-transfer emits unsigned hex for 'ows sign send-tx')
+  bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing
+  binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
+  dflow           DFlow Solana order execution through purr signing
+  ows-wallet        OWS-backed wallet ops and OWS-scoped Bitget execution
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
-  fourmeme          four.meme BSC flows (login challenge, buy, sell, create-token)
+  fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
@@ -322,6 +427,7 @@ Groups:
   pns               Pie Name Service and identity lookup helpers
   .pie              Resolve .pie identities and transfer to their wallets
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call)
+  redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance billing status and trusted-wallet renewal
   execute           Execute on-chain steps from a JSON file
@@ -331,16 +437,38 @@ Groups:
 
 Examples:
   purr fourmeme login-challenge --wallet 0x...
+  purr fourmeme raised-tokens
   purr wallet sign-transaction --txs-json '{"orderId":"...","txs":[...]}'
   purr fourmeme buy --token 0x... --wallet 0x... --funds 0.1
+  purr fourmeme buy-with-bnb --token 0x... --wallet 0x... --funds 0.1 --min-amount 1000
   purr fourmeme sell --token 0x... --wallet 0x... --amount 1000
-  purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png
+  purr fourmeme sell-for-bnb --token 0x... --wallet 0x... --amount 1000 --min-funds 0.1
+  purr fourmeme agent-wallet --wallet 0x...
+  purr fourmeme tax-rewards --token 0x... --wallet 0x...
+  purr fourmeme tax-claim --token 0x... --wallet 0x...
+  purr fourmeme create-token --wallet 0x... --login-nonce abc --login-signature-file /tmp/fourmeme_login_signature.txt --name "My Token" --symbol MTK --description "..." --label AI --image-url https://example.com/logo.png --raised-token BNB
+  purr bitget order-execute --order-id <id> --from-chain bnb --from-contract <token> --from-symbol USDT --from-address 0x... --to-chain bnb --to-contract "" --to-symbol BNB --to-address 0x... --from-amount 5 --slippage 0.03 --market <id> --protocol <id>
+  purr bitget transfer-execute --chain base --contract 0x... --from-address 0x... --to-address 0x... --amount 10 --gasless true
+  purr bitget x402-pay --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
+  purr ows-wallet bitget-order-execute --ows-wallet treasury --order-id <id> --from-chain bnb --from-contract <token> --from-symbol USDT --from-address 0x... --to-chain bnb --to-contract "" --to-symbol BNB --to-address 0x... --from-amount 5 --slippage 0.03 --market <id> --protocol <id>
+  purr ows-wallet bitget-transfer-execute --ows-wallet treasury --chain base --contract 0x... --from-address 0x... --to-address 0x... --amount 10
+  purr ows-wallet bitget-x402-pay --ows-wallet treasury --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
+  purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --params-json '{"slippageBps":"auto"}'
+  purr dflow execute-order --order-file /tmp/dflow-order.json
+  purr dflow status --order-address <addr> --poll true
   purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea sell --wallet 0x... --fulfillment-file ./fulfillment.json
-  purr binance-connect quote --fiat USD --crypto USDT --amount 50
-  purr binance-connect buy --fiat USD --crypto USDT --amount 50 --network BSC --wallet 0x...
+  purr opensea tx --wallet 0x... --chain-id 8453 --tx-json '{"transaction":{"to":"0x...","data":"0x..."}}'
+  purr opensea actions --wallet 0x... --chain-id 8453 --actions-file ./opensea-actions.json
+  purr opensea sign-order --wallet 0x... --typed-data-file ./seaport-order.json
+  purr opensea sign-message --wallet 0x... --message "Sign in with Ethereum..."
+  purr opensea sign-payment --wallet 0x... --payment-file ./x402-typed-data.json  # signs payment typed data only
+  purr binance-onchain-pay payment-method-list --fiat USD --crypto USDT --total-amount 50 --amount-type 1 --network BSC
+  purr binance-onchain-pay p2p-trading-pairs --fiat USD
+  purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
+  purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -375,12 +503,16 @@ Examples:
   purr ows-wallet build-transfer --ows-wallet treasury --to 0x... --amount 0.01 --chain-id 56
   purr ows-wallet build-transfer --ows-wallet treasury --to 0x... --amount 10 --chain-id 56 --token 0x<erc20-contract>
   # then: ows sign send-tx --chain eip155:56 --wallet treasury --tx <unsignedTxHex from above>
-  purr aster api --endpoint /fapi/v3/balance --user 0x... --private-key 0x...
-  purr aster api --method POST --endpoint /fapi/v3/order --user 0x... --private-key 0x... --symbol BTCUSDT --side BUY --type LIMIT --quantity 0.001 --price 50000 --timeInForce GTC
+  purr aster api --endpoint /fapi/v3/balance --user 0x...
+  purr aster api --method POST --endpoint /fapi/v3/order --user 0x... --symbol BTCUSDT --side BUY --type LIMIT --quantity 0.001 --price 50000 --timeInForce GTC
   purr aster deposit --token 0x... --amount-wei 1000 --wallet 0x... --chain-id 56
   purr wallet address --chain-type ethereum
   purr wallet balance --chain-type ethereum --chain-id 56
   purr wallet balance --token 0x55d3...7955 --chain-id 56
+  purr redpacket send --recipient alice.pie --amount 0.1
+  purr redpacket pending --sender bob.pie
+  purr redpacket claim
+  purr redpacket sent --limit 20 --offset 0
   purr instance status
   purr instance renew --chain-id 56 --token-address 0x55d3...7955 --yes
   purr wallet sign --address 0x... --message "Hello"
@@ -478,14 +610,107 @@ Examples:
         console.log(JSON.stringify(result, null, 2))
         return
       }
+      if (command === 'bitget-order-execute') {
+        const makeOrderJson =
+          args['make-order-json'] !== undefined || args['make-order-file'] !== undefined
+            ? requireArgOrFile(args, 'make-order-json', 'make-order-file')
+            : undefined
+        const result = await bitgetOrderExecute({
+          orderId: args['order-id'],
+          fromChain: args['from-chain'],
+          fromContract: args['from-contract'],
+          fromSymbol: args['from-symbol'],
+          fromAddress: requireArg(args, 'from-address'),
+          toChain: args['to-chain'],
+          toContract: args['to-contract'],
+          toSymbol: args['to-symbol'],
+          toAddress: args['to-address'],
+          fromAmount: args['from-amount'],
+          slippage: args.slippage,
+          market: args.market,
+          protocol: args.protocol,
+          source: args.source,
+          chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+          makeOrderJson,
+          raw: parseBooleanFlag(args.raw),
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      if (command === 'bitget-transfer-execute') {
+        const transferOrderJson =
+          args['transfer-order-json'] !== undefined || args['transfer-order-file'] !== undefined
+            ? requireArgOrFile(args, 'transfer-order-json', 'transfer-order-file')
+            : undefined
+        const result = await bitgetTransferExecute({
+          chain: args.chain,
+          contract: args.contract,
+          fromAddress: requireArg(args, 'from-address'),
+          toAddress: args['to-address'],
+          amount: args.amount,
+          memo: args.memo,
+          gasless: parseBooleanFlag(args.gasless),
+          gaslessPayToken: args['gasless-pay-token'],
+          override7702: parseBooleanFlag(args['override-7702']),
+          chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+          transferOrderJson,
+          raw: parseBooleanFlag(args.raw),
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      if (command === 'bitget-x402-sign-eip3009') {
+        const result = await bitgetX402SignEip3009({
+          token: requireArg(args, 'token'),
+          chainId: parseChainId(requireArg(args, 'chain-id')),
+          to: requireArg(args, 'to'),
+          amount: requireArg(args, 'amount'),
+          fromAddress: args['from-address'],
+          tokenName: args['token-name'],
+          tokenVersion: args['token-version'],
+          maxTimeoutSeconds: parseIntegerArg(args['max-timeout'], 'max-timeout'),
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
+      if (command === 'bitget-x402-pay') {
+        const data =
+          args.data !== undefined || args['data-file'] !== undefined
+            ? requireArgOrFile(args, 'data', 'data-file')
+            : undefined
+        const result = await bitgetX402Pay({
+          url: requireArg(args, 'url'),
+          method: args.method,
+          data,
+          chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+          fromAddress: args['from-address'],
+          maxAmountBaseUnits: args['max-amount-base-units'],
+          responseTextLimit: parseIntegerArg(args['response-text-limit'], 'response-text-limit'),
+          tokenName: args['token-name'],
+          tokenVersion: args['token-version'],
+          signer: owsBitgetSigner(ows, args),
+        })
+        console.log(JSON.stringify(result, null, 2))
+        return
+      }
       throw new Error(
-        `Unknown ows-wallet command: ${command}. Use: sign-transaction, build-transfer`,
+        `Unknown ows-wallet command: ${command}. Use: sign-transaction, build-transfer, bitget-order-execute, bitget-transfer-execute, bitget-x402-sign-eip3009, bitget-x402-pay`,
       )
     }
 
     case 'aster': {
       if (command === 'api') {
-        const reserved = new Set(['method', 'endpoint', 'user', 'private-key', 'base-url'])
+        const reserved = new Set([
+          'method',
+          'endpoint',
+          'user',
+          'private-key',
+          'signer',
+          'base-url',
+        ])
         const apiParams: Record<string, string> = {}
         for (const [k, v] of Object.entries(args)) {
           if (!reserved.has(k)) apiParams[k] = v
@@ -494,7 +719,8 @@ Examples:
           method: args.method ?? 'GET',
           endpoint: requireArg(args, 'endpoint'),
           user: requireArg(args, 'user'),
-          privateKey: requireArg(args, 'private-key'),
+          privateKey: args['private-key'],
+          signer: args.signer,
           baseUrl: args['base-url'],
           params: Object.keys(apiParams).length > 0 ? apiParams : undefined,
         })
@@ -518,13 +744,193 @@ Examples:
       break
     }
 
-    // login-challenge returns non-StepOutput JSON — early return like binance-connect
+    case 'bitget': {
+      switch (command) {
+        case 'order-execute': {
+          const makeOrderJson =
+            args['make-order-json'] !== undefined || args['make-order-file'] !== undefined
+              ? requireArgOrFile(args, 'make-order-json', 'make-order-file')
+              : undefined
+          const result = await bitgetOrderExecute({
+            orderId: args['order-id'],
+            fromChain: args['from-chain'],
+            fromContract: args['from-contract'],
+            fromSymbol: args['from-symbol'],
+            fromAddress: args['from-address'],
+            toChain: args['to-chain'],
+            toContract: args['to-contract'],
+            toSymbol: args['to-symbol'],
+            toAddress: args['to-address'],
+            fromAmount: args['from-amount'],
+            slippage: args.slippage,
+            market: args.market,
+            protocol: args.protocol,
+            source: args.source,
+            chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+            makeOrderJson,
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'transfer-execute': {
+          const transferOrderJson =
+            args['transfer-order-json'] !== undefined || args['transfer-order-file'] !== undefined
+              ? requireArgOrFile(args, 'transfer-order-json', 'transfer-order-file')
+              : undefined
+          const result = await bitgetTransferExecute({
+            chain: args.chain,
+            contract: args.contract,
+            fromAddress: args['from-address'],
+            toAddress: args['to-address'],
+            amount: args.amount,
+            memo: args.memo,
+            gasless: parseBooleanFlag(args.gasless),
+            gaslessPayToken: args['gasless-pay-token'],
+            override7702: parseBooleanFlag(args['override-7702']),
+            chainId: parseIntegerArg(args['chain-id'], 'chain-id'),
+            transferOrderJson,
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'x402-sign-eip3009': {
+          const result = await bitgetX402SignEip3009({
+            token: requireArg(args, 'token'),
+            chainId: parseChainId(requireArg(args, 'chain-id')),
+            to: requireArg(args, 'to'),
+            amount: requireArg(args, 'amount'),
+            tokenName: args['token-name'],
+            tokenVersion: args['token-version'],
+            maxTimeoutSeconds: parseIntegerArg(args['max-timeout'], 'max-timeout'),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'x402-sign-solana':
+          throw new Error(
+            'Bitget Solana x402 signing is out of scope because it requires partial signing',
+          )
+        case 'x402-pay': {
+          const data =
+            args.data !== undefined || args['data-file'] !== undefined
+              ? requireArgOrFile(args, 'data', 'data-file')
+              : undefined
+          const result = await bitgetX402Pay({
+            url: requireArg(args, 'url'),
+            method: args.method,
+            data,
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+            maxAmountBaseUnits: args['max-amount-base-units'],
+            responseTextLimit: parseIntegerArg(args['response-text-limit'], 'response-text-limit'),
+            tokenName: args['token-name'],
+            tokenVersion: args['token-version'],
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        default:
+          throw new Error(
+            `Unknown bitget command: ${command}. Use: order-execute, transfer-execute, x402-sign-eip3009, x402-pay`,
+          )
+      }
+    }
+
+    case 'dflow': {
+      switch (command) {
+        case 'order': {
+          const paramsJson =
+            args['params-json'] !== undefined || args['params-file'] !== undefined
+              ? requireArgOrFile(args, 'params-json', 'params-file')
+              : undefined
+          const result = await dflowOrder({
+            inputMint: args['input-mint'],
+            outputMint: args['output-mint'],
+            amount: args.amount,
+            apiKey: args['api-key'],
+            baseUrl: args['base-url'],
+            paramsJson,
+            raw: parseBooleanFlag(args.raw),
+          })
+          if (parseBooleanFlag(args.execute) === true) {
+            const safeResult = omitApiKeyPresence(result)
+            const executed = await dflowExecuteOrder({
+              orderJson: JSON.stringify(result.order),
+              rpcUrl: args['rpc-url'],
+              apiKey: args['api-key'],
+              baseUrl: args['base-url'],
+              poll: parseBooleanFlag(args.poll),
+              pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
+              pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
+              raw: parseBooleanFlag(args.raw),
+            })
+            console.log(JSON.stringify({ ...safeResult, execution: executed }, null, 2))
+            return
+          }
+          console.log(JSON.stringify(omitApiKeyPresence(result), null, 2))
+          return
+        }
+        case 'execute-order': {
+          const orderJson = requireArgOrFile(args, 'order-json', 'order-file')
+          const result = await dflowExecuteOrder({
+            orderJson,
+            rpcUrl: args['rpc-url'],
+            apiKey: args['api-key'],
+            baseUrl: args['base-url'],
+            poll: parseBooleanFlag(args.poll),
+            pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
+            pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'status': {
+          const result = await dflowStatus({
+            orderAddress: args['order-address'],
+            apiKey: args['api-key'],
+            baseUrl: args['base-url'],
+            poll: parseBooleanFlag(args.poll),
+            timeoutMs: parseIntegerArg(args['timeout-ms'], 'timeout-ms'),
+            intervalMs: parseIntegerArg(args['interval-ms'], 'interval-ms'),
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        default:
+          throw new Error(`Unknown dflow command: ${command}. Use: order, execute-order, status`)
+      }
+    }
+
+    // login-challenge returns non-StepOutput JSON — early return like binance-onchain-pay
     case 'fourmeme': {
       if (command === 'login-challenge') {
         const challenge = await buildFourMemeLoginChallenge({
           wallet: requireArg(args, 'wallet'),
         })
         console.log(JSON.stringify(challenge))
+        return
+      }
+      if (command === 'raised-tokens') {
+        const configs = await getFourMemeRaisedTokenConfigs()
+        console.log(JSON.stringify(configs, null, 2))
+        return
+      }
+      if (command === 'agent-wallet') {
+        const status = await getFourMemeAgentWalletStatus({
+          wallet: requireArg(args, 'wallet'),
+        })
+        console.log(JSON.stringify(status, null, 2))
+        return
+      }
+      if (command === 'tax-rewards') {
+        const rewards = await getFourMemeTaxRewards({
+          token: resolveToken(requireArg(args, 'token'), 56),
+          wallet: requireArg(args, 'wallet'),
+        })
+        console.log(JSON.stringify(rewards, null, 2))
         return
       }
       switch (command) {
@@ -537,12 +943,37 @@ Examples:
             slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
           })
           break
+        case 'buy-with-bnb':
+          output = await buildFourMemeBuyWithBnbSteps({
+            token: resolveToken(requireArg(args, 'token'), 56),
+            wallet: requireArg(args, 'wallet'),
+            funds: requireArg(args, 'funds'),
+            minAmount: requireArg(args, 'min-amount'),
+          })
+          break
         case 'sell':
           output = await buildFourMemeSellSteps({
             token: resolveToken(requireArg(args, 'token'), 56),
             wallet: requireArg(args, 'wallet'),
             amount: requireArg(args, 'amount'),
             slippage: args.slippage ? Number.parseFloat(args.slippage) : undefined,
+          })
+          break
+        case 'sell-for-bnb':
+          output = await buildFourMemeSellForBnbSteps({
+            token: resolveToken(requireArg(args, 'token'), 56),
+            wallet: requireArg(args, 'wallet'),
+            amount: requireArg(args, 'amount'),
+            minFunds: requireArg(args, 'min-funds'),
+            to: args.to,
+            feeRate: parseIntegerArg(args['fee-rate'], 'fee-rate'),
+            feeRecipient: args['fee-recipient'],
+          })
+          break
+        case 'tax-claim':
+          output = buildFourMemeTaxClaimSteps({
+            token: resolveToken(requireArg(args, 'token'), 56),
+            wallet: requireArg(args, 'wallet'),
           })
           break
         case 'create-token':
@@ -575,52 +1006,93 @@ Examples:
             taxRecipientAddress: args['tax-recipient-address'],
             taxMinSharing: args['tax-min-sharing'],
             creationFee: args['creation-fee'],
+            raisedToken: args['raised-token'],
           })
           break
         default:
           throw new Error(
-            `Unknown fourmeme command: ${command}. Use: login-challenge, buy, sell, create-token`,
+            `Unknown fourmeme command: ${command}. Use: login-challenge, raised-tokens, buy, buy-with-bnb, sell, sell-for-bnb, create-token, agent-wallet, tax-rewards, tax-claim`,
           )
       }
       break
     }
 
-    // Binance Connect returns raw API JSON, not StepOutput — early return
-    case 'binance-connect': {
+    // Binance Onchain Pay returns raw API JSON, not StepOutput — early return
+    case 'binance-onchain-pay': {
       let result: unknown
       switch (command) {
-        case 'pairs':
+        case 'trading-pairs':
           result = await getTradingPairs()
           break
-        case 'networks':
+        case 'crypto-network':
           result = await getNetworks()
           break
-        case 'quote':
+        case 'p2p-trading-pairs':
+          result = await getP2PTradingPairs({
+            fiatCurrency: args.fiat,
+          })
+          break
+        case 'payment-method-list':
+          result = await getPaymentMethods({
+            fiatCurrency: args.fiat,
+            cryptoCurrency: args.crypto,
+            totalAmount: parseNumberArg(args['total-amount'], 'total-amount'),
+            amountType: parseAmountTypeArg(args['amount-type']),
+            network: args.network,
+            contractAddress: args['contract-address'],
+            lang: args.lang,
+          })
+          break
+        case 'estimated-quote':
           result = await getQuote({
             fiatCurrency: requireArg(args, 'fiat'),
-            cryptoCurrency: requireArg(args, 'crypto'),
-            fiatAmount: requireArg(args, 'amount'),
+            requestedAmount: requireNumberArg(args, 'requested-amount'),
+            payMethodCode: requireArg(args, 'pay-method-code'),
+            amountType: requireAmountTypeArg(args),
+            cryptoCurrency: args.crypto,
             network: args.network,
-            paymentMethod: args['payment-method'],
+            address: args.address,
+            contractAddress: args['contract-address'],
           })
           break
-        case 'buy':
+        case 'pre-order':
           result = await createOrder({
-            fiatCurrency: requireArg(args, 'fiat'),
-            cryptoCurrency: requireArg(args, 'crypto'),
-            fiatAmount: requireArg(args, 'amount'),
-            cryptoNetwork: requireArg(args, 'network'),
-            walletAddress: requireArg(args, 'wallet'),
-            externalOrderId: args['order-id'],
-            paymentMethod: args['payment-method'],
+            externalOrderId: args['external-order-id'],
+            merchantCode: args['merchant-code'],
+            merchantName: args['merchant-name'],
+            ts: parseIntegerArg(args.ts, 'ts'),
+            fiatCurrency: args.fiat,
+            fiatAmount: parseNumberArg(args['fiat-amount'], 'fiat-amount'),
+            cryptoCurrency: args.crypto,
+            requestedAmount: parseNumberArg(args['requested-amount'], 'requested-amount'),
+            amountType: parseAmountTypeArg(args['amount-type']),
+            address: args.address,
+            network: args.network,
+            payMethodCode: args['pay-method-code'],
+            payMethodSubCode: args['pay-method-sub-code'],
+            redirectUrl: args['redirect-url'],
+            failRedirectUrl: args['fail-redirect-url'],
+            redirectDeepLink: args['redirect-deep-link'],
+            failRedirectDeepLink: args['fail-redirect-deep-link'],
+            contractAddress: args['contract-address'],
+            customization: optionalJsonArg(args, 'customization-json', 'customization-file'),
+            destContractAddress: args['dest-contract-address'],
+            destContractABI: args['dest-contract-abi'],
+            destContractParams: optionalJsonArg(
+              args,
+              'dest-contract-params-json',
+              'dest-contract-params-file',
+            ),
+            affiliateCode: args['affiliate-code'],
+            gtrTemplateCode: args['gtr-template-code'],
           })
           break
-        case 'status':
-          result = await queryOrder(requireArg(args, 'order-id'))
+        case 'order':
+          result = await queryOrder(requireArg(args, 'external-order-id'))
           break
         default:
           throw new Error(
-            `Unknown binance-connect command: ${command}. Use: pairs, networks, quote, buy, status`,
+            `Unknown binance-onchain-pay command: ${command}. Use: trading-pairs, crypto-network, p2p-trading-pairs, payment-method-list, estimated-quote, pre-order, order`,
           )
       }
       console.log(JSON.stringify(result))
@@ -641,8 +1113,53 @@ Examples:
             fulfillment: parseOpenSeaFulfillmentInput(args),
           })
           break
+        case 'tx':
+          output = buildOpenSeaTransactionSteps({
+            wallet: requireArg(args, 'wallet'),
+            transaction: parseOpenSeaTransactionInput(args),
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+            label: args.label,
+          })
+          break
+        case 'actions':
+          output = buildOpenSeaActionSteps({
+            wallet: requireArg(args, 'wallet'),
+            actions: parseOpenSeaActionsInput(args),
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+          })
+          break
+        case 'sign-order': {
+          const result = await signOpenSeaTypedData({
+            wallet: requireArg(args, 'wallet'),
+            typedData: parseOpenSeaTypedDataInput(args),
+            purpose: 'order',
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'sign-payment': {
+          const result = await signOpenSeaTypedData({
+            wallet: requireArg(args, 'wallet'),
+            typedData: parseOpenSeaPaymentInput(args),
+            purpose: 'payment',
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'sign-message': {
+          const result = await signOpenSeaMessage({
+            wallet: requireArg(args, 'wallet'),
+            message: parseOpenSeaMessageInput(args),
+            chainId: args['chain-id'] ? parseChainId(args['chain-id']) : undefined,
+            chainType: args['chain-type'],
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
         default:
-          throw new Error(`Unknown opensea command: ${command}. Use: buy, sell`)
+          throw new Error(
+            `Unknown opensea command: ${command}. Use: buy, sell, tx, actions, sign-order, sign-message, sign-payment`,
+          )
       }
       break
     }
@@ -956,6 +1473,25 @@ Examples:
           throw new Error(
             `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call`,
           )
+      }
+    }
+
+    case 'redpacket': {
+      switch (command) {
+        case 'send':
+          await redpacketSend(args)
+          return
+        case 'pending':
+          await redpacketPending(args)
+          return
+        case 'claim':
+          await redpacketClaim(args)
+          return
+        case 'sent':
+          await redpacketSent(args)
+          return
+        default:
+          throw new Error(`Unknown redpacket command: ${command}. Use: send, pending, claim, sent`)
       }
     }
 
@@ -1274,11 +1810,23 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-connect, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, treasure-code, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, execute, config, version, store`,
       )
   }
 
   if (executeFlag) {
+    if (
+      group === 'opensea' &&
+      command === 'actions' &&
+      output &&
+      'signatureRequests' in output &&
+      Array.isArray(output.signatureRequests) &&
+      output.signatureRequests.length > 0
+    ) {
+      throw new Error(
+        'OpenSea actions include signature requests; refusing --execute to avoid partially executing only transaction steps. Sign the returned typed-data/message requests first.',
+      )
+    }
     if (group === 'opensea' && args.wallet && output && Array.isArray(output.steps)) {
       await ensureOpenSeaExecutionWalletMatches(args.wallet, output.steps)
     }

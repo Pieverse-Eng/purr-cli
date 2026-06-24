@@ -16,7 +16,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 ```
 
-Pin a version by setting `PURR_VERSION`, for example `v0.2.19`.
+Pin a version by setting `PURR_VERSION`, for example `v0.2.20`.
 
 ## Development Install
 
@@ -41,8 +41,9 @@ purr <group> <command> [options]
 | Group | Description |
 |-------|-------------|
 | `aster` | Aster DEX API signing and on-chain deposits |
-| `binance-connect` | Fiat on-ramp quotes, networks, orders, and order status |
-| `fourmeme` | four.meme BSC login challenge, buy, sell, and token creation flows |
+| `bitget` | Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing |
+| `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status |
+| `fourmeme` | four.meme BSC login, raised tokens, buy/sell, tax, agent, and token creation flows |
 | `opensea` | OpenSea buy and sell execution helpers |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
@@ -68,12 +69,26 @@ purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-t
 
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id>
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id> --execute
+purr fourmeme raised-tokens
 purr fourmeme buy --token <token-address> --wallet <wallet-address> --funds <amount>
-purr binance-connect quote --fiat <fiat-symbol> --crypto <crypto-symbol> --amount <amount>
+purr fourmeme buy-with-bnb --token <token-address> --wallet <wallet-address> --funds <bnb-amount> --min-amount <min-token-amount>
+purr fourmeme sell-for-bnb --token <token-address> --wallet <wallet-address> --amount <token-amount> --min-funds <min-bnb-amount>
+purr fourmeme agent-wallet --wallet <wallet-address>
+purr fourmeme tax-rewards --token <token-address> --wallet <wallet-address>
+purr fourmeme tax-claim --token <token-address> --wallet <wallet-address>
+purr bitget order-execute --order-id <order-id> --from-chain bnb --from-contract <token-address> --from-symbol USDT --from-address <wallet-address> --to-chain bnb --to-contract "" --to-symbol BNB --to-address <wallet-address> --from-amount <amount> --slippage <slippage> --market <market-id> --protocol <protocol-id>
+purr bitget transfer-execute --chain base --contract <token-address> --from-address <wallet-address> --to-address <recipient-address> --amount <amount> --gasless true
+purr bitget x402-pay --url <paid-resource-url> --method POST --data <json-body>
+purr binance-onchain-pay payment-method-list --fiat <fiat-symbol> --crypto <crypto-symbol> --total-amount <amount> --amount-type <1|2> --network <network>
+purr binance-onchain-pay p2p-trading-pairs --fiat <fiat-symbol>
+purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --pay-method-code <pay-method-code>
+purr binance-onchain-pay pre-order --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --network <network> --address <wallet-address> --pay-method-code <pay-method-code>
 purr opensea buy --wallet <wallet-address> --fulfillment-file <path-to-fulfillment-json>
 purr lista list-vaults --zone <zone>
 purr evm approve --token <token-address> --spender <spender-address> --amount <amount> --chain-id <chain-id>
 purr evm abi-call --to <contract-address> --signature <function-signature> --args <json-args> --chain-id <chain-id>
+purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>
+purr aster deposit --token <token-address> --amount-wei <amount-wei> --wallet <wallet-address> --chain-id <chain-id>
 
 purr execute --steps-file <path-to-steps-json> --dedup-key <dedup-key>
 purr instance status

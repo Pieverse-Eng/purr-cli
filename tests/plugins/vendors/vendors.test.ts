@@ -1,11 +1,17 @@
 import { decodeAbiParameters, decodeFunctionData, encodeAbiParameters, parseAbi } from 'viem'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  buildFourMemeBuyWithBnbSteps,
   buildFourMemeBuySteps,
   buildFourMemeCreateTokenSteps,
   buildFourMemeLoginChallenge,
   buildFourMemeSellSteps,
+  buildFourMemeSellForBnbSteps,
+  buildFourMemeTaxClaimSteps,
   FOUR_MEME_TEST_CONSTANTS,
+  getFourMemeAgentWalletStatus,
+  getFourMemeRaisedTokenConfigs,
+  getFourMemeTaxRewards,
 } from '@pieverseio/purr-plugin-vendors/fourmeme'
 import {
   buildPancakeAddLiquiditySteps,
@@ -39,6 +45,7 @@ const NATIVE = '0x0000000000000000000000000000000000000000'
 const TM1 = FOUR_MEME_TEST_CONSTANTS.DEFAULT_TOKEN_MANAGER_V1
 const TM2 = FOUR_MEME_TEST_CONSTANTS.DEFAULT_TOKEN_MANAGER_V2
 const HELPER = FOUR_MEME_TEST_CONSTANTS.DEFAULT_TOKEN_MANAGER_HELPER3
+const AGENT_IDENTIFIER = FOUR_MEME_TEST_CONSTANTS.DEFAULT_AGENT_IDENTIFIER
 const TOKEN = '0x1111111111111111111111111111111111111111'
 const QUOTE = '0x2222222222222222222222222222222222222222'
 const SEAPORT = '0x0000000000000068f116a894984e2db1123eb395'
@@ -60,6 +67,14 @@ const FOUR_MEME_V2_TEST_ABI = parseAbi([
   'function createToken(bytes createArg, bytes signature) payable',
 ])
 
+const FOUR_MEME_HELPER_TEST_ABI = parseAbi([
+  'function buyWithEth(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
+  'function sellForEth(uint256 origin, address token, uint256 amount, uint256 minFunds, uint256 feeRate, address feeRecipient)',
+  'function sellForEth(uint256 origin, address token, address from, address to, uint256 amount, uint256 minFunds)',
+])
+
+const TAX_TOKEN_TEST_ABI = parseAbi(['function claimFee()'])
+
 class FakeFourMemeApiClient {
   public uploadedFiles: string[] = []
   public loginCalls: Array<{ wallet: string; nonce: string; signature: string }> = []
@@ -75,6 +90,7 @@ class FakeFourMemeApiClient {
       failLogin?: string
       failCreate?: string
       raisedToken?: typeof FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
+      raisedTokens?: (typeof FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG)[]
     } = {},
   ) {}
 
@@ -105,8 +121,23 @@ class FakeFourMemeApiClient {
     }
   }
 
-  async getRaisedTokenConfig() {
-    return this.config.raisedToken ?? FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG
+  async getRaisedTokenConfigs() {
+    return (
+      this.config.raisedTokens ?? [
+        this.config.raisedToken ?? FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
+      ]
+    )
+  }
+
+  async getRaisedTokenConfig(raisedToken = 'BNB') {
+    const configs = await this.getRaisedTokenConfigs()
+    const match = configs.find((config) =>
+      [config.symbol, config.nativeSymbol, config.symbolAddress].some(
+        (value) => value.toLowerCase() === raisedToken.toLowerCase(),
+      ),
+    )
+    if (!match) throw new Error(`Unsupported four.meme raised token: "${raisedToken}"`)
+    return match
   }
 }
 
@@ -121,6 +152,12 @@ class FakeFourMemeClient {
       sellQuote?: [bigint, bigint]
       tokenDecimals?: number
       quoteDecimals?: number
+      isAgent?: boolean
+      taxRewards?: {
+        claimableFee?: bigint
+        claimedFee?: bigint
+        userInfo?: [bigint, bigint, bigint, bigint]
+      }
     },
   ) {}
 
@@ -131,6 +168,15 @@ class FakeFourMemeClient {
   }): Promise<unknown> {
     const quote = this.config.quote ?? (NATIVE as `0x${string}`)
     switch (args.functionName) {
+      case 'isAgent':
+        expect(args.address.toLowerCase()).toBe(AGENT_IDENTIFIER.toLowerCase())
+        return this.config.isAgent ?? false
+      case 'claimableFee':
+        return this.config.taxRewards?.claimableFee ?? 123n
+      case 'claimedFee':
+        return this.config.taxRewards?.claimedFee ?? 45n
+      case 'userInfo':
+        return this.config.taxRewards?.userInfo ?? [1000n, 10n, 123n, 45n]
       case 'decimals':
         if (args.address.toLowerCase() === TOKEN.toLowerCase()) {
           return this.config.tokenDecimals ?? 18
@@ -634,6 +680,158 @@ describe('four.meme steps', () => {
     expect(decoded.args[3]).toBe(900n)
   })
 
+  it('builds buy-with-bnb steps through Helper3 for ERC20-quoted tokens', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      quote: QUOTE as `0x${string}`,
+    })
+
+    const result = await buildFourMemeBuyWithBnbSteps(
+      { token: TOKEN, wallet: WALLET, funds: '0.25', minAmount: '1000' },
+      client,
+    )
+
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(HELPER)
+    expect(result.steps[0].value).toBe('0x3782dace9d90000')
+
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_HELPER_TEST_ABI,
+      data: result.steps[0].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('buyWithEth')
+    expect(decoded.args[2]).toBe(WALLET)
+    expect(decoded.args[3]).toBe(250000000000000000n)
+    expect(decoded.args[4]).toBe(1000000000000000000000n)
+  })
+
+  it('rejects buy-with-bnb for native-quoted tokens', async () => {
+    const client = new FakeFourMemeClient({ version: 2 })
+    await expect(
+      buildFourMemeBuyWithBnbSteps(
+        { token: TOKEN, wallet: WALLET, funds: '0.25', minAmount: '1000' },
+        client,
+      ),
+    ).rejects.toThrow('quote token is not BNB')
+  })
+
+  it('builds sell-for-bnb steps through Helper3', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      quote: QUOTE as `0x${string}`,
+    })
+
+    const result = await buildFourMemeSellForBnbSteps(
+      {
+        token: TOKEN,
+        wallet: WALLET,
+        amount: '2',
+        minFunds: '0.1',
+        feeRate: 25,
+        feeRecipient: QUOTE,
+      },
+      client,
+    )
+
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0].conditional?.spender).toBe(HELPER)
+    expect(result.steps[0].conditional?.amount).toBe('2000000000000000000')
+
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_HELPER_TEST_ABI,
+      data: result.steps[1].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('sellForEth')
+    expect(decoded.args[2]).toBe(2000000000000000000n)
+    expect(decoded.args[3]).toBe(100000000000000000n)
+    expect(decoded.args[4]).toBe(25n)
+    expect(decoded.args[5]).toBe(QUOTE)
+  })
+
+  it('builds sell-for-bnb steps with explicit recipient', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      quote: QUOTE as `0x${string}`,
+    })
+
+    const result = await buildFourMemeSellForBnbSteps(
+      { token: TOKEN, wallet: WALLET, amount: '2', minFunds: '0.1', to: VAULT },
+      client,
+    )
+
+    const decoded = decodeFunctionData({
+      abi: FOUR_MEME_HELPER_TEST_ABI,
+      data: result.steps[1].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('sellForEth')
+    expect(decoded.args[2]).toBe(WALLET)
+    expect((decoded.args[3] as string).toLowerCase()).toBe(VAULT.toLowerCase())
+    expect(decoded.args[4]).toBe(2000000000000000000n)
+  })
+
+  it('rejects sell-for-bnb with both explicit recipient and fee args', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      quote: QUOTE as `0x${string}`,
+    })
+
+    await expect(
+      buildFourMemeSellForBnbSteps(
+        {
+          token: TOKEN,
+          wallet: WALLET,
+          amount: '2',
+          minFunds: '0.1',
+          to: VAULT,
+          feeRate: 25,
+          feeRecipient: QUOTE,
+        },
+        client,
+      ),
+    ).rejects.toThrow('--to cannot be combined with --fee-rate or --fee-recipient')
+  })
+
+  it('reads AgentIdentifier wallet status', async () => {
+    const client = new FakeFourMemeClient({ version: 2, isAgent: true })
+    const result = await getFourMemeAgentWalletStatus({ wallet: WALLET }, client)
+    expect(result).toEqual({ wallet: WALLET, isAgent: true })
+  })
+
+  it('reads TaxToken rewards', async () => {
+    const client = new FakeFourMemeClient({
+      version: 2,
+      taxRewards: {
+        claimableFee: 500n,
+        claimedFee: 100n,
+        userInfo: [10n, 20n, 30n, 40n],
+      },
+    })
+    const result = await getFourMemeTaxRewards({ token: TOKEN, wallet: WALLET }, client)
+    expect(result).toEqual({
+      token: TOKEN,
+      wallet: WALLET,
+      claimableFee: '500',
+      claimedFee: '100',
+      userInfo: {
+        share: '10',
+        rewardDebt: '20',
+        claimable: '30',
+        claimed: '40',
+      },
+    })
+  })
+
+  it('builds TaxToken claim step', () => {
+    const result = buildFourMemeTaxClaimSteps({ token: TOKEN, wallet: WALLET })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0].to).toBe(TOKEN)
+    const decoded = decodeFunctionData({
+      abi: TAX_TOKEN_TEST_ABI,
+      data: result.steps[0].data as `0x${string}`,
+    })
+    expect(decoded.functionName).toBe('claimFee')
+  })
+
   it('rejects both amount and funds on buy', async () => {
     const client = new FakeFourMemeClient({ version: 2 })
     await expect(
@@ -735,6 +933,87 @@ describe('four.meme steps', () => {
       preSale: '0.1',
       raisedAmount: '0.1',
     })
+  })
+
+  it('lists raised token configs from the API client', async () => {
+    const usdtConfig = {
+      ...FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
+      symbol: 'USDT',
+      nativeSymbol: 'USDT',
+      symbolAddress: USDT,
+      totalBAmount: '12000',
+    }
+    const api = new FakeFourMemeApiClient({ raisedTokens: [usdtConfig] })
+    const result = await getFourMemeRaisedTokenConfigs(api)
+    expect(result).toEqual([usdtConfig])
+  })
+
+  it('uses selected raised token config for create-token without presale', async () => {
+    const usdtConfig = {
+      ...FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
+      symbol: 'USDT',
+      nativeSymbol: 'USDT',
+      symbolAddress: USDT,
+      totalBAmount: '12000',
+    }
+    const api = new FakeFourMemeApiClient({
+      raisedTokens: [FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG, usdtConfig],
+    })
+
+    const result = await buildFourMemeCreateTokenSteps(
+      {
+        wallet: WALLET,
+        loginNonce: 'nonce-usdt',
+        loginSignature: '0xsigned',
+        name: 'USDT Raised',
+        symbol: 'URAI',
+        description: 'usdt raised token',
+        label: 'AI',
+        imageUrl: 'https://static.four.meme/market/test-logo.png',
+        raisedToken: 'USDT',
+      },
+      api,
+    )
+
+    expect(result.steps[0].value).toBe('0x2386f26fc10000')
+    expect(result.steps[0].label).toContain('raised USDT')
+    expect(api.createCalls[0].payload).toMatchObject({
+      symbol: 'USDT',
+      preSale: '0',
+      raisedAmount: '0',
+      raisedToken: usdtConfig,
+    })
+  })
+
+  it('rejects non-BNB raised-token create-token with presale', async () => {
+    const usdtConfig = {
+      ...FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG,
+      symbol: 'USDT',
+      nativeSymbol: 'USDT',
+      symbolAddress: USDT,
+    }
+    const api = new FakeFourMemeApiClient({
+      raisedTokens: [FOUR_MEME_TEST_CONSTANTS.DEFAULT_FOUR_MEME_RAISED_TOKEN_CONFIG, usdtConfig],
+    })
+
+    await expect(
+      buildFourMemeCreateTokenSteps(
+        {
+          wallet: WALLET,
+          loginNonce: 'nonce-usdt-presale',
+          loginSignature: '0xsigned',
+          name: 'USDT Presale',
+          symbol: 'UPRE',
+          description: 'unsupported usdt presale',
+          label: 'AI',
+          imageUrl: 'https://static.four.meme/market/test-logo.png',
+          preSale: '50',
+          raisedToken: 'USDT',
+        },
+        api,
+      ),
+    ).rejects.toThrow('Non-BNB raised tokens currently require preSale to be 0')
+    expect(api.loginCalls).toEqual([])
   })
 
   it('sets raisedAmount equal to preSale (zero when omitted)', async () => {

@@ -183,7 +183,6 @@ function pickSolanaBase58(value: unknown): SolanaSerializedValue | undefined {
 }
 
 function solanaSerializedValue(step: SolanaTxStep): SolanaSerializedValue | undefined {
-  const data = isRecord(step.data) ? step.data : undefined
   return (
     solanaExplicitSerializedValue(step) ??
     pickSolanaBase58(typeof step.data === 'string' ? step.data : undefined)
@@ -235,9 +234,7 @@ function isLikelyHexString(value: string): boolean {
 export function extractSolanaTxHex(step: SolanaTxStep, idx = 0): string {
   const serializedTx = solanaSerializedValue(step)
   if (!serializedTx) {
-    throw new Error(
-      `Step ${idx}: Solana step must include unsignedTxHex or serializedTransaction`,
-    )
+    throw new Error(`Step ${idx}: Solana step must include unsignedTxHex or serializedTransaction`)
   }
 
   if (serializedTx.encoding === 'hex') {
@@ -575,11 +572,7 @@ export async function owsExecuteSteps(input: ExecuteStepsOwsInput): Promise<Exec
     throw new Error('Invalid --steps-json: not valid JSON')
   }
   const rawSteps = (parsed.steps ?? parsed) as unknown
-  const steps = Array.isArray(rawSteps)
-    ? rawSteps
-    : isSolanaStep(rawSteps)
-      ? [rawSteps]
-      : rawSteps
+  const steps = Array.isArray(rawSteps) ? rawSteps : isSolanaStep(rawSteps) ? [rawSteps] : rawSteps
   if (!Array.isArray(steps) || steps.length === 0) {
     throw new Error('--steps-json must contain a non-empty steps array')
   }

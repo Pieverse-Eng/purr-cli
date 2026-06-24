@@ -7,6 +7,7 @@
     "./aster": "./src/aster.ts",
     "./bitget": "./src/bitget.ts",
     "./binance-onchain-pay": "./src/binance-onchain-pay.ts",
+    "./dflow": "./src/dflow.ts",
     "./fourmeme": "./src/fourmeme.ts",
     "./fourmeme-api": "./src/fourmeme-api.ts",
     "./lista": "./src/lista.ts",
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",
+    "@solana/web3.js": "^1.95.0",
     "viem": "^2.46.0"
   }
 }

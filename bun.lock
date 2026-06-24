@@ -79,6 +79,7 @@
       "version": "0.2.19",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
+        "@solana/web3.js": "^1.95.0",
         "viem": "^2.46.0",
       },
     },

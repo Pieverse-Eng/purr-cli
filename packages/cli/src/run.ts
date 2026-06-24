@@ -49,6 +49,11 @@ import {
   bitgetX402SignEip3009,
 } from '@pieverseio/purr-plugin-vendors/bitget'
 import {
+  dflowExecuteOrder,
+  dflowOrder,
+  dflowStatus,
+} from '@pieverseio/purr-plugin-vendors/dflow'
+import {
   buildListaDepositSteps,
   buildListaRedeemSteps,
   buildListaWithdrawSteps,
@@ -386,6 +391,7 @@ Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
   bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing
   binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
+  dflow           DFlow Solana order execution through purr signing
   ows-wallet        OWS-backed sign-transaction + build-transfer (drop-in for 'wallet sign-transaction'; build-transfer emits unsigned hex for 'ows sign send-tx')
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
   fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
@@ -419,6 +425,9 @@ Examples:
   purr bitget order-execute --order-id <id> --from-chain bnb --from-contract <token> --from-symbol USDT --from-address 0x... --to-chain bnb --to-contract "" --to-symbol BNB --to-address 0x... --from-amount 5 --slippage 0.03 --market <id> --protocol <id>
   purr bitget transfer-execute --chain base --contract 0x... --from-address 0x... --to-address 0x... --amount 10 --gasless true
   purr bitget x402-pay --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
+  purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --params-json '{"slippageBps":"auto"}'
+  purr dflow execute-order --order-file /tmp/dflow-order.json
+  purr dflow status --order-address <addr> --poll true
   purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
@@ -711,6 +720,72 @@ Examples:
           throw new Error(
             `Unknown bitget command: ${command}. Use: order-execute, transfer-execute, x402-sign-eip3009, x402-pay`,
           )
+      }
+    }
+
+    case 'dflow': {
+      switch (command) {
+        case 'order': {
+          const paramsJson =
+            args['params-json'] !== undefined || args['params-file'] !== undefined
+              ? requireArgOrFile(args, 'params-json', 'params-file')
+              : undefined
+          const result = await dflowOrder({
+            inputMint: args['input-mint'],
+            outputMint: args['output-mint'],
+            amount: args.amount,
+            apiKey: args['api-key'],
+            baseUrl: args['base-url'],
+            paramsJson,
+            raw: parseBooleanFlag(args.raw),
+          })
+          if (parseBooleanFlag(args.execute) === true) {
+            const executed = await dflowExecuteOrder({
+              orderJson: JSON.stringify(result.order),
+              rpcUrl: args['rpc-url'],
+              apiKey: args['api-key'],
+              baseUrl: args['base-url'],
+              poll: parseBooleanFlag(args.poll),
+              pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
+              pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
+              raw: parseBooleanFlag(args.raw),
+            })
+            console.log(JSON.stringify({ ...result, execution: executed }, null, 2))
+            return
+          }
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'execute-order': {
+          const orderJson = requireArgOrFile(args, 'order-json', 'order-file')
+          const result = await dflowExecuteOrder({
+            orderJson,
+            rpcUrl: args['rpc-url'],
+            apiKey: args['api-key'],
+            baseUrl: args['base-url'],
+            poll: parseBooleanFlag(args.poll),
+            pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
+            pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'status': {
+          const result = await dflowStatus({
+            orderAddress: args['order-address'],
+            apiKey: args['api-key'],
+            baseUrl: args['base-url'],
+            poll: parseBooleanFlag(args.poll),
+            timeoutMs: parseIntegerArg(args['timeout-ms'], 'timeout-ms'),
+            intervalMs: parseIntegerArg(args['interval-ms'], 'interval-ms'),
+            raw: parseBooleanFlag(args.raw),
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        default:
+          throw new Error(`Unknown dflow command: ${command}. Use: order, execute-order, status`)
       }
     }
 

@@ -60,4 +60,22 @@ describe('okx source', () => {
     expect(res!.qualified_slug).toBe('okx:fixture-with-binary')
     expect(res!.components).toEqual(['skill'])
   })
+
+  it('okx.install uses registry skill dirs without duplicating skills/<slug>', async () => {
+    const { resolveOkxSkillSubpath } = await import('@pieverseio/purr-plugin-store/sources/okx')
+
+    expect(
+      resolveOkxSkillSubpath({
+        name: 'aave-v2-plugin',
+        components: { skill: { dir: 'skills/aave-v2-plugin' } },
+      }),
+    ).toBe('skills/aave-v2-plugin')
+    expect(
+      resolveOkxSkillSubpath({
+        name: 'fixture-with-relative-subdir',
+        components: { skill: { dir: 'skill' } },
+      }),
+    ).toBe('skills/fixture-with-relative-subdir/skill')
+    expect(resolveOkxSkillSubpath({ name: 'fixture-default' })).toBe('skills/fixture-default')
+  })
 })

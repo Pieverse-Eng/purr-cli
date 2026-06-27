@@ -48,6 +48,20 @@ interface Normalized {
   raw: Plugin
 }
 
+export function resolveOkxSkillSubpath(plugin: {
+  name: string
+  components?: { skill?: { dir?: string } }
+}): string {
+  const rawDir = plugin.components?.skill?.dir?.trim() || '.'
+  const skillDir = posixPath.normalize(rawDir).replace(/\/$/, '')
+  if (skillDir.startsWith('/') || skillDir.split('/').some((part) => part === '..')) {
+    throw new Error(`Unsafe OKX skill dir: ${rawDir}`)
+  }
+  if (skillDir === '.' || skillDir === '') return `skills/${plugin.name}`
+  if (skillDir.startsWith('skills/')) return skillDir
+  return posixPath.normalize(`skills/${plugin.name}/${skillDir}`).replace(/\/$/, '')
+}
+
 async function getRegistry(): Promise<Registry> {
   const cached = readCache<Registry>(CACHE_KEY, CACHE_TTL)
   if (cached) return cached
@@ -144,8 +158,7 @@ export async function install(
   }
 
   const sha = await getHeadSha()
-  const skillDir = plugin.components?.skill?.dir || '.'
-  const subpath = posixPath.normalize(`skills/${plugin.name}/${skillDir}`).replace(/\/$/, '')
+  const subpath = resolveOkxSkillSubpath(plugin)
 
   const { dir, cleanup } = await fetchRepoSubpath({
     owner: OWNER,

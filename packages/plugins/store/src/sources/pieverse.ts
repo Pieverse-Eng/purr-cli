@@ -6,7 +6,8 @@ import { assertNoPathEscape } from '../util/github.js'
 import { extractArchive } from '../util/archive.js'
 import { installToAgents, removeFromAgents } from '../skill-dirs.js'
 
-const STORE = process.env.SKILL_STORE_URL || 'https://www.pieverse.io/api/skill-store/cli'
+export const DEFAULT_SKILL_STORE_URL = 'https://purr.pieverse.io/api/app/skill-store/cli'
+const STORE = process.env.SKILL_STORE_URL || DEFAULT_SKILL_STORE_URL
 const MAX_ZIP_SIZE = 50 * 1024 * 1024
 
 interface SkillMeta {

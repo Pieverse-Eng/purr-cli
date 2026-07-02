@@ -103,6 +103,11 @@ describe('resolveToken', () => {
   it('resolves Robinhood Chain stock and ETF token tickers', () => {
     expect(resolveToken('NVDA', 4663)).toBe('0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC')
     expect(resolveToken('SPY', 4663)).toBe('0x117cc2133c37B721F49dE2A7a74833232B3B4C0C')
+    expect(resolveToken('USO', 4663)).toBe('0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344')
+  })
+
+  it('uses the on-chain USO symbol for United States Oil Fund on Robinhood Chain', () => {
+    expect(() => resolveToken('CUSO', 4663)).toThrow(/Unknown token "CUSO" on chain 4663/)
   })
 
   // --- BNB Chain tokens ---

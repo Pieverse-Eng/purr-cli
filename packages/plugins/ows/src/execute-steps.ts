@@ -551,8 +551,7 @@ async function signAndBroadcastSolanaStep(args: {
 export function resolveRpcUrl(chainId: number, override?: string): string {
   if (override) return override
   if (chainId === 4663) return DEFAULT_RPCS[4663]
-  const envOverride =
-    process.env[`EVM_RPC_${chainId}`] || process.env.EVM_RPC_URL
+  const envOverride = process.env[`EVM_RPC_${chainId}`] || process.env.EVM_RPC_URL
   if (envOverride) return envOverride
   const def = DEFAULT_RPCS[chainId]
   if (!def) {

@@ -1,10 +1,6 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 import { parseChainId } from '@pieverseio/purr-core/shared'
-import {
-  SOLANA_CHAIN_ID,
-  chainNameToId,
-  resolveToken,
-} from '@pieverseio/purr-core/token-registry'
+import { SOLANA_CHAIN_ID, chainNameToId, resolveToken } from '@pieverseio/purr-core/token-registry'
 
 export interface WalletTransferData {
   from: string
@@ -37,8 +33,7 @@ export async function executeWalletTransfer(
   }
 
   const chainNameId = args.chain ? chainNameToId(args.chain) : undefined
-  const chainType =
-    args['chain-type'] ?? (chainNameId === SOLANA_CHAIN_ID ? 'solana' : 'ethereum')
+  const chainType = args['chain-type'] ?? (chainNameId === SOLANA_CHAIN_ID ? 'solana' : 'ethereum')
   const isSolana = chainType === 'solana'
 
   // chain-id or a known chain alias is required for EVM, not needed for Solana.

@@ -90,6 +90,21 @@ describe('resolveToken', () => {
     expect(resolveToken('USDG', 196)).toBe('0x4ae46a509f6b1d9056937ba4500cb143933d2dc8')
   })
 
+  // --- Robinhood Chain tokens ---
+  it('resolves ETH to native on Robinhood Chain', () => {
+    expect(resolveToken('ETH', 4663)).toBe(NATIVE_EVM)
+  })
+
+  it('resolves WETH and USDG on Robinhood Chain', () => {
+    expect(resolveToken('WETH', 4663)).toBe('0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73')
+    expect(resolveToken('USDG', 4663)).toBe('0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168')
+  })
+
+  it('resolves Robinhood Chain stock and ETF token tickers', () => {
+    expect(resolveToken('NVDA', 4663)).toBe('0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC')
+    expect(resolveToken('SPY', 4663)).toBe('0x117cc2133c37B721F49dE2A7a74833232B3B4C0C')
+  })
+
   // --- BNB Chain tokens ---
   it('resolves WBNB on BSC', () => {
     expect(resolveToken('WBNB', 56)).toBe('0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c')
@@ -193,6 +208,9 @@ describe('inferChainId', () => {
     expect(inferChainId({ chain: 'xlayer' })).toBe(196)
     expect(inferChainId({ chain: 'x-layer' })).toBe(196)
     expect(inferChainId({ chain: 'okx' })).toBe(196)
+    expect(inferChainId({ chain: 'robinhood' })).toBe(4663)
+    expect(inferChainId({ chain: 'robinhood-chain' })).toBe(4663)
+    expect(inferChainId({ chain: 'rhc' })).toBe(4663)
   })
 
   it('is case-insensitive for chain names', () => {

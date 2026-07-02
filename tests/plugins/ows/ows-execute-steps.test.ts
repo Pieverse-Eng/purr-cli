@@ -55,12 +55,19 @@ describe('resolveRpcUrl', () => {
     expect(resolveRpcUrl(56)).toBe('https://generic-rpc')
   })
 
+  it('keeps Robinhood mainnet on the official public RPC by default', () => {
+    process.env.EVM_RPC_4663 = 'https://chain-specific-rpc'
+    process.env.EVM_RPC_URL = 'https://generic-rpc'
+    expect(resolveRpcUrl(4663)).toBe('https://rpc.mainnet.chain.robinhood.com')
+  })
+
   it('falls back to hardcoded default for known chains', () => {
     expect(resolveRpcUrl(56)).toMatch(/bsc-rpc/)
     expect(resolveRpcUrl(8217)).toMatch(/kaia/)
     expect(resolveRpcUrl(1001)).toMatch(/kairos/)
     expect(resolveRpcUrl(8453)).toMatch(/base-rpc/)
     expect(resolveRpcUrl(1)).toMatch(/ethereum-rpc/)
+    expect(resolveRpcUrl(4663)).toBe('https://rpc.mainnet.chain.robinhood.com')
   })
 
   it('throws for unknown chainId without override', () => {
@@ -337,9 +344,9 @@ describe('Solana execute step helpers', () => {
 // ---------------------------------------------------------------------------
 
 describe('SUPPORTED_CHAIN_IDS', () => {
-  it('includes all 11 server-supported chains', () => {
+  it('includes all 12 server-supported chains', () => {
     // From api-server services/evm.ts CHAIN_CONFIG
-    const expected = [1, 10, 56, 97, 137, 1001, 2818, 8217, 8453, 42161, 46630]
+    const expected = [1, 10, 56, 97, 137, 1001, 2818, 4663, 8217, 8453, 42161, 46630]
     expect(SUPPORTED_CHAIN_IDS).toEqual(expected)
   })
 
@@ -348,6 +355,7 @@ describe('SUPPORTED_CHAIN_IDS', () => {
     expect(SUPPORTED_CHAIN_IDS).toContain(1001)
     expect(SUPPORTED_CHAIN_IDS).toContain(2818)
     expect(SUPPORTED_CHAIN_IDS).toContain(8217)
+    expect(SUPPORTED_CHAIN_IDS).toContain(4663)
     expect(SUPPORTED_CHAIN_IDS).toContain(46630)
   })
 })

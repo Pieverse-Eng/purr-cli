@@ -1,6 +1,10 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 import { parseChainId } from '@pieverseio/purr-core/shared'
-import { SOLANA_CHAIN_ID, resolveToken } from '@pieverseio/purr-core/token-registry'
+import {
+  SOLANA_CHAIN_ID,
+  chainNameToId,
+  resolveToken,
+} from '@pieverseio/purr-core/token-registry'
 
 export interface WalletTransferData {
   from: string
@@ -32,14 +36,25 @@ export async function executeWalletTransfer(
     throw new Error('Missing required argument: --amount')
   }
 
-  const chainType = args['chain-type'] ?? 'ethereum'
+  const chainNameId = args.chain ? chainNameToId(args.chain) : undefined
+  const chainType =
+    args['chain-type'] ?? (chainNameId === SOLANA_CHAIN_ID ? 'solana' : 'ethereum')
   const isSolana = chainType === 'solana'
 
-  // chain-id is required for EVM, not needed for Solana
-  if (!isSolana && !args['chain-id']) {
-    throw new Error('Missing required argument: --chain-id (not required for --chain-type solana)')
+  // chain-id or a known chain alias is required for EVM, not needed for Solana.
+  if (!isSolana && !args['chain-id'] && !args.chain) {
+    throw new Error(
+      'Missing required argument: --chain-id or --chain (not required for --chain-type solana)',
+    )
   }
-  const parsedChainId = args['chain-id'] ? parseChainId(args['chain-id']) : undefined
+  const parsedChainId = isSolana
+    ? undefined
+    : args['chain-id']
+      ? parseChainId(args['chain-id'])
+      : chainNameId
+  if (!isSolana && parsedChainId === undefined) {
+    throw new Error(`Unknown --chain: ${args.chain}`)
+  }
 
   const body: Record<string, unknown> = {
     to,

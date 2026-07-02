@@ -61,6 +61,7 @@ const DEFAULT_RPCS: Record<number, string> = {
   2818: 'https://rpc.morph.network',
   8217: 'https://public-en.node.kaia.io',
   8453: 'https://base-rpc.publicnode.com',
+  4663: 'https://rpc.mainnet.chain.robinhood.com',
   42161: 'https://arbitrum-one-rpc.publicnode.com',
   46630: 'https://rpc.testnet.chain.robinhood.com',
 }
@@ -549,7 +550,9 @@ async function signAndBroadcastSolanaStep(args: {
 
 export function resolveRpcUrl(chainId: number, override?: string): string {
   if (override) return override
-  const envOverride = process.env[`EVM_RPC_${chainId}`] || process.env.EVM_RPC_URL
+  if (chainId === 4663) return DEFAULT_RPCS[4663]
+  const envOverride =
+    process.env[`EVM_RPC_${chainId}`] || process.env.EVM_RPC_URL
   if (envOverride) return envOverride
   const def = DEFAULT_RPCS[chainId]
   if (!def) {

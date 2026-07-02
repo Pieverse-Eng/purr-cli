@@ -165,6 +165,32 @@ describe('walletTransfer', () => {
     expect(body.tokenAddress).toBe('0x55d398326f99059fF775485246999027B3197955')
   })
 
+  it('uses chain aliases when resolving EVM token tickers', async () => {
+    const mock = mockFetch({
+      ok: true,
+      data: {
+        from: '0x1',
+        to: '0x2',
+        amount: '100',
+        hash: '0xdef',
+        chainId: 4663,
+        chainType: 'ethereum',
+        assetType: 'erc20',
+      },
+    })
+    vi.stubGlobal('fetch', mock)
+
+    await walletTransfer({ to: '0x2', amount: '100', chain: 'robinhood', token: 'USDG' })
+
+    const body = JSON.parse(mock.mock.calls[0][1].body)
+    expect(body).toMatchObject({
+      chainType: 'ethereum',
+      chainId: 4663,
+      assetType: 'erc20',
+      tokenAddress: '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168',
+    })
+  })
+
   // ── Solana native transfer ──
 
   it('sends Solana native transfer without chain-id', async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-cli",
-  "version": "0.2.23",
+  "version": "0.2.24",
   "description": "Calldata builder CLI for on-chain step construction",
   "type": "module",
   "workspaces": [

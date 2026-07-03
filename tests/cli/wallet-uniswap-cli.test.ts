@@ -113,7 +113,10 @@ describe('wallet uniswap CLI', () => {
         const body = await readJsonBody(req)
         requests.push({ method: req.method, url: req.url, body })
 
-        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/wallet/uniswap/quote`) {
+        if (
+          req.method === 'POST' &&
+          req.url === `/v1/instances/${INSTANCE_ID}/wallet/uniswap/quote`
+        ) {
           writeJson(res, 200, {
             ok: true,
             data: {

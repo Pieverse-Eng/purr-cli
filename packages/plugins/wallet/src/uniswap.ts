@@ -36,7 +36,9 @@ function resolveChainId(args: Record<string, string>): number {
     throw new Error(`Unknown --chain: ${args.chain}`)
   }
 
-  const chainId = args['chain-id'] ? parseChainId(args['chain-id']) : (chainNameId ?? ROBINHOOD_CHAIN_ID)
+  const chainId = args['chain-id']
+    ? parseChainId(args['chain-id'])
+    : (chainNameId ?? ROBINHOOD_CHAIN_ID)
   if (chainId !== ROBINHOOD_CHAIN_ID) {
     throw new Error('purr wallet uniswap currently supports Robinhood Chain only')
   }

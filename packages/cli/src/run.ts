@@ -115,6 +115,7 @@ import { walletSignOkxX402 } from '@pieverseio/purr-plugin-wallet/sign-okx-x402'
 import { walletSignTransaction } from '@pieverseio/purr-plugin-wallet/sign-transaction'
 import { walletSignTypedData } from '@pieverseio/purr-plugin-wallet/sign-typed-data'
 import { walletTransfer } from '@pieverseio/purr-plugin-wallet/transfer'
+import { walletUniswap } from '@pieverseio/purr-plugin-wallet/uniswap'
 import {
   treasureCodeAttempt,
   treasureCodeFinalUnlock,
@@ -426,7 +427,7 @@ Groups:
   pieverse          Pieverse campaign card flow
   pns               Pie Name Service and identity lookup helpers
   .pie              Resolve .pie identities and transfer to their wallets
-  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call)
+  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap)
   redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance billing status and trusted-wallet renewal
@@ -510,6 +511,8 @@ Examples:
   purr wallet balance --chain-type ethereum --chain-id 56
   purr wallet balance --token 0x55d3...7955 --chain-id 56
   purr wallet balance --chain robinhood --token USDG
+  purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
+  purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
   purr redpacket send --recipient alice.pie --amount 0.1
   purr redpacket pending --sender bob.pie
   purr redpacket claim
@@ -1468,12 +1471,15 @@ Examples:
         case 'transfer':
           await walletTransfer(args)
           return
+        case 'uniswap':
+          await walletUniswap(args)
+          return
         case 'abi-call':
           await walletAbiCall(args)
           return
         default:
           throw new Error(
-            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call`,
+            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap`,
           )
       }
     }

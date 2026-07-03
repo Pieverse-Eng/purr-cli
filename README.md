@@ -48,7 +48,7 @@ purr <group> <command> [options]
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
-| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, and abi-call operations |
+| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
 | `execute` | Execute `TxStep[]` JSON from a file through the configured instance wallet |
@@ -66,6 +66,8 @@ purr wallet balance --chain-type ethereum --chain-id <chain-id>
 purr wallet sign --address <wallet-address> --message <message>
 purr wallet transfer --to <recipient-address> --amount <amount> --chain-id <chain-id>
 purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-type solana
+purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
+purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
 
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id>
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id> --execute

@@ -346,9 +346,7 @@ describe('Solana execute step helpers', () => {
 describe('SUPPORTED_CHAIN_IDS', () => {
   it('includes all 14 server-supported chains', () => {
     // From api-server services/evm.ts CHAIN_CONFIG
-    const expected = [
-      1, 10, 56, 97, 137, 143, 1001, 2818, 4663, 8217, 8453, 10143, 42161, 46630,
-    ]
+    const expected = [1, 10, 56, 97, 137, 143, 1001, 2818, 4663, 8217, 8453, 10143, 42161, 46630]
     expect(SUPPORTED_CHAIN_IDS).toEqual(expected)
   })
 

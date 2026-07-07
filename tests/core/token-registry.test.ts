@@ -90,6 +90,16 @@ describe('resolveToken', () => {
     expect(resolveToken('USDG', 196)).toBe('0x4ae46a509f6b1d9056937ba4500cb143933d2dc8')
   })
 
+  // --- Monad tokens ---
+  it('resolves MON to native on Monad mainnet and testnet', () => {
+    expect(resolveToken('MON', 143)).toBe(NATIVE_EVM)
+    expect(resolveToken('MON', 10143)).toBe(NATIVE_EVM)
+  })
+
+  it('resolves USDC on Monad mainnet', () => {
+    expect(resolveToken('USDC', 143)).toBe('0x754704Bc059F8C67012fEd69BC8A327a5aafb603')
+  })
+
   // --- Robinhood Chain tokens ---
   it('resolves ETH to native on Robinhood Chain', () => {
     expect(resolveToken('ETH', 4663)).toBe(NATIVE_EVM)
@@ -213,6 +223,9 @@ describe('inferChainId', () => {
     expect(inferChainId({ chain: 'xlayer' })).toBe(196)
     expect(inferChainId({ chain: 'x-layer' })).toBe(196)
     expect(inferChainId({ chain: 'okx' })).toBe(196)
+    expect(inferChainId({ chain: 'monad' })).toBe(143)
+    expect(inferChainId({ chain: 'mon' })).toBe(143)
+    expect(inferChainId({ chain: 'monad-testnet' })).toBe(10143)
     expect(inferChainId({ chain: 'robinhood' })).toBe(4663)
     expect(inferChainId({ chain: 'robinhood-chain' })).toBe(4663)
     expect(inferChainId({ chain: 'rhc' })).toBe(4663)

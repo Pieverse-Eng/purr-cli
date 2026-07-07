@@ -56,6 +56,7 @@ const DEFAULT_RPCS: Record<number, string> = {
   10: 'https://optimism-rpc.publicnode.com',
   56: 'https://bsc-rpc.publicnode.com',
   97: 'https://bsc-testnet-rpc.publicnode.com',
+  143: 'https://rpc.monad.xyz',
   137: 'https://polygon-bor-rpc.publicnode.com',
   1001: 'https://public-en-kairos.node.kaia.io',
   2818: 'https://rpc.morph.network',
@@ -63,6 +64,7 @@ const DEFAULT_RPCS: Record<number, string> = {
   8453: 'https://base-rpc.publicnode.com',
   4663: 'https://rpc.mainnet.chain.robinhood.com',
   42161: 'https://arbitrum-one-rpc.publicnode.com',
+  10143: 'https://testnet-rpc.monad.xyz',
   46630: 'https://rpc.testnet.chain.robinhood.com',
 }
 

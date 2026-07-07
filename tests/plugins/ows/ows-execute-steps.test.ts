@@ -344,17 +344,21 @@ describe('Solana execute step helpers', () => {
 // ---------------------------------------------------------------------------
 
 describe('SUPPORTED_CHAIN_IDS', () => {
-  it('includes all 12 server-supported chains', () => {
+  it('includes all 14 server-supported chains', () => {
     // From api-server services/evm.ts CHAIN_CONFIG
-    const expected = [1, 10, 56, 97, 137, 1001, 2818, 4663, 8217, 8453, 42161, 46630]
+    const expected = [
+      1, 10, 56, 97, 137, 143, 1001, 2818, 4663, 8217, 8453, 10143, 42161, 46630,
+    ]
     expect(SUPPORTED_CHAIN_IDS).toEqual(expected)
   })
 
-  it('contains Kaia mainnet/testnet alongside existing extended chains', () => {
+  it('contains Monad and Kaia mainnet/testnet alongside existing extended chains', () => {
     expect(SUPPORTED_CHAIN_IDS).toContain(97)
+    expect(SUPPORTED_CHAIN_IDS).toContain(143)
     expect(SUPPORTED_CHAIN_IDS).toContain(1001)
     expect(SUPPORTED_CHAIN_IDS).toContain(2818)
     expect(SUPPORTED_CHAIN_IDS).toContain(8217)
+    expect(SUPPORTED_CHAIN_IDS).toContain(10143)
     expect(SUPPORTED_CHAIN_IDS).toContain(4663)
     expect(SUPPORTED_CHAIN_IDS).toContain(46630)
   })

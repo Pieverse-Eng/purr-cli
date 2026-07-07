@@ -127,6 +127,15 @@ const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
     XETH: '0xe7B000003a45145dECF8a28FC755aD5EC5Ea025A',
     XBTC: '0xb7c00000bcDEEf966B20B3D884b98e64d2b06b4f',
   },
+  // Monad
+  143: {
+    MON: NATIVE,
+    USDC: '0x754704Bc059F8C67012fEd69BC8A327a5aafb603',
+  },
+  // Monad Testnet
+  10143: {
+    MON: NATIVE,
+  },
   // Robinhood Chain
   4663: {
     ETH: NATIVE,
@@ -191,6 +200,9 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   xlayer: 196,
   'x-layer': 196,
   okx: 196,
+  monad: 143,
+  mon: 143,
+  'monad-testnet': 10143,
   robinhood: 4663,
   'robinhood-chain': 4663,
   rhc: 4663,

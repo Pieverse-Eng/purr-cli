@@ -430,7 +430,7 @@ Groups:
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap)
   redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
-  instance          Instance billing status and trusted-wallet renewal
+  instance          Instance status, credits, token renewal, and top-up
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -518,6 +518,10 @@ Examples:
   purr redpacket claim
   purr redpacket sent --limit 20 --offset 0
   purr instance status
+  purr instance credits
+  purr instance payment-methods
+  purr instance renew --token usdc-base --yes
+  purr instance topup --credits 100 --token USDC --yes
   purr instance renew --chain-id 56 --token-address 0x55d3...7955 --yes
   purr wallet sign --address 0x... --message "Hello"
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'

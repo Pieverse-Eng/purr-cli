@@ -97,8 +97,8 @@ Examples:
   purr instance credits
   purr instance payment-methods
   purr instance billing-status --invoice <invoice-id>
-  purr instance renew --token usdc-base
-  purr instance topup --credits 100 --token USDC
+  purr instance renew --token usdt-bsc
+  purr instance topup --credits 100 --token USDT
 
 Deprecated compatibility examples:
   purr instance renew --chain-id 56 --token-address 0x55d398326f99059fF775485246999027B3197955
@@ -446,14 +446,13 @@ function selectAutomaticQuote(quotes: BillingQuote[]): BillingQuote {
       throw new Error('Platform returned a billing quote with an invalid final USD amount')
     }
   }
-  return affordable.sort((left, right) => {
-    const leftPrice = Number(left.finalUsdAmount)
-    const rightPrice = Number(right.finalUsdAmount)
-    if (leftPrice !== rightPrice) return leftPrice - rightPrice
-    const stableDifference = Number(isStablecoinQuote(right)) - Number(isStablecoinQuote(left))
-    if (stableDifference !== 0) return stableDifference
-    return left.tokenId.localeCompare(right.tokenId)
-  })[0]
+  const lowestPrice = Math.min(...affordable.map((quote) => Number(quote.finalUsdAmount)))
+  let candidates = affordable.filter((quote) => Number(quote.finalUsdAmount) === lowestPrice)
+  const bscCandidates = candidates.filter((quote) => quote.chainId === 56)
+  if (bscCandidates.length > 0) candidates = bscCandidates
+  const stablecoinCandidates = candidates.filter(isStablecoinQuote)
+  if (stablecoinCandidates.length > 0) candidates = stablecoinCandidates
+  return candidates.sort((left, right) => left.tokenId.localeCompare(right.tokenId))[0]
 }
 
 function assertQuoteAffordable(quote: BillingQuote): void {

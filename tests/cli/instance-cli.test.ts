@@ -268,6 +268,8 @@ describe('instance CLI', () => {
         expect(groupHelp.stdout).toContain('credits')
         expect(groupHelp.stdout).toContain('payment-methods')
         expect(groupHelp.stdout).toContain('topup')
+        expect(groupHelp.stdout).toContain('purr instance renew --token usdt-bsc')
+        expect(groupHelp.stdout).toContain('purr instance topup --credits 100 --token USDT')
       },
     )
   })
@@ -282,8 +284,8 @@ describe('instance CLI', () => {
         expect(result.code).toBe(0)
         expect(result.stdout).toContain('purr instance credits')
         expect(result.stdout).toContain('purr instance payment-methods')
-        expect(result.stdout).toContain('purr instance renew --token')
-        expect(result.stdout).toContain('purr instance topup --credits 100')
+        expect(result.stdout).toContain('purr instance renew --token usdt-bsc --yes')
+        expect(result.stdout).toContain('purr instance topup --credits 100 --token USDT --yes')
       },
     )
   })
@@ -576,12 +578,20 @@ describe('instance CLI', () => {
     )
   })
 
-  it('auto-selects the lowest-cost affordable quote and ignores cheaper unaffordable quotes', async () => {
+  it('keeps price ahead of BSC preference and ignores cheaper unaffordable quotes', async () => {
     const uMethod = {
       ...paymentMethods[1],
       tokenId: 'u-bsc',
       symbol: 'U',
       aliases: ['$U', 'U', 'u'],
+      chainId: 56,
+      chainName: 'BNB Chain',
+    }
+    const usdtMethod = {
+      ...paymentMethods[1],
+      tokenId: 'usdt-bsc',
+      symbol: 'USDT',
+      aliases: ['USDT', 'usdt'],
       chainId: 56,
       chainName: 'BNB Chain',
     }
@@ -609,8 +619,9 @@ describe('instance CLI', () => {
                   nativeBalanceWei: '1',
                 },
               }),
-              billingQuote(paymentMethods[1], { finalUsdAmount: '10' }),
-              billingQuote(uMethod, { finalUsdAmount: '8.8' }),
+              billingQuote(paymentMethods[1], { finalUsdAmount: '8.8' }),
+              billingQuote(uMethod, { finalUsdAmount: '10' }),
+              billingQuote(usdtMethod, { finalUsdAmount: '9' }),
             ],
           },
         })
@@ -619,12 +630,12 @@ describe('instance CLI', () => {
         const result = await runPurr(port, ['instance', 'renew', '--dry-run'])
         expect(result.code).toBe(0)
         expect(quoteBody).toEqual({ kind: 'renewal' })
-        expect(JSON.parse(result.stdout)).toMatchObject({ quote: { tokenId: 'u-bsc' } })
+        expect(JSON.parse(result.stdout)).toMatchObject({ quote: { tokenId: 'usdc-base' } })
       },
     )
   })
 
-  it('breaks equal-price auto-selection ties by stablecoin then canonical token id', async () => {
+  it('prefers BSC quotes before applying stablecoin tie-breaking', async () => {
     const usdtMethod = {
       ...paymentMethods[1],
       tokenId: 'usdt-bsc',
@@ -651,7 +662,82 @@ describe('instance CLI', () => {
       async (port) => {
         const result = await runPurr(port, ['instance', 'renew', '--dry-run'])
         expect(result.code).toBe(0)
-        expect(JSON.parse(result.stdout)).toMatchObject({ quote: { tokenId: 'usdc-base' } })
+        expect(JSON.parse(result.stdout)).toMatchObject({ quote: { tokenId: 'usdt-bsc' } })
+      },
+    )
+  })
+
+  it('does not require USDT for BSC tie preference', async () => {
+    await withServer(
+      async (_req, res) => {
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            invoiceId: 'invoice-bsc-tie',
+            kind: 'renewal',
+            quotes: [
+              billingQuote(paymentMethods[1], { finalUsdAmount: '8.8' }),
+              billingQuote(paymentMethods[0], { finalUsdAmount: '8.8' }),
+            ],
+          },
+        })
+      },
+      async (port) => {
+        const result = await runPurr(port, ['instance', 'renew', '--dry-run'])
+        expect(result.code).toBe(0)
+        expect(JSON.parse(result.stdout)).toMatchObject({ quote: { tokenId: 'bnb' } })
+      },
+    )
+  })
+
+  it('selects the same non-BSC stablecoin regardless of quote order', async () => {
+    const stableEthereum = {
+      ...paymentMethods[1],
+      tokenId: 'z-usdc',
+      symbol: 'USDC',
+      aliases: ['USDC', 'usdc'],
+      chainId: 1,
+      chainName: 'Ethereum',
+    }
+    const nativeEthereum = {
+      ...paymentMethods[1],
+      tokenId: 'a-eth',
+      symbol: 'ETH',
+      aliases: ['ETH', 'eth'],
+      chainId: 1,
+      chainName: 'Ethereum',
+    }
+    const nativeBase = {
+      ...paymentMethods[1],
+      tokenId: 'm-base',
+      symbol: 'ETH',
+      aliases: ['ETH', 'eth'],
+      chainId: 8453,
+      chainName: 'Base',
+    }
+    let requestCount = 0
+    await withServer(
+      async (_req, res) => {
+        const orderedMethods =
+          requestCount++ === 0
+            ? [stableEthereum, nativeEthereum, nativeBase]
+            : [stableEthereum, nativeBase, nativeEthereum]
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            invoiceId: 'invoice-cross-chain-tie',
+            kind: 'renewal',
+            quotes: orderedMethods.map((method) => billingQuote(method, { finalUsdAmount: '8.8' })),
+          },
+        })
+      },
+      async (port) => {
+        const first = await runPurr(port, ['instance', 'renew', '--dry-run'])
+        const second = await runPurr(port, ['instance', 'renew', '--dry-run'])
+        expect(first.code).toBe(0)
+        expect(second.code).toBe(0)
+        expect(JSON.parse(first.stdout)).toMatchObject({ quote: { tokenId: 'z-usdc' } })
+        expect(JSON.parse(second.stdout)).toMatchObject({ quote: { tokenId: 'z-usdc' } })
       },
     )
   })

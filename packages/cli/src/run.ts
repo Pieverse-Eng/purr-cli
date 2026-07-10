@@ -520,8 +520,8 @@ Examples:
   purr instance status
   purr instance credits
   purr instance payment-methods
-  purr instance renew --token usdc-base --yes
-  purr instance topup --credits 100 --token USDC --yes
+  purr instance renew --token usdt-bsc --yes
+  purr instance topup --credits 100 --token USDT --yes
   purr instance renew --chain-id 56 --token-address 0x55d3...7955 --yes
   purr wallet sign --address 0x... --message "Hello"
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'

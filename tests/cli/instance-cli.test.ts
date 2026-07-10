@@ -742,13 +742,7 @@ describe('instance CLI', () => {
         writeJson(res, 500, { error: 'payment must not run' })
       },
       async (port) => {
-        const result = await runPurr(port, [
-          'instance',
-          'renew',
-          '--token',
-          'USDC',
-          '--yes',
-        ])
+        const result = await runPurr(port, ['instance', 'renew', '--token', 'USDC', '--yes'])
         expect(result.code).toBe(4)
         expect(result.stderr).toContain('temporarily unavailable')
         expect(result.stderr).not.toContain('Insufficient token balance')

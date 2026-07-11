@@ -12,6 +12,10 @@ export default defineConfig({
         replacement: fromRoot('./packages/core/src/$1.ts'),
       },
       {
+        find: /^@pieverseio\/purr-plugin-balancer$/,
+        replacement: fromRoot('./packages/plugins/balancer/src/index.ts'),
+      },
+      {
         find: /^@pieverseio\/purr-plugin-evm\/(.+)$/,
         replacement: fromRoot('./packages/plugins/evm/src/$1.ts'),
       },

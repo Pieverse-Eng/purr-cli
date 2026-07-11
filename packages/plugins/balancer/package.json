@@ -1,0 +1,12 @@
+{
+  "name": "@pieverseio/purr-plugin-balancer",
+  "version": "0.2.27",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*"
+  }
+}

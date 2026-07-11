@@ -78,6 +78,7 @@ export class ApiClientError extends Error {
   readonly path: string
   readonly bodyText: string
   readonly body: unknown
+  readonly retryAfter: string | undefined
 
   constructor({
     status,
@@ -85,12 +86,14 @@ export class ApiClientError extends Error {
     path,
     bodyText,
     body,
+    retryAfter,
   }: {
     status: number
     method: string
     path: string
     bodyText: string
     body: unknown
+    retryAfter?: string
   }) {
     super(`API error ${status} ${method} ${path}: ${bodyText}`)
     this.name = 'ApiClientError'
@@ -99,6 +102,7 @@ export class ApiClientError extends Error {
     this.path = path
     this.bodyText = bodyText
     this.body = body
+    this.retryAfter = retryAfter
   }
 }
 
@@ -171,6 +175,7 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
       path,
       bodyText: body,
       body: parseErrorBody(body),
+      retryAfter: res.headers?.get?.('retry-after') ?? undefined,
     })
   }
 
@@ -203,6 +208,7 @@ export async function apiPost<T = unknown>(
       path,
       bodyText: respBody,
       body: parseErrorBody(respBody),
+      retryAfter: res.headers?.get?.('retry-after') ?? undefined,
     })
   }
 

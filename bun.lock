@@ -20,6 +20,7 @@
       "version": "0.2.27",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
+        "@pieverseio/purr-plugin-balancer": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
         "@pieverseio/purr-plugin-ows": "workspace:*",
         "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
@@ -34,6 +35,13 @@
       "version": "0.2.27",
       "dependencies": {
         "viem": "^2.46.0",
+      },
+    },
+    "packages/plugins/balancer": {
+      "name": "@pieverseio/purr-plugin-balancer",
+      "version": "0.2.27",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
       },
     },
     "packages/plugins/evm": {
@@ -176,6 +184,8 @@
     "@pieverseio/purr-cli-internal": ["@pieverseio/purr-cli-internal@workspace:packages/cli"],
 
     "@pieverseio/purr-core": ["@pieverseio/purr-core@workspace:packages/core"],
+
+    "@pieverseio/purr-plugin-balancer": ["@pieverseio/purr-plugin-balancer@workspace:packages/plugins/balancer"],
 
     "@pieverseio/purr-plugin-evm": ["@pieverseio/purr-plugin-evm@workspace:packages/plugins/evm"],
 

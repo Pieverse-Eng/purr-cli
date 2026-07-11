@@ -8,6 +8,16 @@ import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
 import { NATIVE_EVM, parseChainId } from '@pieverseio/purr-core/shared'
 import { SOLANA_CHAIN_ID, resolveToken } from '@pieverseio/purr-core/token-registry'
 import type { StepOutput } from '@pieverseio/purr-core/types'
+import {
+  balancerAdd,
+  balancerAddQuote,
+  balancerHelp,
+  balancerPools,
+  balancerQuote,
+  balancerRemove,
+  balancerRemoveQuote,
+  balancerSwap,
+} from '@pieverseio/purr-plugin-balancer'
 import { buildAbiCallStep } from '@pieverseio/purr-plugin-evm/abi-call'
 import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
@@ -162,6 +172,49 @@ async function requirePlugin<K extends PluginId>(
 
 function currentVersion(): string {
   return typeof PURR_VERSION === 'string' ? PURR_VERSION : 'dev'
+}
+
+async function handleBalancerCommand(
+  command: string | undefined,
+  args: Record<string, string>,
+): Promise<void> {
+  if (args.h === 'true' || args.help === 'true') {
+    console.log(balancerHelp())
+    return
+  }
+  switch (command) {
+    case 'pools':
+      await balancerPools(args)
+      return
+    case 'quote':
+      await balancerQuote(args)
+      return
+    case 'swap':
+      await balancerSwap(args)
+      return
+    case 'add-quote':
+      await balancerAddQuote(args)
+      return
+    case 'add':
+      await balancerAdd(args)
+      return
+    case 'remove-quote':
+      await balancerRemoveQuote(args)
+      return
+    case 'remove':
+      await balancerRemove(args)
+      return
+    case undefined:
+    case 'help':
+    case '--help':
+    case '-h':
+      console.log(balancerHelp())
+      return
+    default:
+      throw new Error(
+        `Unknown balancer command: ${command}. Use: pools, quote, swap, add-quote, add, remove-quote, remove`,
+      )
+  }
 }
 
 function parseArgs(argv: string[]): Record<string, string> {
@@ -415,6 +468,7 @@ export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
 
 Groups:
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
+  balancer          Balancer pool discovery, swaps, and V2/V3 liquidity operations
   bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing
   binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
   dflow           DFlow Solana order execution through purr signing
@@ -513,6 +567,9 @@ Examples:
   purr wallet balance --chain robinhood --token USDG
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
+  purr balancer pools --chain base --tokens WETH,USDC --protocol-version 3
+  purr balancer quote --chain base --from ETH --to USDC --amount 0.001 --kind exact-in
+  purr balancer swap --chain base --from ETH --to USDC --amount 0.001 --min-amount-out <raw> --execute
   purr redpacket send --recipient alice.pie --amount 0.1
   purr redpacket pending --sender bob.pie
   purr redpacket claim
@@ -1442,6 +1499,11 @@ Examples:
         default:
           throw new Error(`Unknown .pie command: ${command}. Use: transfer`)
       }
+    }
+
+    case 'balancer': {
+      await handleBalancerCommand(command, args)
+      return
     }
 
     case 'wallet': {

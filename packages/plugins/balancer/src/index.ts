@@ -139,7 +139,10 @@ function parseCsv(value: string | undefined): string[] | undefined {
   return items.length > 0 ? items : undefined
 }
 
-function resolvedTokens(value: string | undefined, chainId: SupportedChainId): string[] | undefined {
+function resolvedTokens(
+  value: string | undefined,
+  chainId: SupportedChainId,
+): string[] | undefined {
   return parseCsv(value)?.map((token) => resolveToken(token, chainId))
 }
 
@@ -298,14 +301,14 @@ export function buildBalancerAddBody(
     ['standard', 'boosted', 'nested'] as const,
     'standard',
   ) as PoolType
-  const kind = parseEnum(
-    args.kind,
-    'kind',
-    ['unbalanced', 'proportional', 'single-token-exact-bpt'] as const,
-    'unbalanced',
-  ) ?? 'unbalanced'
-  const apiKind: AddKind =
-    kind === 'single-token-exact-bpt' ? 'single_token_exact_bpt' : kind
+  const kind =
+    parseEnum(
+      args.kind,
+      'kind',
+      ['unbalanced', 'proportional', 'single-token-exact-bpt'] as const,
+      'unbalanced',
+    ) ?? 'unbalanced'
+  const apiKind: AddKind = kind === 'single-token-exact-bpt' ? 'single_token_exact_bpt' : kind
   if ((poolType === 'boosted' || poolType === 'nested') && protocolVersion !== 3) {
     throw new Error(`Balancer ${poolType} liquidity requires protocol version 3`)
   }
@@ -328,9 +331,7 @@ export function buildBalancerAddBody(
     throw new Error('Missing required argument: --amounts-in')
   }
   if (apiKind === 'proportional' && (!referenceToken || !args['reference-amount'])) {
-    throw new Error(
-      'Proportional add requires --reference-token and --reference-amount',
-    )
+    throw new Error('Proportional add requires --reference-token and --reference-amount')
   }
   if (apiKind === 'single_token_exact_bpt' && (!tokenIn || !args['bpt-amount-out'])) {
     throw new Error('Single-token exact-BPT add requires --token-in and --bpt-amount-out')
@@ -392,12 +393,13 @@ export function buildBalancerRemoveBody(
     ['standard', 'boosted', 'nested'] as const,
     'standard',
   ) as PoolType
-  const kind = parseEnum(
-    args.kind,
-    'kind',
-    ['proportional', 'single-token', 'unbalanced', 'recovery'] as const,
-    'proportional',
-  ) ?? 'proportional'
+  const kind =
+    parseEnum(
+      args.kind,
+      'kind',
+      ['proportional', 'single-token', 'unbalanced', 'recovery'] as const,
+      'proportional',
+    ) ?? 'proportional'
   const apiKind: RemoveKind = kind === 'single-token' ? 'single_token_exact_in' : kind
   if ((poolType === 'boosted' || poolType === 'nested') && protocolVersion !== 3) {
     throw new Error(`Balancer ${poolType} liquidity requires protocol version 3`)
@@ -480,10 +482,7 @@ export async function balancerSwap(args: Record<string, string>): Promise<void> 
 
 export async function balancerAddQuote(args: Record<string, string>): Promise<void> {
   await requestAndPrint('add liquidity quote', () =>
-    apiPost<ApiResponse>(
-      instancePath('/liquidity/add/quote'),
-      buildBalancerAddBody(args, false),
-    ),
+    apiPost<ApiResponse>(instancePath('/liquidity/add/quote'), buildBalancerAddBody(args, false)),
   )
 }
 

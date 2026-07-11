@@ -86,9 +86,9 @@ describe('Balancer CLI routing', () => {
           body: await readBody(req),
         })
         writeJson(res, { ok: true, data: { operation: url.pathname.split('/').at(-1) } })
-      } catch (error) {
+      } catch {
         res.writeHead(500)
-        res.end(String(error))
+        res.end('test server request failed')
       }
     })
     const port = await new Promise<number>((resolve, reject) => {
@@ -202,12 +202,16 @@ describe('Balancer CLI routing', () => {
 
   it('preserves policy-deferred request metadata for approval workflows', async () => {
     const server = createServer((_req, res) => {
-      writeJson(res, {
-        code: 'POLICY_DEFERRED',
-        reason: 'approval required',
-        request_id: 'req_balancer_123',
-        expires_at: '2026-07-11T14:00:00Z',
-      }, 202)
+      writeJson(
+        res,
+        {
+          code: 'POLICY_DEFERRED',
+          reason: 'approval required',
+          request_id: 'req_balancer_123',
+          expires_at: '2026-07-11T14:00:00Z',
+        },
+        202,
+      )
     })
     const port = await new Promise<number>((resolve, reject) => {
       server.once('error', reject)

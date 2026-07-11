@@ -1,10 +1,10 @@
 {
-  "name": "@pieverseio/purr-plugin-pns",
+  "name": "@pieverseio/purr-plugin-balancer",
   "version": "0.2.28",
   "type": "module",
   "private": true,
   "exports": {
-    "./resolve": "./src/resolve.ts"
+    ".": "./src/index.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*"

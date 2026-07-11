@@ -16,7 +16,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 ```
 
-Pin a version by setting `PURR_VERSION`, for example `v0.2.27`.
+Pin a version by setting `PURR_VERSION`, for example `v0.2.28`.
 
 ## Development Install
 
@@ -68,6 +68,16 @@ purr wallet transfer --to <recipient-address> --amount <amount> --chain-id <chai
 purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-type solana
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
+
+# Balancer pool discovery and swap
+purr balancer pools --chain base --tokens WETH,USDC --protocol-version 3
+purr balancer quote --chain base --from ETH --to USDC --amount 0.001 --kind exact-in
+purr balancer swap --chain base --from ETH --to USDC --amount 0.001 --min-amount-out <raw> --execute
+
+# Balancer liquidity quotes (replace add-quote/remove-quote with add/remove and
+# include quote limits and --execute to broadcast)
+purr balancer add-quote --chain base --pool-id 0x... --protocol-version 3 --kind unbalanced --amounts-in ETH:0.001
+purr balancer remove-quote --chain base --pool-id 0x... --protocol-version 3 --kind proportional --bpt-amount-in 0.001
 
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id>
 purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id> --execute

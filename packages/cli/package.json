@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-cli-internal",
-  "version": "0.2.27",
+  "version": "0.2.28",
   "type": "module",
   "private": true,
   "exports": {
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",
+    "@pieverseio/purr-plugin-balancer": "workspace:*",
     "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
     "@pieverseio/purr-plugin-evm": "workspace:*",
     "@pieverseio/purr-plugin-ows": "workspace:*",

@@ -22,6 +22,7 @@
         "@pieverseio/purr-core": "workspace:*",
         "@pieverseio/purr-plugin-balancer": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
+        "@pieverseio/purr-plugin-hyperliquid": "workspace:*",
         "@pieverseio/purr-plugin-ows": "workspace:*",
         "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
         "@pieverseio/purr-plugin-pns": "workspace:*",
@@ -50,6 +51,13 @@
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
+      },
+    },
+    "packages/plugins/hyperliquid": {
+      "name": "@pieverseio/purr-plugin-hyperliquid",
+      "version": "0.2.28",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
       },
     },
     "packages/plugins/ows": {
@@ -188,6 +196,8 @@
     "@pieverseio/purr-plugin-balancer": ["@pieverseio/purr-plugin-balancer@workspace:packages/plugins/balancer"],
 
     "@pieverseio/purr-plugin-evm": ["@pieverseio/purr-plugin-evm@workspace:packages/plugins/evm"],
+
+    "@pieverseio/purr-plugin-hyperliquid": ["@pieverseio/purr-plugin-hyperliquid@workspace:packages/plugins/hyperliquid"],
 
     "@pieverseio/purr-plugin-ows": ["@pieverseio/purr-plugin-ows@workspace:packages/plugins/ows"],
 

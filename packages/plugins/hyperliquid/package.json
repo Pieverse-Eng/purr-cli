@@ -1,0 +1,12 @@
+{
+  "name": "@pieverseio/purr-plugin-hyperliquid",
+  "version": "0.2.28",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./index": "./src/index.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*"
+  }
+}

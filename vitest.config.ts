@@ -20,6 +20,10 @@ export default defineConfig({
         replacement: fromRoot('./packages/plugins/evm/src/$1.ts'),
       },
       {
+        find: /^@pieverseio\/purr-plugin-hyperliquid\/(.+)$/,
+        replacement: fromRoot('./packages/plugins/hyperliquid/src/$1.ts'),
+      },
+      {
         find: /^@pieverseio\/purr-plugin-pieverse-card\/(.+)$/,
         replacement: fromRoot('./packages/plugins/pieverse-card/src/$1.ts'),
       },

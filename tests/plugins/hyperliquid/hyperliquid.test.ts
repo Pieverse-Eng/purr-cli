@@ -278,6 +278,30 @@ describe('hyperliquid plugin', () => {
       },
     },
     {
+      command: 'set-abstraction',
+      args: { mode: 'unifiedAccount' },
+      expectedPath: '/abstraction',
+      expectedBody: {
+        abstraction: 'unifiedAccount',
+      },
+    },
+    {
+      command: 'set-abstraction',
+      args: { mode: 'portfolioMargin' },
+      expectedPath: '/abstraction',
+      expectedBody: {
+        abstraction: 'portfolioMargin',
+      },
+    },
+    {
+      command: 'set-abstraction',
+      args: { abstraction: 'disabled' },
+      expectedPath: '/abstraction',
+      expectedBody: {
+        abstraction: 'disabled',
+      },
+    },
+    {
       command: 'usd-class-transfer',
       args: { amount: '10.25', 'to-perp': 'true' },
       expectedPath: '/usd-class-transfer',
@@ -418,6 +442,19 @@ describe('hyperliquid plugin', () => {
 
     await expect(hyperliquidCommand('account', { network: 'testnet' })).rejects.toThrow(
       '--network is not supported',
+    )
+    expect(mock).not.toHaveBeenCalled()
+  })
+
+  it('rejects removed or unsupported abstraction write modes', async () => {
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(
+      hyperliquidCommand('set-abstraction', { mode: 'dexAbstraction' }),
+    ).rejects.toThrow('Invalid --mode: "dexAbstraction"')
+    await expect(hyperliquidCommand('set-abstraction', { mode: 'default' })).rejects.toThrow(
+      'Invalid --mode: "default"',
     )
     expect(mock).not.toHaveBeenCalled()
   })

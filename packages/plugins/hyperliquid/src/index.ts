@@ -62,13 +62,26 @@ Write commands:
   modify --body-json <json> | --body-file <path>
   update-leverage --asset <asset-id> --is-cross true|false --leverage <1-50>
   schedule-cancel [--time <ms>]
-  set-abstraction --mode dexAbstraction|disabled
+  set-abstraction --mode disabled|unifiedAccount|portfolioMargin
   usd-class-transfer --amount <amount> --to-perp true|false
   send-asset [--source-dex <dex>] --destination-dex <dex> --amount <amount>
   deposit --amount <amount>
   withdraw --amount <amount>
 
 All commands call /v1/instances/:id/hyperliquid/* and use the platform mainnet TEE wallet.`
+
+const ABSTRACTION_WRITE_MODES = ['disabled', 'unifiedAccount', 'portfolioMargin'] as const
+type AbstractionWriteMode = (typeof ABSTRACTION_WRITE_MODES)[number]
+
+function requireAbstractionMode(args: Record<string, string>): AbstractionWriteMode {
+  const value = requireArg(args, 'mode', 'abstraction')
+  if ((ABSTRACTION_WRITE_MODES as readonly string[]).includes(value)) {
+    return value as AbstractionWriteMode
+  }
+  throw new Error(
+    `Invalid --mode: "${value}". Expected one of: ${ABSTRACTION_WRITE_MODES.join(', ')}`,
+  )
+}
 
 const BODY_WRITE_ENDPOINTS: Record<string, string> = {
   order: '/order',
@@ -332,7 +345,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
     }
     case 'set-abstraction':
       return {
-        abstraction: requireArg(args, 'mode', 'abstraction'),
+        abstraction: requireAbstractionMode(args),
       }
     case 'usd-class-transfer':
       return {

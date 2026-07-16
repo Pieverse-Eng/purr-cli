@@ -20,21 +20,24 @@ interface ApiErrorBody {
   error?: string
   code?: string
   message?: string
+  data?: unknown
 }
 
 export class HyperliquidCliError extends Error {
   readonly code?: string
   readonly status?: number
+  readonly data?: unknown
   readonly exitCode: number
 
   constructor(
     message: string,
-    options: { code?: string; status?: number; exitCode?: number } = {},
+    options: { code?: string; status?: number; data?: unknown; exitCode?: number } = {},
   ) {
     super(message)
     this.name = 'HyperliquidCliError'
     this.code = options.code
     this.status = options.status
+    this.data = options.data
     this.exitCode = options.exitCode ?? 1
   }
 }
@@ -142,6 +145,7 @@ function toHyperliquidError(error: unknown): Error {
     return new HyperliquidCliError(message, {
       code: extractErrorCode(body),
       status: error.status,
+      data: body?.data,
     })
   }
   return error instanceof Error ? error : new Error(String(error))

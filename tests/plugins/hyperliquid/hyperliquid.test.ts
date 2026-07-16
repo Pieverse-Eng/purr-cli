@@ -446,12 +446,16 @@ describe('hyperliquid plugin', () => {
   })
 
   it('preserves Hyperliquid platform error codes for automation', async () => {
+    const candidates = [
+      { coin: 'BTC', dex: 'default', assetId: 0, szDecimals: 5 },
+      { coin: 'hyna:BTC', dex: 'hyna', assetId: 120000, szDecimals: 5 },
+    ]
     const mock = mockFetch(
       {
         ok: false,
         code: 'HYPERLIQUID_SYMBOL_AMBIGUOUS',
         error: 'Hyperliquid symbol is ambiguous: BTC',
-        data: { coin: 'BTC' },
+        data: { coin: 'BTC', candidates },
       },
       409,
     )
@@ -460,6 +464,7 @@ describe('hyperliquid plugin', () => {
     await expect(hyperliquidCommand('symbol', { coin: 'BTC' })).rejects.toMatchObject({
       code: 'HYPERLIQUID_SYMBOL_AMBIGUOUS',
       message: 'Hyperliquid symbol is ambiguous: BTC',
+      data: { coin: 'BTC', candidates },
     })
   })
 

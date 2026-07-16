@@ -66,7 +66,11 @@ import {
   buildListaWithdrawSteps,
   listVaults,
 } from '@pieverseio/purr-plugin-vendors/lista'
-import { hyperliquidCommand, hyperliquidHelp } from '@pieverseio/purr-plugin-hyperliquid/index'
+import {
+  HyperliquidCliError,
+  hyperliquidCommand,
+  hyperliquidHelp,
+} from '@pieverseio/purr-plugin-hyperliquid/index'
 import {
   buildPancakeAddLiquiditySteps,
   buildPancakeFarmSteps,
@@ -1934,6 +1938,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
   if (process.argv[2] === 'opensea') {
     console.error(formatOpenSeaError(err))
     process.exit(1)
+  }
+  if (err instanceof HyperliquidCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
   }
   if (ows?.isGasPayMasterUnsupportedError(err)) {
     const message = err instanceof Error ? err.message : String(err)

@@ -67,6 +67,11 @@ import {
   listVaults,
 } from '@pieverseio/purr-plugin-vendors/lista'
 import {
+  HyperliquidCliError,
+  hyperliquidCommand,
+  hyperliquidHelp,
+} from '@pieverseio/purr-plugin-hyperliquid/index'
+import {
   buildPancakeAddLiquiditySteps,
   buildPancakeFarmSteps,
   buildPancakeRemoveLiquiditySteps,
@@ -485,6 +490,7 @@ Groups:
   redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
+  hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -576,6 +582,10 @@ Examples:
   purr redpacket sent --limit 20 --offset 0
   purr instance status
   purr instance credits
+  purr hyperliquid account
+  purr hyperliquid symbol --coin CXMT
+  purr hyperliquid order --body-file ./hyperliquid-order.json
+  purr hyperliquid deposit --amount 5
   purr instance payment-methods
   purr instance renew --token usdt-bsc --yes
   purr instance topup --credits 100 --token USDT --yes
@@ -615,6 +625,15 @@ Examples:
   switch (group) {
     case 'instance': {
       await handleInstanceCommand(command, args)
+      return
+    }
+
+    case 'hyperliquid': {
+      if (!command || command === 'help' || command === '--help' || command === '-h') {
+        console.log(hyperliquidHelp())
+        return
+      }
+      await hyperliquidCommand(command, args)
       return
     }
 
@@ -1884,7 +1903,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, execute, config, version, store`,
       )
   }
 
@@ -1919,6 +1938,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
   if (process.argv[2] === 'opensea') {
     console.error(formatOpenSeaError(err))
     process.exit(1)
+  }
+  if (err instanceof HyperliquidCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
   }
   if (ows?.isGasPayMasterUnsupportedError(err)) {
     const message = err instanceof Error ? err.message : String(err)

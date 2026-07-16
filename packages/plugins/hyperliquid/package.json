@@ -1,10 +1,10 @@
 {
-  "name": "@pieverseio/purr-plugin-pns",
+  "name": "@pieverseio/purr-plugin-hyperliquid",
   "version": "0.2.29",
   "type": "module",
   "private": true,
   "exports": {
-    "./resolve": "./src/resolve.ts"
+    "./index": "./src/index.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*"

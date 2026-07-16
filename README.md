@@ -16,7 +16,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 ```
 
-Pin a version by setting `PURR_VERSION`, for example `v0.2.28`.
+Pin a version by setting `PURR_VERSION`, for example `v0.2.29`.
 
 ## Development Install
 
@@ -47,6 +47,7 @@ purr <group> <command> [options]
 | `opensea` | OpenSea buy and sell execution helpers |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
+| `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
@@ -101,6 +102,14 @@ purr evm approve --token <token-address> --spender <spender-address> --amount <a
 purr evm abi-call --to <contract-address> --signature <function-signature> --args <json-args> --chain-id <chain-id>
 purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>
 purr aster deposit --token <token-address> --amount-wei <amount-wei> --wallet <wallet-address> --chain-id <chain-id>
+purr hyperliquid account
+purr hyperliquid symbol --coin CXMT
+purr hyperliquid markets --kind perp --dex xyz
+purr hyperliquid builder-fee-status
+purr hyperliquid approve-builder-fee
+purr hyperliquid order --body-file <path-to-order-json>
+purr hyperliquid deposit --amount 5
+purr hyperliquid withdraw --amount 5
 
 purr execute --steps-file <path-to-steps-json> --dedup-key <dedup-key>
 purr instance status

@@ -346,23 +346,23 @@ describe('instance CLI', () => {
     )
   })
 
-  it.each([
-    '99',
-    '99.5',
-  ])('rejects invalid top-up credits %s before any network call', async (credits) => {
-    await withServer(
-      async () => {
-        throw new Error('The platform should not be called for invalid top-up credits')
-      },
-      async (port) => {
-        const result = await runPurr(port, ['instance', 'topup', '--credits', credits, '--yes'])
-        expect(result.code).toBe(1)
-        expect(result.stderr).toContain('--credits')
-        expect(result.stderr).toContain('integer')
-        expect(result.stderr).toContain('100')
-      },
-    )
-  })
+  it.each(['99', '99.5'])(
+    'rejects invalid top-up credits %s before any network call',
+    async (credits) => {
+      await withServer(
+        async () => {
+          throw new Error('The platform should not be called for invalid top-up credits')
+        },
+        async (port) => {
+          const result = await runPurr(port, ['instance', 'topup', '--credits', credits, '--yes'])
+          expect(result.code).toBe(1)
+          expect(result.stderr).toContain('--credits')
+          expect(result.stderr).toContain('integer')
+          expect(result.stderr).toContain('100')
+        },
+      )
+    },
+  )
 
   it('rejects mixing canonical token selection with deprecated address options', async () => {
     await withServer(
@@ -1233,113 +1233,112 @@ describe('instance CLI', () => {
   it.each([
     { decision: 'n', expectedCode: 1, expectedPayCount: 1, label: 'aborts' },
     { decision: 'y', expectedCode: 0, expectedPayCount: 2, label: 'accepts' },
-  ])('$label an interactive stale re-quote after pinning the original token and confirming again', async ({
-    decision,
-    expectedCode,
-    expectedPayCount,
-  }) => {
-    const quoteBodies: JsonObject[] = []
-    const payBodies: JsonObject[] = []
-    let quoteCalls = 0
-    await withServer(
-      async (req, res) => {
-        if (req.method === 'POST' && req.url?.endsWith('/billing/quote')) {
-          quoteCalls++
-          quoteBodies.push(await readBody(req))
-          writeJson(res, 200, {
-            ok: true,
-            data: {
-              invoiceId: `invoice-interactive-${quoteCalls}`,
-              kind: 'renewal',
-              quotes:
-                quoteCalls === 1
-                  ? [
-                      {
-                        ...billingQuote(paymentMethods[1]),
-                        quoteId: 'quote-usdc-initial',
-                      },
-                    ]
-                  : [
-                      {
-                        ...billingQuote(paymentMethods[0], { finalUsdAmount: '1' }),
-                        quoteId: 'quote-bnb-retry',
-                      },
-                      {
-                        ...billingQuote(paymentMethods[1], { finalUsdAmount: '9' }),
-                        quoteId: 'quote-usdc-retry',
-                      },
-                    ],
-            },
-          })
-          return
-        }
-        if (req.method === 'POST' && req.url?.endsWith('/billing/pay')) {
-          payBodies.push(await readBody(req))
-          if (payBodies.length === 1) {
-            writeJson(res, 409, {
-              ok: false,
-              error: { code: 'QUOTE_EXPIRED', message: 'Quote expired' },
-            })
-          } else {
+  ])(
+    '$label an interactive stale re-quote after pinning the original token and confirming again',
+    async ({ decision, expectedCode, expectedPayCount }) => {
+      const quoteBodies: JsonObject[] = []
+      const payBodies: JsonObject[] = []
+      let quoteCalls = 0
+      await withServer(
+        async (req, res) => {
+          if (req.method === 'POST' && req.url?.endsWith('/billing/quote')) {
+            quoteCalls++
+            quoteBodies.push(await readBody(req))
             writeJson(res, 200, {
               ok: true,
               data: {
-                state: 'confirming',
-                txHash: '0xinteractive-retry',
-                invoiceId: 'invoice-interactive-2',
-                quoteId: 'quote-usdc-retry',
+                invoiceId: `invoice-interactive-${quoteCalls}`,
+                kind: 'renewal',
+                quotes:
+                  quoteCalls === 1
+                    ? [
+                        {
+                          ...billingQuote(paymentMethods[1]),
+                          quoteId: 'quote-usdc-initial',
+                        },
+                      ]
+                    : [
+                        {
+                          ...billingQuote(paymentMethods[0], { finalUsdAmount: '1' }),
+                          quoteId: 'quote-bnb-retry',
+                        },
+                        {
+                          ...billingQuote(paymentMethods[1], { finalUsdAmount: '9' }),
+                          quoteId: 'quote-usdc-retry',
+                        },
+                      ],
               },
             })
+            return
           }
-          return
-        }
-        if (req.method === 'GET' && req.url?.endsWith('/billing/invoice-interactive-2')) {
-          writeJson(res, 200, {
-            ok: true,
-            data: {
-              invoiceId: 'invoice-interactive-2',
-              kind: 'renewal',
-              state: 'confirming',
-            },
+          if (req.method === 'POST' && req.url?.endsWith('/billing/pay')) {
+            payBodies.push(await readBody(req))
+            if (payBodies.length === 1) {
+              writeJson(res, 409, {
+                ok: false,
+                error: { code: 'QUOTE_EXPIRED', message: 'Quote expired' },
+              })
+            } else {
+              writeJson(res, 200, {
+                ok: true,
+                data: {
+                  state: 'confirming',
+                  txHash: '0xinteractive-retry',
+                  invoiceId: 'invoice-interactive-2',
+                  quoteId: 'quote-usdc-retry',
+                },
+              })
+            }
+            return
+          }
+          if (req.method === 'GET' && req.url?.endsWith('/billing/invoice-interactive-2')) {
+            writeJson(res, 200, {
+              ok: true,
+              data: {
+                invoiceId: 'invoice-interactive-2',
+                kind: 'renewal',
+                state: 'confirming',
+              },
+            })
+            return
+          }
+          throw new Error(`Unexpected route: ${req.method} ${req.url}`)
+        },
+        async (port) => {
+          const result = await runPurr(port, ['instance', 'renew'], `y\n${decision}\n`)
+          expect(result.code).toBe(expectedCode)
+          expect(quoteBodies).toEqual([
+            { kind: 'renewal' },
+            { kind: 'renewal', tokenId: 'usdc-base' },
+          ])
+          expect(payBodies).toHaveLength(expectedPayCount)
+          expect(payBodies[0]).toEqual({
+            invoiceId: 'invoice-interactive-1',
+            quoteId: 'quote-usdc-initial',
           })
-          return
-        }
-        throw new Error(`Unexpected route: ${req.method} ${req.url}`)
-      },
-      async (port) => {
-        const result = await runPurr(port, ['instance', 'renew'], `y\n${decision}\n`)
-        expect(result.code).toBe(expectedCode)
-        expect(quoteBodies).toEqual([
-          { kind: 'renewal' },
-          { kind: 'renewal', tokenId: 'usdc-base' },
-        ])
-        expect(payBodies).toHaveLength(expectedPayCount)
-        expect(payBodies[0]).toEqual({
-          invoiceId: 'invoice-interactive-1',
-          quoteId: 'quote-usdc-initial',
-        })
-        expect(result.stderr.match(/Proceed\? \[y\/N\]/g)).toHaveLength(2)
-        expect(result.stderr).toContain('Token: USDC (usdc-base)')
-        expect(payBodies).not.toContainEqual({
-          invoiceId: 'invoice-interactive-2',
-          quoteId: 'quote-bnb-retry',
-        })
-
-        if (decision === 'n') {
-          expect(result.stderr).toContain('Aborted.')
-        } else {
-          expect(payBodies[1]).toEqual({
+          expect(result.stderr.match(/Proceed\? \[y\/N\]/g)).toHaveLength(2)
+          expect(result.stderr).toContain('Token: USDC (usdc-base)')
+          expect(payBodies).not.toContainEqual({
             invoiceId: 'invoice-interactive-2',
-            quoteId: 'quote-usdc-retry',
+            quoteId: 'quote-bnb-retry',
           })
-          expect(JSON.parse(result.stdout)).toMatchObject({
-            state: 'confirming',
-            txHash: '0xinteractive-retry',
-          })
-        }
-      },
-    )
-  })
+
+          if (decision === 'n') {
+            expect(result.stderr).toContain('Aborted.')
+          } else {
+            expect(payBodies[1]).toEqual({
+              invoiceId: 'invoice-interactive-2',
+              quoteId: 'quote-usdc-retry',
+            })
+            expect(JSON.parse(result.stdout)).toMatchObject({
+              state: 'confirming',
+              txHash: '0xinteractive-retry',
+            })
+          }
+        },
+      )
+    },
+  )
 
   it('does not retry payment after payment succeeds when the status lookup fails', async () => {
     let quoteCalls = 0

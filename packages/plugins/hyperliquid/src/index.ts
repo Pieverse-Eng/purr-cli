@@ -1,4 +1,9 @@
-import { ApiClientError, apiGet, apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import {
+  ApiClientError,
+  apiGet,
+  apiPost,
+  resolveCredentials,
+} from '@pieverseio/purr-core/api-client'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
 import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
 
@@ -22,7 +27,10 @@ export class HyperliquidCliError extends Error {
   readonly status?: number
   readonly exitCode: number
 
-  constructor(message: string, options: { code?: string; status?: number; exitCode?: number } = {}) {
+  constructor(
+    message: string,
+    options: { code?: string; status?: number; exitCode?: number } = {},
+  ) {
     super(message)
     this.name = 'HyperliquidCliError'
     this.code = options.code
@@ -135,7 +143,10 @@ function basePath(): string {
   return `/v1/instances/${encodeURIComponent(instanceId)}/hyperliquid`
 }
 
-function appendQuery(path: string, params: Record<string, string | number | boolean | undefined>): string {
+function appendQuery(
+  path: string,
+  params: Record<string, string | number | boolean | undefined>,
+): string {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined) query.set(key, String(value))
@@ -178,7 +189,11 @@ function requireArg(args: Record<string, string>, name: string, ...aliases: stri
   return value
 }
 
-function requirePresentArg(args: Record<string, string>, name: string, ...aliases: string[]): string {
+function requirePresentArg(
+  args: Record<string, string>,
+  name: string,
+  ...aliases: string[]
+): string {
   const value = arg(args, name, ...aliases)
   if (value === undefined) throw new Error(`Missing required argument: --${name}`)
   return value
@@ -222,7 +237,9 @@ function printJson(value: unknown): void {
 
 function ensureMainnetOnly(args: Record<string, string>): void {
   if (args.network !== undefined) {
-    throw new Error('purr hyperliquid uses the platform mainnet endpoint; --network is not supported')
+    throw new Error(
+      'purr hyperliquid uses the platform mainnet endpoint; --network is not supported',
+    )
   }
 }
 
@@ -283,7 +300,10 @@ function readQueryArgs(command: string, args: Record<string, string>) {
       return {
         startTime,
         endTime,
-        aggregateByTime: parseBoolean(arg(args, 'aggregate-by-time', 'aggregateByTime'), 'aggregate-by-time'),
+        aggregateByTime: parseBoolean(
+          arg(args, 'aggregate-by-time', 'aggregateByTime'),
+          'aggregate-by-time',
+        ),
         reversed,
       }
     }
@@ -380,7 +400,5 @@ export async function hyperliquidCommand(
     return
   }
 
-  throw new Error(
-    `Unknown hyperliquid command: ${command}. Run: purr hyperliquid help`,
-  )
+  throw new Error(`Unknown hyperliquid command: ${command}. Run: purr hyperliquid help`)
 }

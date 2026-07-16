@@ -91,7 +91,8 @@ describe('hyperliquid plugin', () => {
     {
       command: 'l2',
       args: { coin: 'ETH', 'n-sig-figs': '5', mantissa: '2' },
-      expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/l2?coin=ETH&nSigFigs=5&mantissa=2',
+      expectedUrl:
+        'https://api.test/v1/instances/inst-123/hyperliquid/l2?coin=ETH&nSigFigs=5&mantissa=2',
     },
     {
       command: 'candles',
@@ -113,7 +114,8 @@ describe('hyperliquid plugin', () => {
     {
       command: 'orders',
       args: { kind: 'historical', dex: 'xyz' },
-      expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/orders?kind=historical&dex=xyz',
+      expectedUrl:
+        'https://api.test/v1/instances/inst-123/hyperliquid/orders?kind=historical&dex=xyz',
     },
     {
       command: 'fills',
@@ -182,9 +184,7 @@ describe('hyperliquid plugin', () => {
       }),
     })
 
-    expect(mock.mock.calls[0][0]).toBe(
-      'https://api.test/v1/instances/inst-123/hyperliquid/order',
-    )
+    expect(mock.mock.calls[0][0]).toBe('https://api.test/v1/instances/inst-123/hyperliquid/order')
     expect(mock.mock.calls[0][1]).toMatchObject({ method: 'POST' })
     expect(JSON.parse(mock.mock.calls[0][1].body)).toMatchObject({
       orders: [{ a: 0, p: '100', s: '0.01' }],

@@ -74,6 +74,11 @@ describe('hyperliquid plugin', () => {
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/abstraction',
     },
     {
+      command: 'builder-fee-status',
+      args: {},
+      expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/builder-fee/status',
+    },
+    {
       command: 'symbol',
       args: { coin: 'CXMT', dex: 'xyz' },
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/symbol?coin=CXMT&dex=xyz',

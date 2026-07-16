@@ -142,6 +142,17 @@ describe('Hyperliquid CLI e2e', () => {
         return
       }
 
+      if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/builder-fee/status`) {
+        assert.equal(req.method, 'GET')
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            status: 'approval_required',
+          },
+        })
+        return
+      }
+
       if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/order`) {
         assert.equal(req.method, 'POST')
         writeJson(res, 428, {
@@ -215,6 +226,23 @@ describe('Hyperliquid CLI e2e', () => {
       url: `/v1/instances/${INSTANCE_ID}/hyperliquid/builder-fee/approve`,
       authorization: `Bearer ${API_TOKEN}`,
       body: '{}',
+    })
+  })
+
+  it('checks the Hyperliquid builder fee approval status through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, ['hyperliquid', 'builder-fee-status'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: 'approval_required',
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v1/instances/${INSTANCE_ID}/hyperliquid/builder-fee/status`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '',
     })
   })
 

@@ -44,6 +44,7 @@ export const HYPERLIQUID_USAGE = `Usage: purr hyperliquid <command> [options]
 Read commands:
   account
   abstraction
+  builder-fee-status
   symbol --coin <coin> [--dex <dex|default>]
   markets [--kind perp|spot|both] [--dex <dex>]
   prices [--dex <dex>]
@@ -264,6 +265,7 @@ function readQueryArgs(command: string, args: Record<string, string>) {
   switch (command) {
     case 'account':
     case 'abstraction':
+    case 'builder-fee-status':
       return {}
     case 'symbol':
       return {
@@ -396,6 +398,7 @@ export async function hyperliquidCommand(
   const readEndpoints: Record<string, string> = {
     account: '/account',
     abstraction: '/abstraction',
+    'builder-fee-status': '/builder-fee/status',
     symbol: '/symbol',
     markets: '/markets',
     prices: '/prices',

@@ -73,13 +73,15 @@ All commands call /v1/instances/:id/hyperliquid/* and use the platform mainnet T
 const ABSTRACTION_WRITE_MODES = ['disabled', 'unifiedAccount', 'portfolioMargin'] as const
 type AbstractionWriteMode = (typeof ABSTRACTION_WRITE_MODES)[number]
 
+function isAbstractionWriteMode(value: string): value is AbstractionWriteMode {
+  return (ABSTRACTION_WRITE_MODES as readonly string[]).includes(value)
+}
+
 function requireAbstractionMode(args: Record<string, string>): AbstractionWriteMode {
   const value = requireArg(args, 'mode', 'abstraction')
-  if ((ABSTRACTION_WRITE_MODES as readonly string[]).includes(value)) {
-    return value as AbstractionWriteMode
-  }
+  if (isAbstractionWriteMode(value)) return value
   throw new Error(
-    `Invalid --mode: "${value}". Expected one of: ${ABSTRACTION_WRITE_MODES.join(', ')}`,
+    `Invalid abstraction mode: "${value}". Expected one of: ${ABSTRACTION_WRITE_MODES.join(', ')}`,
   )
 }
 

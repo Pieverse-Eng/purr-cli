@@ -452,9 +452,9 @@ describe('hyperliquid plugin', () => {
 
     await expect(
       hyperliquidCommand('set-abstraction', { mode: 'dexAbstraction' }),
-    ).rejects.toThrow('Invalid --mode: "dexAbstraction"')
+    ).rejects.toThrow('Invalid abstraction mode: "dexAbstraction"')
     await expect(hyperliquidCommand('set-abstraction', { mode: 'default' })).rejects.toThrow(
-      'Invalid --mode: "default"',
+      'Invalid abstraction mode: "default"',
     )
     expect(mock).not.toHaveBeenCalled()
   })

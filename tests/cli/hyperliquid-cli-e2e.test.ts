@@ -44,6 +44,12 @@ async function closeServer(server: ReturnType<typeof createServer>): Promise<voi
   })
 }
 
+async function readRequestBody(req: IncomingMessage): Promise<string> {
+  let body = ''
+  for await (const chunk of req) body += String(chunk)
+  return body
+}
+
 async function runPurr(port: number, tmpHome: string, args: string[]): Promise<CommandResult> {
   return await new Promise((resolve, reject) => {
     const cleanEnv = { ...process.env }
@@ -85,21 +91,28 @@ describe('Hyperliquid CLI e2e', () => {
   let port = 0
   let tmpHome = ''
   let requestCount = 0
-  const requests: Array<{ method?: string; url?: string; authorization?: string }> = []
+  const requests: Array<{
+    method?: string
+    url?: string
+    authorization?: string
+    body: string
+  }> = []
 
-  const server = createServer((req, res) => {
+  const server = createServer(async (req, res) => {
     try {
       requestCount++
+      const body = await readRequestBody(req)
       requests.push({
         method: req.method,
         url: req.url,
         authorization: req.headers.authorization,
+        body,
       })
 
-      assert.equal(req.method, 'GET')
       assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
 
       if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/account`) {
+        assert.equal(req.method, 'GET')
         writeJson(res, 200, {
           ok: true,
           data: {
@@ -110,6 +123,31 @@ describe('Hyperliquid CLI e2e', () => {
             chainType: 'ethereum',
             apiUrl: 'https://api.hyperliquid.xyz',
           },
+        })
+        return
+      }
+
+      if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/builder-fee/approve`) {
+        assert.equal(req.method, 'POST')
+        assert.deepEqual(JSON.parse(body), {})
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            network: 'mainnet',
+            walletAddress: WALLET_ADDRESS,
+            status: 'approved',
+            actionRequestId: 'approval-request-id',
+          },
+        })
+        return
+      }
+
+      if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/order`) {
+        assert.equal(req.method, 'POST')
+        writeJson(res, 428, {
+          ok: false,
+          code: 'HYPERLIQUID_BUILDER_FEE_APPROVAL_REQUIRED',
+          error: 'Builder fee approval is required',
         })
         return
       }
@@ -156,6 +194,62 @@ describe('Hyperliquid CLI e2e', () => {
       method: 'GET',
       url: `/v1/instances/${INSTANCE_ID}/hyperliquid/account`,
       authorization: `Bearer ${API_TOKEN}`,
+      body: '',
+    })
+  })
+
+  it('approves the fixed Hyperliquid builder fee through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, ['hyperliquid', 'approve-builder-fee'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      network: 'mainnet',
+      walletAddress: WALLET_ADDRESS,
+      status: 'approved',
+      actionRequestId: 'approval-request-id',
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'POST',
+      url: `/v1/instances/${INSTANCE_ID}/hyperliquid/builder-fee/approve`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '{}',
+    })
+  })
+
+  it('exposes builder fee approval requirements without automatically retrying', async () => {
+    const order = {
+      orders: [
+        {
+          a: 0,
+          b: true,
+          p: '100',
+          s: '0.01',
+          r: false,
+          t: { limit: { tif: 'Gtc' } },
+        },
+      ],
+      grouping: 'na',
+    }
+    const result = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'order',
+      '--body-json',
+      JSON.stringify(order),
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      'error [HYPERLIQUID_BUILDER_FEE_APPROVAL_REQUIRED]: Builder fee approval is required',
+    )
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'POST',
+      url: `/v1/instances/${INSTANCE_ID}/hyperliquid/order`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify(order),
     })
   })
 })

@@ -105,6 +105,7 @@ purr aster deposit --token <token-address> --amount-wei <amount-wei> --wallet <w
 purr hyperliquid account
 purr hyperliquid symbol --coin CXMT
 purr hyperliquid markets --kind perp --dex xyz
+purr hyperliquid approve-builder-fee
 purr hyperliquid order --body-file <path-to-order-json>
 purr hyperliquid deposit --amount 5
 purr hyperliquid withdraw --amount 5

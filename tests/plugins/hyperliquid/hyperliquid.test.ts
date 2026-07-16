@@ -194,6 +194,12 @@ describe('hyperliquid plugin', () => {
 
   it.each<WriteRouteCase>([
     {
+      command: 'approve-builder-fee',
+      args: {},
+      expectedPath: '/builder-fee/approve',
+      expectedBody: {},
+    },
+    {
       command: 'order',
       args: {
         'body-json': JSON.stringify({
@@ -366,6 +372,35 @@ describe('hyperliquid plugin', () => {
     },
   )
 
+  it.each([
+    {
+      status: 'approved',
+      actionRequestId: 'approval-request-id',
+    },
+    {
+      status: 'already_approved',
+      actionRequestId: undefined,
+    },
+  ])('prints a $status builder fee approval result', async (approval) => {
+    const mock = mockFetch({
+      ok: true,
+      data: {
+        network: 'mainnet',
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        ...approval,
+      },
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('approve-builder-fee', {})
+
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      status: approval.status,
+      ...(approval.actionRequestId ? { actionRequestId: approval.actionRequestId } : {}),
+    })
+  })
+
   it('builds convenience write bodies for send-asset and update-leverage', async () => {
     const mock = mockFetch({
       ok: true,
@@ -423,6 +458,41 @@ describe('hyperliquid plugin', () => {
     })
   })
 
+  it('returns builder fee approval requirements without automatically approving or retrying', async () => {
+    const mock = mockFetch(
+      {
+        ok: false,
+        code: 'HYPERLIQUID_BUILDER_FEE_APPROVAL_REQUIRED',
+        error: 'Builder fee approval is required',
+      },
+      428,
+    )
+    vi.stubGlobal('fetch', mock)
+
+    await expect(
+      hyperliquidCommand('order', {
+        'body-json': JSON.stringify({
+          orders: [
+            {
+              a: 0,
+              b: true,
+              p: '100',
+              s: '0.01',
+              r: false,
+              t: { limit: { tif: 'Gtc' } },
+            },
+          ],
+          grouping: 'na',
+        }),
+      }),
+    ).rejects.toMatchObject({
+      code: 'HYPERLIQUID_BUILDER_FEE_APPROVAL_REQUIRED',
+      message: 'Builder fee approval is required',
+      status: 428,
+    })
+    expect(mock).toHaveBeenCalledOnce()
+  })
+
   it('rejects ambiguous raw body input before parsing JSON', async () => {
     const mock = mockFetch({ ok: true, data: {} })
     vi.stubGlobal('fetch', mock)
@@ -450,9 +520,9 @@ describe('hyperliquid plugin', () => {
     const mock = mockFetch({ ok: true, data: {} })
     vi.stubGlobal('fetch', mock)
 
-    await expect(
-      hyperliquidCommand('set-abstraction', { mode: 'dexAbstraction' }),
-    ).rejects.toThrow('Invalid abstraction mode: "dexAbstraction"')
+    await expect(hyperliquidCommand('set-abstraction', { mode: 'dexAbstraction' })).rejects.toThrow(
+      'Invalid abstraction mode: "dexAbstraction"',
+    )
     await expect(hyperliquidCommand('set-abstraction', { mode: 'default' })).rejects.toThrow(
       'Invalid abstraction mode: "default"',
     )

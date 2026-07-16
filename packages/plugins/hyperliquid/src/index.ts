@@ -56,6 +56,7 @@ Read commands:
   order-status --oid <oid-or-cloid>
 
 Write commands:
+  approve-builder-fee
   order --body-json <json> | --body-file <path>
   cancel --body-json <json> | --body-file <path>
   cancel-by-cloid --body-json <json> | --body-file <path>
@@ -93,6 +94,7 @@ const BODY_WRITE_ENDPOINTS: Record<string, string> = {
 }
 
 const CONVENIENCE_WRITE_ENDPOINTS: Record<string, string> = {
+  'approve-builder-fee': '/builder-fee/approve',
   'update-leverage': '/update-leverage',
   'schedule-cancel': '/schedule-cancel',
   'set-abstraction': '/abstraction',
@@ -335,6 +337,8 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
   if (BODY_WRITE_ENDPOINTS[command]) return readBody(args)
 
   switch (command) {
+    case 'approve-builder-fee':
+      return {}
     case 'update-leverage':
       return {
         asset: requireInteger(args, 'asset'),

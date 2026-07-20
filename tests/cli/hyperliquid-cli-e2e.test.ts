@@ -252,8 +252,7 @@ describe('Hyperliquid CLI e2e', () => {
       }
 
       if (
-        req.url ===
-        `/v1/instances/${INSTANCE_ID}/hyperliquid/withdraw-status?nonce=1784552760585`
+        req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/withdraw-status?nonce=1784552760585`
       ) {
         assert.equal(req.method, 'GET')
         writeJson(res, 200, {

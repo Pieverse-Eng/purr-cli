@@ -166,9 +166,7 @@ describe('Hyperliquid CLI e2e', () => {
         }
       }
 
-      if (
-        req.url === `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading/snapshot`
-      ) {
+      if (req.url === `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading/snapshot`) {
         assert.equal(req.method, 'GET')
         writeJson(res, 200, {
           ok: true,

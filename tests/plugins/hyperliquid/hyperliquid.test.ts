@@ -206,6 +206,12 @@ describe('hyperliquid plugin', () => {
       expectedUrl:
         'https://api.test/v1/instances/inst-123/hyperliquid/order-status?oid=0x00000000000000000000000000000001',
     },
+    {
+      command: 'withdraw-status',
+      args: { nonce: '1784552760585' },
+      expectedUrl:
+        'https://api.test/v1/instances/inst-123/hyperliquid/withdraw-status?nonce=1784552760585',
+    },
   ])('maps read command $command to the platform route', async ({ command, args, expectedUrl }) => {
     const mock = mockFetch({
       ok: true,
@@ -590,6 +596,19 @@ describe('hyperliquid plugin', () => {
 
     await expect(hyperliquidCommand('account', { network: 'testnet' })).rejects.toThrow(
       '--network is not supported',
+    )
+    expect(mock).not.toHaveBeenCalled()
+  })
+
+  it('requires a numeric withdraw nonce before calling the platform', async () => {
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(hyperliquidCommand('withdraw-status', {})).rejects.toThrow(
+      'Missing required argument: --nonce',
+    )
+    await expect(hyperliquidCommand('withdraw-status', { nonce: 'abc' })).rejects.toThrow(
+      'Invalid --nonce: "abc"',
     )
     expect(mock).not.toHaveBeenCalled()
   })

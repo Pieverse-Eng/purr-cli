@@ -61,6 +61,7 @@ Read commands:
   orders [--kind open|frontend|historical] [--dex <dex>]
   fills [--start-time <ms>] [--end-time <ms>] [--aggregate-by-time true] [--reversed true]
   order-status --oid <oid-or-cloid>
+  withdraw-status --nonce <nonce>
 
 Write commands:
   enable
@@ -382,6 +383,10 @@ function readQueryArgs(command: string, args: Record<string, string>) {
       return {
         oid: requireArg(args, 'oid'),
       }
+    case 'withdraw-status':
+      return {
+        nonce: requireInteger(args, 'nonce'),
+      }
     default:
       throw new Error(`Unknown hyperliquid read command: ${command}`)
   }
@@ -461,6 +466,7 @@ export async function hyperliquidCommand(
     orders: '/orders',
     fills: '/fills',
     'order-status': '/order-status',
+    'withdraw-status': '/withdraw-status',
   }
   const integrationReadEndpoints: Record<string, string> = {
     status: '',

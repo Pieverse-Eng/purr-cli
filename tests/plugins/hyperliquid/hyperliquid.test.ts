@@ -64,6 +64,73 @@ describe('hyperliquid plugin', () => {
 
   it.each<ReadRouteCase>([
     {
+      command: 'status',
+      args: {},
+      expectedUrl: 'https://api.test/v1/instances/inst-123/integrations/hyperliquid-trading',
+    },
+    {
+      command: 'snapshot',
+      args: {},
+      expectedUrl:
+        'https://api.test/v1/instances/inst-123/integrations/hyperliquid-trading/snapshot',
+    },
+  ])(
+    'maps integration read command $command to the platform route',
+    async ({ command, args, expectedUrl }) => {
+      const mock = mockFetch({
+        ok: true,
+        data: {
+          command,
+        },
+      })
+      vi.spyOn(console, 'log').mockImplementation(() => undefined)
+      vi.stubGlobal('fetch', mock)
+
+      await hyperliquidCommand(command, args)
+
+      expect(mock).toHaveBeenCalledOnce()
+      expect(mock.mock.calls[0][0]).toBe(expectedUrl)
+      expect(mock.mock.calls[0][1]).toMatchObject({
+        method: 'GET',
+        headers: {
+          Authorization: 'Bearer test-token',
+        },
+      })
+    },
+  )
+
+  it.each([
+    { command: 'enable', enabled: true },
+    { command: 'disable', enabled: false },
+  ])('maps $command to the Hyperliquid Trading integration toggle route', async (testCase) => {
+    const mock = mockFetch({
+      ok: true,
+      data: {
+        integration: 'hyperliquid-trading',
+        enabled: testCase.enabled,
+      },
+    })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand(testCase.command, {})
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][0]).toBe(
+      'https://api.test/v1/instances/inst-123/integrations/hyperliquid-trading',
+    )
+    expect(mock.mock.calls[0][1]).toMatchObject({
+      method: 'PUT',
+      headers: {
+        Authorization: 'Bearer test-token',
+        'Content-Type': 'application/json',
+      },
+    })
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({ enabled: testCase.enabled })
+  })
+
+  it.each<ReadRouteCase>([
+    {
       command: 'account',
       args: {},
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/account',
@@ -135,8 +202,9 @@ describe('hyperliquid plugin', () => {
     },
     {
       command: 'order-status',
-      args: { oid: '0xabc' },
-      expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/order-status?oid=0xabc',
+      args: { oid: '0x00000000000000000000000000000001' },
+      expectedUrl:
+        'https://api.test/v1/instances/inst-123/hyperliquid/order-status?oid=0x00000000000000000000000000000001',
     },
   ])('maps read command $command to the platform route', async ({ command, args, expectedUrl }) => {
     const mock = mockFetch({
@@ -523,6 +591,19 @@ describe('hyperliquid plugin', () => {
     await expect(hyperliquidCommand('account', { network: 'testnet' })).rejects.toThrow(
       '--network is not supported',
     )
+    expect(mock).not.toHaveBeenCalled()
+  })
+
+  it('matches the platform L2 mantissa requirement before calling the platform', async () => {
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(hyperliquidCommand('l2', { coin: 'ETH', mantissa: '2' })).rejects.toThrow(
+      '--n-sig-figs 5 is required when --mantissa is provided',
+    )
+    await expect(
+      hyperliquidCommand('l2', { coin: 'ETH', 'n-sig-figs': '4', mantissa: '2' }),
+    ).rejects.toThrow('--n-sig-figs 5 is required when --mantissa is provided')
     expect(mock).not.toHaveBeenCalled()
   })
 

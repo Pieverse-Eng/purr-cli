@@ -16,7 +16,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 ```
 
-Pin a version by setting `PURR_VERSION`, for example `v0.2.29`.
+Pin a version by setting `PURR_VERSION`, for example `v0.2.30`.
 
 ## Development Install
 
@@ -103,6 +103,9 @@ purr evm abi-call --to <contract-address> --signature <function-signature> --arg
 purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>
 purr aster deposit --token <token-address> --amount-wei <amount-wei> --wallet <wallet-address> --chain-id <chain-id>
 purr hyperliquid account
+purr hyperliquid status
+purr hyperliquid enable
+purr hyperliquid snapshot
 purr hyperliquid symbol --coin CXMT
 purr hyperliquid markets --kind perp --dex xyz
 purr hyperliquid builder-fee-status

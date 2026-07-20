@@ -111,6 +111,87 @@ describe('Hyperliquid CLI e2e', () => {
 
       assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
 
+      if (req.url === `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading`) {
+        if (req.method === 'GET') {
+          writeJson(res, 200, {
+            ok: true,
+            data: {
+              integration: 'hyperliquid-trading',
+              enabled: true,
+              agentAccess: true,
+              dashboardVisible: true,
+              updatedAt: '2026-07-20T00:00:00.000Z',
+            },
+          })
+          return
+        }
+
+        if (req.method === 'PUT') {
+          const parsed = JSON.parse(body) as { enabled?: boolean }
+          if (parsed.enabled === false) {
+            writeJson(res, 409, {
+              ok: false,
+              code: 'HYPERLIQUID_TRADING_DISABLE_BLOCKED',
+              error: 'Cannot disable Hyperliquid Trading while open positions or open orders exist',
+              data: {
+                integration: 'hyperliquid-trading',
+                network: 'mainnet',
+                walletAddress: WALLET_ADDRESS,
+                blockers: [
+                  {
+                    dex: 'default',
+                    openPositionsCount: 1,
+                    openOrdersCount: 0,
+                    frontendOpenOrdersCount: 0,
+                    positions: [{ coin: 'SOL', size: '-0.71' }],
+                  },
+                ],
+              },
+            })
+            return
+          }
+
+          assert.deepEqual(parsed, { enabled: true })
+          writeJson(res, 200, {
+            ok: true,
+            data: {
+              integration: 'hyperliquid-trading',
+              enabled: true,
+              agentAccess: true,
+              dashboardVisible: true,
+              updatedAt: '2026-07-20T00:00:10.000Z',
+            },
+          })
+          return
+        }
+      }
+
+      if (req.url === `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading/snapshot`) {
+        assert.equal(req.method, 'GET')
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            enabled: true,
+            network: 'mainnet',
+            walletAddress: WALLET_ADDRESS,
+            updatedAt: '2026-07-20T00:00:30.000Z',
+            summary: {
+              accountValueUsd: '10.91',
+              todayPnlUsd: '-0.04',
+              todayPnlPercent: '-0.23',
+              allTimePnlUsd: '-0.04',
+              allTimePnlPercent: '-0.23',
+              marginUsedUsd: '10.85',
+              marginUsedPercent: '99.45',
+              openPositionsCount: 1,
+              riskStatus: 'attention',
+            },
+            positions: [],
+          },
+        })
+        return
+      }
+
       if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/account`) {
         assert.equal(req.method, 'GET')
         writeJson(res, 200, {
@@ -221,6 +302,93 @@ describe('Hyperliquid CLI e2e', () => {
     expect(requests[0]).toEqual({
       method: 'GET',
       url: `/v1/instances/${INSTANCE_ID}/hyperliquid/account`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '',
+    })
+  })
+
+  it('prints the Hyperliquid Trading integration status', async () => {
+    const result = await runPurr(port, tmpHome, ['hyperliquid', 'status'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      integration: 'hyperliquid-trading',
+      enabled: true,
+      agentAccess: true,
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '',
+    })
+  })
+
+  it('enables the Hyperliquid Trading integration through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, ['hyperliquid', 'enable'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      integration: 'hyperliquid-trading',
+      enabled: true,
+      dashboardVisible: true,
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'PUT',
+      url: `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({ enabled: true }),
+    })
+  })
+
+  it('prints disable blockers from the Hyperliquid Trading integration route', async () => {
+    const result = await runPurr(port, tmpHome, ['hyperliquid', 'disable'])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    const [errorLine, ...detailLines] = result.stderr.split('\n')
+    expect(errorLine).toBe(
+      'error [HYPERLIQUID_TRADING_DISABLE_BLOCKED]: Cannot disable Hyperliquid Trading while open positions or open orders exist',
+    )
+    expect(JSON.parse(detailLines.join('\n'))).toMatchObject({
+      integration: 'hyperliquid-trading',
+      blockers: [
+        {
+          dex: 'default',
+          openPositionsCount: 1,
+          positions: [{ coin: 'SOL', size: '-0.71' }],
+        },
+      ],
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'PUT',
+      url: `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({ enabled: false }),
+    })
+  })
+
+  it('prints the Hyperliquid Trading snapshot response', async () => {
+    const result = await runPurr(port, tmpHome, ['hyperliquid', 'snapshot'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      enabled: true,
+      summary: {
+        marginUsedPercent: '99.45',
+        riskStatus: 'attention',
+      },
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v1/instances/${INSTANCE_ID}/integrations/hyperliquid-trading/snapshot`,
       authorization: `Bearer ${API_TOKEN}`,
       body: '',
     })

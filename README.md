@@ -103,6 +103,9 @@ purr evm abi-call --to <contract-address> --signature <function-signature> --arg
 purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>
 purr aster deposit --token <token-address> --amount-wei <amount-wei> --wallet <wallet-address> --chain-id <chain-id>
 purr hyperliquid account
+purr hyperliquid status
+purr hyperliquid enable
+purr hyperliquid snapshot
 purr hyperliquid symbol --coin CXMT
 purr hyperliquid markets --kind perp --dex xyz
 purr hyperliquid builder-fee-status

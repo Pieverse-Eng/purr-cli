@@ -2,6 +2,7 @@ import {
   ApiClientError,
   apiGet,
   apiPost,
+  apiPut,
   resolveCredentials,
 } from '@pieverseio/purr-core/api-client'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
@@ -45,13 +46,15 @@ export class HyperliquidCliError extends Error {
 export const HYPERLIQUID_USAGE = `Usage: purr hyperliquid <command> [options]
 
 Read commands:
+  status
+  snapshot
   account
   abstraction
   builder-fee-status
   symbol --coin <coin> [--dex <dex|default>]
   markets [--kind perp|spot|both] [--dex <dex>]
   prices [--dex <dex>]
-  l2 --coin <coin> [--n-sig-figs <2-5>] [--mantissa 2|5]
+  l2 --coin <coin> [--n-sig-figs <2-5>] [--mantissa 2|5]  # --mantissa requires --n-sig-figs 5
   candles --coin <coin> --interval <interval> --start-time <ms> [--end-time <ms>]
   funding --coin <coin> --start-time <ms> [--end-time <ms>]
   state [--kind perp|spot|both] [--dex <dex>]
@@ -60,6 +63,8 @@ Read commands:
   order-status --oid <oid-or-cloid>
 
 Write commands:
+  enable
+  disable
   approve-builder-fee
   order --body-json <json> | --body-file <path>
   cancel --body-json <json> | --body-file <path>
@@ -73,7 +78,8 @@ Write commands:
   deposit --amount <amount>
   withdraw --amount <amount>
 
-All commands call /v1/instances/:id/hyperliquid/* and use the platform mainnet TEE wallet.`
+Trading integration commands call /v1/instances/:id/integrations/hyperliquid-trading.
+Exchange commands call /v1/instances/:id/hyperliquid/* and use the platform mainnet TEE wallet.`
 
 const ABSTRACTION_WRITE_MODES = ['disabled', 'unifiedAccount', 'portfolioMargin'] as const
 type AbstractionWriteMode = (typeof ABSTRACTION_WRITE_MODES)[number]
@@ -160,9 +166,17 @@ function unwrap<T>(response: ApiEnvelope<T>): T {
   return response.data
 }
 
-function basePath(): string {
+function instancePath(): string {
   const { instanceId } = resolveCredentials()
-  return `/v1/instances/${encodeURIComponent(instanceId)}/hyperliquid`
+  return `/v1/instances/${encodeURIComponent(instanceId)}`
+}
+
+function hyperliquidBasePath(): string {
+  return `${instancePath()}/hyperliquid`
+}
+
+function hyperliquidTradingIntegrationPath(): string {
+  return `${instancePath()}/integrations/hyperliquid-trading`
 }
 
 function appendQuery(
@@ -177,25 +191,53 @@ function appendQuery(
   return qs ? `${path}?${qs}` : path
 }
 
-async function getHyperliquid<T = unknown>(
+async function getEnvelope<T = unknown>(
   path: string,
   params: Record<string, string | number | boolean | undefined> = {},
 ): Promise<T> {
   try {
-    const response = await apiGet<ApiEnvelope<T>>(appendQuery(`${basePath()}${path}`, params))
+    const response = await apiGet<ApiEnvelope<T>>(appendQuery(path, params))
     return unwrap(response)
   } catch (error) {
     throw toHyperliquidError(error)
   }
 }
 
-async function postHyperliquid<T = unknown>(path: string, body: JsonRecord): Promise<T> {
+async function postEnvelope<T = unknown>(path: string, body: JsonRecord): Promise<T> {
   try {
-    const response = await apiPost<ApiEnvelope<T>>(`${basePath()}${path}`, body)
+    const response = await apiPost<ApiEnvelope<T>>(path, body)
     return unwrap(response)
   } catch (error) {
     throw toHyperliquidError(error)
   }
+}
+
+async function putEnvelope<T = unknown>(path: string, body: JsonRecord): Promise<T> {
+  try {
+    const response = await apiPut<ApiEnvelope<T>>(path, body)
+    return unwrap(response)
+  } catch (error) {
+    throw toHyperliquidError(error)
+  }
+}
+
+async function getHyperliquid<T = unknown>(
+  path: string,
+  params: Record<string, string | number | boolean | undefined> = {},
+): Promise<T> {
+  return getEnvelope(`${hyperliquidBasePath()}${path}`, params)
+}
+
+async function postHyperliquid<T = unknown>(path: string, body: JsonRecord): Promise<T> {
+  return postEnvelope(`${hyperliquidBasePath()}${path}`, body)
+}
+
+async function getHyperliquidTradingIntegration<T = unknown>(path = ''): Promise<T> {
+  return getEnvelope(`${hyperliquidTradingIntegrationPath()}${path}`)
+}
+
+async function setHyperliquidTradingIntegration<T = unknown>(enabled: boolean): Promise<T> {
+  return putEnvelope(hyperliquidTradingIntegrationPath(), { enabled })
 }
 
 function arg(args: Record<string, string>, ...names: string[]): string | undefined {
@@ -286,12 +328,18 @@ function readQueryArgs(command: string, args: Record<string, string>) {
       return {
         dex: args.dex,
       }
-    case 'l2':
+    case 'l2': {
+      const nSigFigs = parseInteger(arg(args, 'n-sig-figs', 'nSigFigs'), 'n-sig-figs')
+      const mantissa = parseInteger(args.mantissa, 'mantissa')
+      if (mantissa !== undefined && nSigFigs !== 5) {
+        throw new Error('--n-sig-figs 5 is required when --mantissa is provided')
+      }
       return {
         coin: requireArg(args, 'coin'),
-        nSigFigs: parseInteger(arg(args, 'n-sig-figs', 'nSigFigs'), 'n-sig-figs'),
-        mantissa: parseInteger(args.mantissa, 'mantissa'),
+        nSigFigs,
+        mantissa,
       }
+    }
     case 'candles':
       return {
         coin: requireArg(args, 'coin'),
@@ -413,6 +461,28 @@ export async function hyperliquidCommand(
     orders: '/orders',
     fills: '/fills',
     'order-status': '/order-status',
+  }
+  const integrationReadEndpoints: Record<string, string> = {
+    status: '',
+    'trading-status': '',
+    'integration-status': '',
+    snapshot: '/snapshot',
+  }
+  const integrationWriteCommands: Record<string, boolean> = {
+    enable: true,
+    'enable-trading': true,
+    disable: false,
+    'disable-trading': false,
+  }
+
+  if (integrationReadEndpoints[command] !== undefined) {
+    printJson(await getHyperliquidTradingIntegration(integrationReadEndpoints[command]))
+    return
+  }
+
+  if (integrationWriteCommands[command] !== undefined) {
+    printJson(await setHyperliquidTradingIntegration(integrationWriteCommands[command]))
+    return
   }
 
   if (readEndpoints[command]) {

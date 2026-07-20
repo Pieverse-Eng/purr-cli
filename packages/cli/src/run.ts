@@ -583,6 +583,9 @@ Examples:
   purr instance status
   purr instance credits
   purr hyperliquid account
+  purr hyperliquid status
+  purr hyperliquid enable
+  purr hyperliquid snapshot
   purr hyperliquid symbol --coin CXMT
   purr hyperliquid order --body-file ./hyperliquid-order.json
   purr hyperliquid deposit --amount 5

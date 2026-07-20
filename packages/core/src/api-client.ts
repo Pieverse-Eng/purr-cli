@@ -214,3 +214,36 @@ export async function apiPost<T = unknown>(
 
   return (await res.json()) as T
 }
+
+export async function apiPut<T = unknown>(
+  path: string,
+  body: unknown,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const { apiUrl, apiToken } = resolveApiCredentials()
+  const url = `${apiUrl.replace(/\/$/, '')}${path}`
+
+  const res = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${apiToken}`,
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const respBody = await res.text()
+    throw new ApiClientError({
+      status: res.status,
+      method: 'PUT',
+      path,
+      bodyText: respBody,
+      body: parseErrorBody(respBody),
+      retryAfter: res.headers?.get?.('retry-after') ?? undefined,
+    })
+  }
+
+  return (await res.json()) as T
+}

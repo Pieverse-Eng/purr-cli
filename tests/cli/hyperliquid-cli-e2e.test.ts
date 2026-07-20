@@ -251,6 +251,28 @@ describe('Hyperliquid CLI e2e', () => {
         return
       }
 
+      if (
+        req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/withdraw-status?nonce=1784552760585`
+      ) {
+        assert.equal(req.method, 'GET')
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            network: 'mainnet',
+            walletAddress: WALLET_ADDRESS,
+            nonce: 1784552760585,
+            status: 'arrived',
+            withdrawal: {
+              time: 1784552800000,
+              txHash: `0x${'a'.repeat(64)}`,
+              amountUsdc: '5',
+              feeUsdc: '1',
+            },
+          },
+        })
+        return
+      }
+
       if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/order`) {
         assert.equal(req.method, 'POST')
         writeJson(res, 428, {
@@ -445,6 +467,35 @@ describe('Hyperliquid CLI e2e', () => {
     expect(requests[0]).toEqual({
       method: 'GET',
       url: `/v1/instances/${INSTANCE_ID}/hyperliquid/builder-fee/status`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '',
+    })
+  })
+
+  it('checks Hyperliquid withdraw arrival status by nonce through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'withdraw-status',
+      '--nonce',
+      '1784552760585',
+    ])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      network: 'mainnet',
+      walletAddress: WALLET_ADDRESS,
+      nonce: 1784552760585,
+      status: 'arrived',
+      withdrawal: {
+        amountUsdc: '5',
+        feeUsdc: '1',
+      },
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v1/instances/${INSTANCE_ID}/hyperliquid/withdraw-status?nonce=1784552760585`,
       authorization: `Bearer ${API_TOKEN}`,
       body: '',
     })

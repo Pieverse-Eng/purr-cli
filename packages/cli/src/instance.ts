@@ -9,13 +9,6 @@ import {
 
 type JsonRecord = Record<string, unknown>
 
-interface RenewOptions {
-  chainId: number
-  tokenAddress?: string
-  dryRun: boolean
-  yes: boolean
-}
-
 interface PaymentMethod {
   tokenId: string
   symbol: string
@@ -98,12 +91,8 @@ Examples:
   purr instance payment-methods
   purr instance billing-status --invoice <invoice-id>
   purr instance renew --token usdt-bsc
-  purr instance topup --credits 100 --token USDT
-
-Deprecated compatibility examples:
-  purr instance renew --chain-id 56 --token-address 0x55d398326f99059fF775485246999027B3197955
-  purr instance renew --chain-id 56 --token-address 0x55d398326f99059fF775485246999027B3197955 --yes
-  purr instance renew --chain-id 8453 --dry-run`
+  purr instance renew --token usdc-xlayer --yes
+  purr instance topup --credits 100 --token usdc-monad --yes`
 
 const INSTANCE_STATUS_USAGE = `Usage: purr instance status [--json]
 
@@ -128,9 +117,7 @@ const INSTANCE_RENEW_USAGE = `Usage: purr instance renew [--token <token-id-or-a
 Options:
   --token <id-or-alias>  Canonical token id or case-insensitive alias
   --dry-run              Create a quote and print the authoritative preview without paying
-  --yes                  Skip interactive payment confirmation
-  --chain-id <id>        deprecated legacy renewal path; mutually exclusive with --token
-  --token-address <hex>  deprecated legacy token address; requires --chain-id`
+  --yes                  Skip interactive payment confirmation`
 
 const INSTANCE_TOPUP_USAGE = `Usage: purr instance topup --credits <integer> [--token <token-id-or-alias>] [--dry-run] [--yes]
 
@@ -143,6 +130,8 @@ Options:
 const CHAIN_NAMES: Record<number, string> = {
   1: 'Ethereum',
   56: 'BSC',
+  143: 'Monad',
+  196: 'X Layer',
   8453: 'Base',
 }
 
@@ -156,28 +145,6 @@ function asString(value: unknown): string | undefined {
   return undefined
 }
 
-function parsePositiveChainId(raw: string | undefined): number {
-  if (raw === undefined) {
-    throw new Error('Missing required argument: --chain-id')
-  }
-  if (!/^[0-9]+$/.test(raw)) {
-    throw new Error(`Invalid --chain-id: "${raw}" - must be a positive integer`)
-  }
-  const chainId = Number.parseInt(raw, 10)
-  if (!Number.isSafeInteger(chainId) || chainId <= 0) {
-    throw new Error(`Invalid --chain-id: "${raw}" - must be a positive integer`)
-  }
-  return chainId
-}
-
-function parseTokenAddress(raw: string | undefined): string | undefined {
-  if (raw === undefined || raw.length === 0) return undefined
-  if (!/^0x[a-fA-F0-9]{40}$/.test(raw)) {
-    throw new Error(`Invalid --token-address: "${raw}" - must be a 0x-prefixed hex address`)
-  }
-  return raw
-}
-
 function parseBooleanFlag(args: Record<string, string>, name: string): boolean {
   const raw = args[name]
   if (raw === undefined) return false
@@ -185,15 +152,6 @@ function parseBooleanFlag(args: Record<string, string>, name: string): boolean {
   if (['true', '1', 'yes'].includes(normalized)) return true
   if (['false', '0', 'no'].includes(normalized)) return false
   throw new Error(`Invalid --${name}: "${raw}" - expected true or false`)
-}
-
-function parseRenewOptions(args: Record<string, string>): RenewOptions {
-  return {
-    chainId: parsePositiveChainId(args['chain-id']),
-    tokenAddress: parseTokenAddress(args['token-address']),
-    dryRun: parseBooleanFlag(args, 'dry-run'),
-    yes: parseBooleanFlag(args, 'yes'),
-  }
 }
 
 function parseTopupCredits(raw: string | undefined): number {
@@ -651,88 +609,9 @@ async function handleCanonicalBillingCommand(input: {
   }
 }
 
-async function postRenewOnce(options: RenewOptions, idempotencyKey: string): Promise<JsonRecord> {
-  const { instanceId } = resolveCredentials()
-  const body: JsonRecord = { chainId: options.chainId }
-  if (options.tokenAddress) body.tokenAddress = options.tokenAddress
-
-  try {
-    const response = await apiPost(`/v1/instances/${instanceId}/renew`, body, {
-      headers: { 'Idempotency-Key': idempotencyKey },
-    })
-    return unwrapPlatformResponse<JsonRecord>(response)
-  } catch (error) {
-    throw toPlatformError(error)
-  }
-}
-
-async function postRenewWithStaleRetry(options: RenewOptions): Promise<JsonRecord> {
-  try {
-    return await postRenewOnce(options, randomUUID())
-  } catch (error) {
-    if (!isStaleQuoteError(error)) throw error
-    console.error('Renewal quote was stale; retrying once with a fresh quote.')
-    return await postRenewOnce(options, randomUUID())
-  }
-}
-
 function formatChainId(chainId: number): string {
   const name = CHAIN_NAMES[chainId]
   return name ? `${chainId} (${name})` : String(chainId)
-}
-
-function tokenMatches(value: unknown, tokenAddress: string | undefined): boolean {
-  const raw = asString(value)
-  if (!tokenAddress) return raw === undefined || raw.toLowerCase() === 'native'
-  return raw?.toLowerCase() === tokenAddress.toLowerCase()
-}
-
-function findWallet(status: JsonRecord, chainId: number): JsonRecord | undefined {
-  const wallets = Array.isArray(status.agentWallets) ? status.agentWallets : []
-  return wallets.find(
-    (wallet): wallet is JsonRecord =>
-      isRecord(wallet) && Number(wallet.chainId) === chainId && typeof wallet.address === 'string',
-  )
-}
-
-function findBalance(wallet: JsonRecord | undefined, tokenAddress: string | undefined): string {
-  if (!wallet || !Array.isArray(wallet.balances)) return 'unknown'
-  const balance = wallet.balances.find(
-    (item): item is JsonRecord => isRecord(item) && tokenMatches(item.tokenAddress, tokenAddress),
-  )
-  if (!balance) return 'unknown'
-
-  const amount =
-    asString(balance.amount) ?? asString(balance.balanceFormatted) ?? asString(balance.balance)
-  const symbol = asString(balance.symbol) ?? asString(balance.currency)
-  if (amount && symbol) return `${amount} ${symbol}`
-  return amount ?? 'unknown'
-}
-
-function nestedValue(record: JsonRecord, path: string[]): unknown {
-  let current: unknown = record
-  for (const key of path) {
-    if (!isRecord(current)) return undefined
-    current = current[key]
-  }
-  return current
-}
-
-function renewalAmount(status: JsonRecord): string {
-  const paths = [
-    ['amount'],
-    ['renewalAmount'],
-    ['paymentAmount'],
-    ['quote', 'amount'],
-    ['renewalQuote', 'amount'],
-    ['billingStatus', 'amount'],
-  ]
-  for (const path of paths) {
-    const value = asString(nestedValue(status, path))
-    if (value) return value
-  }
-  const usd = asString(status.effectiveRenewalPriceUsd) ?? asString(status.renewalPriceUsd)
-  return usd ? `$${usd} USD` : 'unknown'
 }
 
 function formatPlan(status: JsonRecord): string {
@@ -742,22 +621,6 @@ function formatPlan(status: JsonRecord): string {
     return asString(plan.name) ?? asString(plan.slug) ?? asString(plan.id) ?? JSON.stringify(plan)
   }
   return 'unknown'
-}
-
-function printRenewalPreview(status: JsonRecord, options: RenewOptions): void {
-  const wallet = findWallet(status, options.chainId)
-  const payer = asString(wallet?.address) ?? asString(status.payerWallet) ?? 'unknown'
-  const token = options.tokenAddress ?? 'native'
-
-  console.error('Instance renewal preview')
-  console.error(`  Status: ${asString(status.status) ?? 'unknown'}`)
-  console.error(`  Plan: ${formatPlan(status)}`)
-  console.error(`  Next billing date: ${asString(status.nextBillingDate) ?? 'unknown'}`)
-  console.error(`  Chain: ${formatChainId(options.chainId)}`)
-  console.error(`  Token: ${token}`)
-  console.error(`  Amount: ${renewalAmount(status)}`)
-  console.error(`  Payer wallet: ${payer}`)
-  console.error(`  Balance: ${findBalance(wallet, options.tokenAddress)}`)
 }
 
 function formatRenewalPrice(status: JsonRecord): string {
@@ -903,47 +766,17 @@ export async function handleInstanceCommand(
       console.log(INSTANCE_RENEW_USAGE)
       return
     }
-    if (args.token !== undefined && (args['chain-id'] !== undefined || args['token-address'])) {
-      throw new Error('--token is mutually exclusive with deprecated --chain-id/--token-address')
-    }
-    if (args['chain-id'] === undefined && args['token-address'] === undefined) {
-      await handleCanonicalBillingCommand({
-        kind: 'renewal',
-        token: args.token,
-        dryRun: parseBooleanFlag(args, 'dry-run'),
-        yes: parseBooleanFlag(args, 'yes'),
-      })
-      return
-    }
-    console.error(
-      'Warning: --chain-id/--token-address renewal is deprecated; prefer --token or automatic selection.',
-    )
-    const options = parseRenewOptions(args)
-    const status = await fetchBillingStatus()
-    printRenewalPreview(status, options)
-
-    if (options.dryRun) {
-      console.log(
-        JSON.stringify(
-          {
-            dryRun: true,
-            chainId: options.chainId,
-            ...(options.tokenAddress ? { tokenAddress: options.tokenAddress } : {}),
-            billingStatus: status,
-          },
-          null,
-          2,
-        ),
+    if (args['chain-id'] !== undefined || args['token-address'] !== undefined) {
+      throw new Error(
+        'renew uses the standard payment flow; use --token <token-id> or omit it for automatic selection',
       )
-      return
     }
-
-    if (!options.yes && !(await confirmProceed())) {
-      throw new InstanceCliError('Aborted.', 1)
-    }
-
-    const result = await postRenewWithStaleRetry(options)
-    console.log(JSON.stringify(result, null, 2))
+    await handleCanonicalBillingCommand({
+      kind: 'renewal',
+      token: args.token,
+      dryRun: parseBooleanFlag(args, 'dry-run'),
+      yes: parseBooleanFlag(args, 'yes'),
+    })
     return
   }
 

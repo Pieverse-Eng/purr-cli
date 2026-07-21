@@ -30,6 +30,30 @@ const paymentMethods = [
     decimals: 6,
     paymentRail: 'invoice-registry',
   },
+  {
+    tokenId: 'usdc-monad',
+    symbol: 'USDC',
+    aliases: ['USDC Monad', 'usdc-monad'],
+    chainId: 143,
+    chainName: 'Monad',
+    native: false,
+    tokenAddress: '0x754704Bc059F8C67012fEd69BC8A327a5aafb603',
+    decimals: 6,
+    paymentRail: 'x402',
+    facilitator: 'pieverse',
+  },
+  {
+    tokenId: 'usdc-xlayer',
+    symbol: 'USDC',
+    aliases: ['USDC X Layer', 'usdc-xlayer'],
+    chainId: 196,
+    chainName: 'X Layer',
+    native: false,
+    tokenAddress: '0x74b7f16337b8972027f6196a17a631ac6de26d22',
+    decimals: 6,
+    paymentRail: 'x402',
+    facilitator: 'okx',
+  },
 ]
 
 function billingQuote(
@@ -244,7 +268,8 @@ describe('instance CLI', () => {
         expect(renewHelp.code).toBe(0)
         expect(renewHelp.stdout).toContain('Usage: purr instance renew')
         expect(renewHelp.stdout).toContain('--token')
-        expect(renewHelp.stdout).toContain('deprecated')
+        expect(renewHelp.stdout).not.toContain('--chain-id')
+        expect(renewHelp.stdout).not.toContain('--token-address')
 
         const topupHelp = await runPurr(port, ['instance', 'topup', '-h'])
         expect(topupHelp.code).toBe(0)
@@ -269,7 +294,10 @@ describe('instance CLI', () => {
         expect(groupHelp.stdout).toContain('payment-methods')
         expect(groupHelp.stdout).toContain('topup')
         expect(groupHelp.stdout).toContain('purr instance renew --token usdt-bsc')
-        expect(groupHelp.stdout).toContain('purr instance topup --credits 100 --token USDT')
+        expect(groupHelp.stdout).toContain('purr instance renew --token usdc-xlayer --yes')
+        expect(groupHelp.stdout).toContain(
+          'purr instance topup --credits 100 --token usdc-monad --yes',
+        )
       },
     )
   })
@@ -364,10 +392,10 @@ describe('instance CLI', () => {
     },
   )
 
-  it('rejects mixing canonical token selection with deprecated address options', async () => {
+  it('rejects removed legacy renewal selectors before any platform request', async () => {
     await withServer(
       async () => {
-        throw new Error('The platform should not be called for mutually exclusive options')
+        throw new Error('The platform should not be called for removed options')
       },
       async (port) => {
         const result = await runPurr(port, [
@@ -379,7 +407,124 @@ describe('instance CLI', () => {
           '8453',
         ])
         expect(result.code).toBe(1)
-        expect(result.stderr).toContain('mutually exclusive')
+        expect(result.stderr).toContain('renew uses the standard payment flow')
+
+        const addressOnly = await runPurr(port, [
+          'instance',
+          'renew',
+          '--token-address',
+          TOKEN_ADDRESS,
+        ])
+        expect(addressOnly.code).toBe(1)
+        expect(addressOnly.stderr).toContain('renew uses the standard payment flow')
+      },
+    )
+  })
+
+  it('quotes X Layer renewal through the canonical billing route', async () => {
+    let quoteBody: JsonObject | undefined
+    await withServer(
+      async (req, res) => {
+        if (req.method === 'GET' && req.url?.endsWith('/billing/payment-methods')) {
+          writeJson(res, 200, { ok: true, data: { methods: paymentMethods } })
+          return
+        }
+        if (req.method === 'POST' && req.url?.endsWith('/billing/quote')) {
+          quoteBody = await readBody(req)
+          writeJson(res, 200, {
+            ok: true,
+            data: {
+              invoiceId: 'invoice-xlayer-renewal',
+              kind: 'renewal',
+              quotes: [billingQuote(paymentMethods[3])],
+            },
+          })
+          return
+        }
+        throw new Error(`Unexpected route: ${req.method} ${req.url}`)
+      },
+      async (port) => {
+        const result = await runPurr(port, [
+          'instance',
+          'renew',
+          '--token',
+          'usdc-xlayer',
+          '--dry-run',
+        ])
+        expect(result.code).toBe(0)
+        expect(quoteBody).toEqual({ kind: 'renewal', tokenId: 'usdc-xlayer' })
+        expect(result.stderr).toContain('Chain: 196 (X Layer)')
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          invoiceId: 'invoice-xlayer-renewal',
+          quote: { tokenId: 'usdc-xlayer', paymentRail: 'x402' },
+        })
+      },
+    )
+  })
+
+  it('pays Monad USDC credit top-ups through the canonical billing route', async () => {
+    let quoteBody: JsonObject | undefined
+    let payBody: JsonObject | undefined
+    await withServer(
+      async (req, res) => {
+        if (req.method === 'GET' && req.url?.endsWith('/billing/payment-methods')) {
+          writeJson(res, 200, { ok: true, data: { methods: paymentMethods } })
+          return
+        }
+        if (req.method === 'POST' && req.url?.endsWith('/billing/quote')) {
+          quoteBody = await readBody(req)
+          writeJson(res, 200, {
+            ok: true,
+            data: {
+              invoiceId: 'invoice-monad-topup',
+              kind: 'credit_topup',
+              quotes: [billingQuote(paymentMethods[2])],
+            },
+          })
+          return
+        }
+        if (req.method === 'POST' && req.url?.endsWith('/billing/pay')) {
+          payBody = await readBody(req)
+          writeJson(res, 200, {
+            ok: true,
+            data: { state: 'confirming', txHash: '0xmonad-topup' },
+          })
+          return
+        }
+        if (req.method === 'GET' && req.url?.endsWith('/billing/invoice-monad-topup')) {
+          writeJson(res, 200, {
+            ok: true,
+            data: { state: 'fulfilled', invoiceId: 'invoice-monad-topup' },
+          })
+          return
+        }
+        throw new Error(`Unexpected route: ${req.method} ${req.url}`)
+      },
+      async (port) => {
+        const result = await runPurr(port, [
+          'instance',
+          'topup',
+          '--credits',
+          '100',
+          '--token',
+          'usdc-monad',
+          '--yes',
+        ])
+        expect(result.code).toBe(0)
+        expect(quoteBody).toEqual({
+          kind: 'credit_topup',
+          credits: 100,
+          tokenId: 'usdc-monad',
+        })
+        expect(payBody).toEqual({
+          invoiceId: 'invoice-monad-topup',
+          quoteId: 'quote-usdc-monad',
+        })
+        expect(result.stderr).toContain('Chain: 143 (Monad)')
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          state: 'fulfilled',
+          invoiceId: 'invoice-monad-topup',
+        })
       },
     )
   })
@@ -1402,212 +1547,4 @@ describe('instance CLI', () => {
     )
   })
 
-  it('dry-runs renew with parsed chain and token without posting payment', async () => {
-    let renewCalls = 0
-    await withServer(
-      async (req, res) => {
-        if (req.method === 'GET' && req.url === `/v1/instances/${INSTANCE_ID}/billing-status`) {
-          writeJson(res, 200, { ok: true, data: billingStatus })
-          return
-        }
-        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/renew`) {
-          renewCalls++
-        }
-        throw new Error(`Unexpected route: ${req.method} ${req.url}`)
-      },
-      async (port) => {
-        const result = await runPurr(port, [
-          'instance',
-          'renew',
-          '--chain-id',
-          '56',
-          '--token-address',
-          TOKEN_ADDRESS,
-          '--dry-run',
-        ])
-        expect(result.code).toBe(0)
-        expect(renewCalls).toBe(0)
-        expect(result.stderr).toContain('Chain: 56 (BSC)')
-        expect(result.stderr).toContain(`Token: ${TOKEN_ADDRESS}`)
-        expect(result.stderr).toContain('deprecated')
-        expect(JSON.parse(result.stdout)).toMatchObject({ dryRun: true, chainId: 56 })
-      },
-    )
-  })
-
-  it('prompts before renewal and sends an idempotency key', async () => {
-    let postedBody: JsonObject | undefined
-    let idempotencyKey: string | undefined
-    await withServer(
-      async (req, res) => {
-        if (req.method === 'GET' && req.url === `/v1/instances/${INSTANCE_ID}/billing-status`) {
-          writeJson(res, 200, { ok: true, data: billingStatus })
-          return
-        }
-        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/renew`) {
-          idempotencyKey = String(req.headers['idempotency-key'])
-          postedBody = await readBody(req)
-          writeJson(res, 200, {
-            ok: true,
-            data: { txHash: `0x${'a'.repeat(64)}`, quoteId: 'quote-1', amount: '0.01' },
-          })
-          return
-        }
-        throw new Error(`Unexpected route: ${req.method} ${req.url}`)
-      },
-      async (port) => {
-        const result = await runPurr(
-          port,
-          ['instance', 'renew', '--chain-id', '56', '--token-address', TOKEN_ADDRESS],
-          'y\n',
-        )
-        expect(result.code).toBe(0)
-        expect(postedBody).toEqual({ chainId: 56, tokenAddress: TOKEN_ADDRESS })
-        expect(idempotencyKey).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-        )
-        expect(result.stderr).toContain('Proceed? [y/N]')
-        expect(JSON.parse(result.stdout)).toMatchObject({ quoteId: 'quote-1' })
-      },
-    )
-  })
-
-  it('maps user abort to exit code 1 without posting renewal', async () => {
-    let renewCalls = 0
-    await withServer(
-      async (req, res) => {
-        if (req.method === 'GET' && req.url === `/v1/instances/${INSTANCE_ID}/billing-status`) {
-          writeJson(res, 200, { ok: true, data: billingStatus })
-          return
-        }
-        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/renew`) {
-          renewCalls++
-        }
-        throw new Error(`Unexpected route: ${req.method} ${req.url}`)
-      },
-      async (port) => {
-        const result = await runPurr(
-          port,
-          ['instance', 'renew', '--chain-id', '56', '--token-address', TOKEN_ADDRESS],
-          'n\n',
-        )
-        expect(result.code).toBe(1)
-        expect(renewCalls).toBe(0)
-        expect(result.stderr).toContain('Aborted.')
-      },
-    )
-  })
-
-  it('retries stale quote errors once', async () => {
-    let renewCalls = 0
-    await withServer(
-      async (req, res) => {
-        if (req.method === 'GET' && req.url === `/v1/instances/${INSTANCE_ID}/billing-status`) {
-          writeJson(res, 200, { ok: true, data: billingStatus })
-          return
-        }
-        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/renew`) {
-          renewCalls++
-          await readBody(req)
-          if (renewCalls === 1) {
-            writeJson(res, 409, {
-              ok: false,
-              error: { code: 'STALE_QUOTE', message: 'Quote expired' },
-            })
-            return
-          }
-          writeJson(res, 200, { ok: true, data: { txHash: `0x${'b'.repeat(64)}` } })
-          return
-        }
-        throw new Error(`Unexpected route: ${req.method} ${req.url}`)
-      },
-      async (port) => {
-        const result = await runPurr(port, [
-          'instance',
-          'renew',
-          '--chain-id',
-          '56',
-          '--token-address',
-          TOKEN_ADDRESS,
-          '--yes',
-        ])
-        expect(result.code).toBe(0)
-        expect(renewCalls).toBe(2)
-        expect(result.stderr).toContain('retrying once')
-        expect(JSON.parse(result.stdout)).toMatchObject({ txHash: `0x${'b'.repeat(64)}` })
-      },
-    )
-  })
-
-  it('maps structured platform errors to renewal exit codes', async () => {
-    const cases = [
-      { code: 'INSUFFICIENT_BALANCE', status: 402, expectedExit: 2 },
-      { code: 'INELIGIBLE_STATE', status: 409, expectedExit: 3 },
-      { code: 'PLATFORM_ERROR', status: 500, expectedExit: 4 },
-    ]
-
-    for (const testCase of cases) {
-      await withServer(
-        async (req, res) => {
-          if (req.method === 'GET' && req.url === `/v1/instances/${INSTANCE_ID}/billing-status`) {
-            writeJson(res, 200, { ok: true, data: billingStatus })
-            return
-          }
-          if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/renew`) {
-            await readBody(req)
-            writeJson(res, testCase.status, {
-              ok: false,
-              error: { code: testCase.code, message: testCase.code },
-            })
-            return
-          }
-          throw new Error(`Unexpected route: ${req.method} ${req.url}`)
-        },
-        async (port) => {
-          const result = await runPurr(port, [
-            'instance',
-            'renew',
-            '--chain-id',
-            '56',
-            '--token-address',
-            TOKEN_ADDRESS,
-            '--yes',
-          ])
-          expect(result.code).toBe(testCase.expectedExit)
-          expect(result.stderr).toContain(testCase.code)
-        },
-      )
-    }
-  })
-
-  it('validates chain id and token address before calling the platform', async () => {
-    await withServer(
-      async (_req, _res) => {
-        throw new Error('The platform should not be called for invalid CLI args')
-      },
-      async (port) => {
-        const invalidChain = await runPurr(port, [
-          'instance',
-          'renew',
-          '--chain-id',
-          'bsc',
-          '--token-address',
-          TOKEN_ADDRESS,
-        ])
-        expect(invalidChain.code).toBe(1)
-        expect(invalidChain.stderr).toContain('Invalid --chain-id')
-
-        const invalidToken = await runPurr(port, [
-          'instance',
-          'renew',
-          '--chain-id',
-          '56',
-          '--token-address',
-          'usdt',
-        ])
-        expect(invalidToken.code).toBe(1)
-        expect(invalidToken.stderr).toContain('Invalid --token-address')
-      },
-    )
-  })
 })

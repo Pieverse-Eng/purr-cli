@@ -667,15 +667,6 @@ function printBillingStatus(status: JsonRecord): void {
   }
 }
 
-async function confirmProceed(): Promise<boolean> {
-  const confirmation = createConfirmationSession()
-  try {
-    return await confirmation.ask()
-  } finally {
-    confirmation.close()
-  }
-}
-
 function createConfirmationSession(): { ask: () => Promise<boolean>; close: () => void } {
   const rl = createInterface({ input: process.stdin, output: process.stderr })
   const answers: string[] = []

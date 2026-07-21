@@ -591,8 +591,9 @@ Examples:
   purr hyperliquid deposit --amount 5
   purr instance payment-methods
   purr instance renew --token usdt-bsc --yes
+  purr instance renew --token usdc-xlayer --yes
   purr instance topup --credits 100 --token USDT --yes
-  purr instance renew --chain-id 56 --token-address 0x55d3...7955 --yes
+  purr instance topup --credits 100 --token usdc-monad --yes
   purr wallet sign --address 0x... --message "Hello"
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'
   purr wallet sign-okx-x402 --expected '{"amountBaseUnits":"1","chainId":196,"tokenAddress":"0x779ded...","payTo":"0x..."}'

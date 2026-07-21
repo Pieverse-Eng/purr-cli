@@ -16,7 +16,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Pieverse-Eng/purr-cli/main/install.ps1 | iex
 ```
 
-Pin a version by setting `PURR_VERSION`, for example `v0.2.31`.
+Pin a version by setting `PURR_VERSION`, for example `v0.2.32`.
 
 ## Development Install
 
@@ -117,7 +117,9 @@ purr hyperliquid withdraw-status --nonce <nonce>
 
 purr execute --steps-file <path-to-steps-json> --dedup-key <dedup-key>
 purr instance status
-purr instance renew --chain-id <chain-id> --token-address <token-address> --yes
+purr instance payment-methods
+purr instance renew --token <token-id-or-alias> --yes
+purr instance topup --credits <integer> --token <token-id-or-alias> --yes
 purr pns resolve <handle>
 purr store list --search <keyword> --limit <limit>
 purr store info <slug>

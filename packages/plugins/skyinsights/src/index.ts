@@ -117,8 +117,7 @@ function toSkyInsightsError(error: unknown): Error {
   if (error instanceof ApiClientError) {
     const body = error.body as ApiErrorBody | undefined
     const retryAfterSeconds = extractRetryAfterSeconds(body)
-    const retryHint =
-      retryAfterSeconds === undefined ? '' : ` (retry after ${retryAfterSeconds}s)`
+    const retryHint = retryAfterSeconds === undefined ? '' : ` (retry after ${retryAfterSeconds}s)`
     return new SkyInsightsCliError(`${extractErrorMessage(body) ?? error.message}${retryHint}`, {
       code: extractErrorCode(body),
       status: error.status,

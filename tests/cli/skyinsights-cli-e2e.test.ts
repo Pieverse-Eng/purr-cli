@@ -495,12 +495,7 @@ describe('SkyInsights CLI e2e', () => {
   })
 
   it('lists KYA screening requests through the platform route', async () => {
-    const result = await runPurr(port, tmpHome, [
-      'skyinsights',
-      'screening-list',
-      '--limit',
-      '5',
-    ])
+    const result = await runPurr(port, tmpHome, ['skyinsights', 'screening-list', '--limit', '5'])
 
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('')

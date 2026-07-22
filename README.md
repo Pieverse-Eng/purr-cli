@@ -48,7 +48,7 @@ purr <group> <command> [options]
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
-| `skyinsights` | SkyInsights KYA labels, KYA/KYT risk checks, and screening requests through the configured instance |
+| `skyinsights` | SkyInsights KYA/KYT risk checks, screenings, and address monitoring through the configured instance |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
@@ -121,6 +121,12 @@ purr skyinsights kyt-risk --chain bsc --tx-hash <transaction-hash>
 purr skyinsights screening-submit --chain bsc --address <wallet-address> --rule-set-id standard-mode-rule-set
 purr skyinsights screening-list --limit 20
 purr skyinsights screening-get --request-id <request-id>
+purr skyinsights monitor-create --chain bsc --address <wallet-address>
+purr skyinsights monitor-batch-create --chain bsc --addresses <wallet-address-1>,<wallet-address-2>
+purr skyinsights monitor-list --limit 20
+purr skyinsights monitor-get --monitor-id <monitor-id> --page 1 --size 20
+purr skyinsights monitor-update --monitor-id <monitor-id> --status paused
+purr skyinsights monitor-delete --monitor-id <monitor-id>
 
 purr execute --steps-file <path-to-steps-json> --dedup-key <dedup-key>
 purr instance status

@@ -11,6 +11,10 @@ const INSTANCE_ID = 'inst-123'
 const WALLET_ADDRESS = '0x5e2c75267ac8cC7530C90Ab431c4F25452C024CE'
 const TX_HASH = `0x${'a'.repeat(64)}`
 const REQUEST_ID = '00000000-0000-0000-0000-000000000123'
+const MONITOR_ID = '00000000-0000-0000-0000-000000000124'
+const SECOND_MONITOR_ID = '00000000-0000-0000-0000-000000000125'
+const NOT_READY_MONITOR_ID = '00000000-0000-0000-0000-000000000126'
+const SECOND_WALLET_ADDRESS = '0x489a8756c18c0b8b24ec2a2b9ff3d4d447f79bec'
 const CREATED_AT = '2026-07-22T00:00:00.000Z'
 const UPDATED_AT = '2026-07-22T00:00:01.000Z'
 const COMPLETED_AT = '2026-07-22T00:00:02.000Z'
@@ -24,6 +28,29 @@ interface CommandResult {
 function writeJson(res: ServerResponse<IncomingMessage>, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' })
   res.end(JSON.stringify(body))
+}
+
+function monitorData({
+  monitorId = MONITOR_ID,
+  address = WALLET_ADDRESS,
+  status = 'running',
+  operation = 'monitor',
+  result = null as unknown,
+  deletedAt = null as string | null,
+} = {}) {
+  return {
+    provider: 'skyinsights',
+    monitorId,
+    operation,
+    status,
+    chain: 'bsc',
+    address,
+    result,
+    errorCode: null,
+    createdAt: CREATED_AT,
+    updatedAt: UPDATED_AT,
+    deletedAt,
+  }
 }
 
 async function listen(server: ReturnType<typeof createServer>): Promise<number> {
@@ -326,6 +353,103 @@ describe('SkyInsights CLI e2e', () => {
         return
       }
 
+      if (req.url === `${basePath}/monitors`) {
+        assert.equal(req.method, 'POST')
+        assert.deepEqual(JSON.parse(body), {
+          chain: 'bsc',
+          address: WALLET_ADDRESS,
+        })
+        writeJson(res, 201, { ok: true, data: monitorData() })
+        return
+      }
+
+      if (req.url === `${basePath}/monitors/batch`) {
+        assert.equal(req.method, 'POST')
+        assert.deepEqual(JSON.parse(body), {
+          chain: 'bsc',
+          addresses: [WALLET_ADDRESS, SECOND_WALLET_ADDRESS],
+        })
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            provider: 'skyinsights',
+            operation: 'monitor_batch_create',
+            total: 2,
+            created: 1,
+            replayed: 1,
+            failed: 0,
+            results: [
+              { address: WALLET_ADDRESS, status: 'created', monitorId: MONITOR_ID },
+              {
+                address: SECOND_WALLET_ADDRESS,
+                status: 'replayed',
+                monitorId: SECOND_MONITOR_ID,
+              },
+            ],
+          },
+        })
+        return
+      }
+
+      if (req.url === `${basePath}/monitors?limit=5`) {
+        assert.equal(req.method, 'GET')
+        writeJson(res, 200, {
+          ok: true,
+          data: [monitorData(), monitorData({ monitorId: SECOND_MONITOR_ID })],
+        })
+        return
+      }
+
+      if (req.url === `${basePath}/monitors/${MONITOR_ID}?page=2&size=10`) {
+        assert.equal(req.method, 'GET')
+        writeJson(res, 200, {
+          ok: true,
+          data: monitorData({
+            operation: 'monitor_detail',
+            result: {
+              monitor: {
+                chain: 'bsc',
+                address: WALLET_ADDRESS,
+                status: 'running',
+                riskLevel: 'None',
+                verdict: 'safe',
+                labels: [],
+                riskFactors: [],
+                summary: null,
+              },
+              pagination: { page: 2, size: 10, total: 0 },
+              transactions: [],
+            },
+          }),
+        })
+        return
+      }
+
+      if (req.url === `${basePath}/monitors/${MONITOR_ID}`) {
+        if (req.method === 'PATCH') {
+          assert.deepEqual(JSON.parse(body), { status: 'paused' })
+          writeJson(res, 200, { ok: true, data: monitorData({ status: 'paused' }) })
+          return
+        }
+        if (req.method === 'DELETE') {
+          writeJson(res, 200, {
+            ok: true,
+            data: monitorData({ status: 'deleted', deletedAt: COMPLETED_AT }),
+          })
+          return
+        }
+      }
+
+      if (req.url === `${basePath}/monitors/${NOT_READY_MONITOR_ID}`) {
+        assert.equal(req.method, 'PATCH')
+        writeJson(res, 409, {
+          ok: false,
+          code: 'skyinsights_monitor_not_ready',
+          error: 'Monitor creation is still in progress.',
+        })
+        return
+      }
+
       if (req.url === `${basePath}/kya/risk?chain=eth&address=${encodedAddress}`) {
         assert.equal(req.method, 'GET')
         writeJson(res, 502, {
@@ -583,6 +707,205 @@ describe('SkyInsights CLI e2e', () => {
       authorization: `Bearer ${API_TOKEN}`,
       body: '',
     })
+  })
+
+  it('creates a monitor through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'skyinsights',
+      'monitor-create',
+      '--chain',
+      'bsc',
+      '--address',
+      WALLET_ADDRESS,
+    ])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual(monitorData())
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'POST',
+      url: `/v1/instances/${INSTANCE_ID}/security/skyinsights/monitors`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({ chain: 'bsc', address: WALLET_ADDRESS }),
+    })
+  })
+
+  it('batch creates monitors from comma-separated addresses', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'skyinsights',
+      'monitor-batch-create',
+      '--chain',
+      'bsc',
+      '--addresses',
+      `${WALLET_ADDRESS}, ${SECOND_WALLET_ADDRESS}`,
+    ])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual({
+      provider: 'skyinsights',
+      operation: 'monitor_batch_create',
+      total: 2,
+      created: 1,
+      replayed: 1,
+      failed: 0,
+      results: [
+        { address: WALLET_ADDRESS, status: 'created', monitorId: MONITOR_ID },
+        {
+          address: SECOND_WALLET_ADDRESS,
+          status: 'replayed',
+          monitorId: SECOND_MONITOR_ID,
+        },
+      ],
+    })
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'POST',
+      url: `/v1/instances/${INSTANCE_ID}/security/skyinsights/monitors/batch`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({
+        chain: 'bsc',
+        addresses: [WALLET_ADDRESS, SECOND_WALLET_ADDRESS],
+      }),
+    })
+  })
+
+  it('lists tenant monitors through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, ['skyinsights', 'monitor-list', '--limit', '5'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual([
+      monitorData(),
+      monitorData({ monitorId: SECOND_MONITOR_ID }),
+    ])
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v1/instances/${INSTANCE_ID}/security/skyinsights/monitors?limit=5`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '',
+    })
+  })
+
+  it('gets paginated monitor detail through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'skyinsights',
+      'monitor-get',
+      '--monitor-id',
+      MONITOR_ID,
+      '--page',
+      '2',
+      '--size',
+      '10',
+    ])
+    const detail = monitorData({
+      operation: 'monitor_detail',
+      result: {
+        monitor: {
+          chain: 'bsc',
+          address: WALLET_ADDRESS,
+          status: 'running',
+          riskLevel: 'None',
+          verdict: 'safe',
+          labels: [],
+          riskFactors: [],
+          summary: null,
+        },
+        pagination: { page: 2, size: 10, total: 0 },
+        transactions: [],
+      },
+    })
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual(detail)
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v1/instances/${INSTANCE_ID}/security/skyinsights/monitors/${MONITOR_ID}?page=2&size=10`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '',
+    })
+  })
+
+  it('updates monitor status through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'skyinsights',
+      'monitor-update',
+      '--monitor-id',
+      MONITOR_ID,
+      '--status',
+      'paused',
+    ])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual(monitorData({ status: 'paused' }))
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'PATCH',
+      url: `/v1/instances/${INSTANCE_ID}/security/skyinsights/monitors/${MONITOR_ID}`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({ status: 'paused' }),
+    })
+  })
+
+  it('deletes a monitor through the platform route', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'skyinsights',
+      'monitor-delete',
+      '--monitor-id',
+      MONITOR_ID,
+    ])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual(
+      monitorData({ status: 'deleted', deletedAt: COMPLETED_AT }),
+    )
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'DELETE',
+      url: `/v1/instances/${INSTANCE_ID}/security/skyinsights/monitors/${MONITOR_ID}`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: '',
+    })
+  })
+
+  it('rejects an unsupported monitor status before calling the platform', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'skyinsights',
+      'monitor-update',
+      '--monitor-id',
+      MONITOR_ID,
+      '--status',
+      'stopped',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('Invalid --status: expected running or paused')
+    expect(requestCount).toBe(0)
+  })
+
+  it('prints monitor not-ready errors from the platform', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'skyinsights',
+      'monitor-update',
+      '--monitor-id',
+      NOT_READY_MONITOR_ID,
+      '--status',
+      'paused',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      'error [skyinsights_monitor_not_ready]: Monitor creation is still in progress.',
+    )
+    expect(requestCount).toBe(1)
   })
 
   it('prints SkyInsights platform error details', async () => {

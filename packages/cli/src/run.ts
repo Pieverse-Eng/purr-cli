@@ -496,7 +496,7 @@ Groups:
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
-  skyinsights       SkyInsights KYA labels, KYA/KYT risk checks, and screening requests
+  skyinsights       SkyInsights KYA/KYT risk checks, screenings, and address monitoring
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -601,6 +601,12 @@ Examples:
   purr skyinsights screening-submit --chain bsc --address 0x...
   purr skyinsights screening-list --limit 20
   purr skyinsights screening-get --request-id 00000000-0000-0000-0000-000000000000
+  purr skyinsights monitor-create --chain bsc --address 0x...
+  purr skyinsights monitor-batch-create --chain bsc --addresses 0x...,0x...
+  purr skyinsights monitor-list --limit 20
+  purr skyinsights monitor-get --monitor-id 00000000-0000-0000-0000-000000000000 --page 1 --size 20
+  purr skyinsights monitor-update --monitor-id 00000000-0000-0000-0000-000000000000 --status paused
+  purr skyinsights monitor-delete --monitor-id 00000000-0000-0000-0000-000000000000
   purr instance payment-methods
   purr instance renew --token usdt-bsc --yes
   purr instance renew --token usdc-xlayer --yes

@@ -1,6 +1,8 @@
 import {
   ApiClientError,
+  apiDelete,
   apiGet,
+  apiPatch,
   apiPost,
   resolveCredentials,
 } from '@pieverseio/purr-core/api-client'
@@ -58,6 +60,12 @@ Commands:
   screening-submit --chain <chain> --address <wallet> [--rule-set-id <id>]
   screening-list [--limit <count>]
   screening-get --request-id <id>
+  monitor-create --chain <chain> --address <wallet>
+  monitor-batch-create --chain <chain> --addresses <wallet1,wallet2>
+  monitor-list [--limit <count>]
+  monitor-get --monitor-id <id> [--page <page>] [--size <count>]
+  monitor-update --monitor-id <id> --status <running|paused>
+  monitor-delete --monitor-id <id>
 
 Calls /v1/instances/:id/security/skyinsights and prints the platform response data as JSON.`
 
@@ -177,6 +185,24 @@ async function postSkyInsights<T = unknown>(path: string, body: JsonRecord): Pro
   }
 }
 
+async function patchSkyInsights<T = unknown>(path: string, body: JsonRecord): Promise<T> {
+  try {
+    const response = await apiPatch<ApiEnvelope<T>>(`${skyInsightsBasePath()}${path}`, body)
+    return unwrap(response)
+  } catch (error) {
+    throw toSkyInsightsError(error)
+  }
+}
+
+async function deleteSkyInsights<T = unknown>(path: string): Promise<T> {
+  try {
+    const response = await apiDelete<ApiEnvelope<T>>(`${skyInsightsBasePath()}${path}`)
+    return unwrap(response)
+  } catch (error) {
+    throw toSkyInsightsError(error)
+  }
+}
+
 function requireArg(args: Record<string, string>, name: string): string {
   const value = args[name]
   if (value === undefined) throw new Error(`Missing required argument: --${name}`)
@@ -198,6 +224,30 @@ function screeningBody(args: Record<string, string>): JsonRecord {
     address: requireArg(args, 'address'),
     ...(ruleSetId === undefined ? {} : { ruleSetId }),
   }
+}
+
+function parseMonitorAddresses(args: Record<string, string>): string[] {
+  const addresses = requireArg(args, 'addresses')
+    .split(',')
+    .map((address) => address.trim())
+    .filter(Boolean)
+  if (addresses.length === 0) {
+    throw new Error('Invalid --addresses: expected at least one wallet address')
+  }
+  if (addresses.length > 100) {
+    throw new Error('Invalid --addresses: expected at most 100 wallet addresses')
+  }
+  return addresses
+}
+
+function monitorStatus(args: Record<string, string>): 'running' | 'paused' {
+  const status = requireArg(args, 'status')
+  if (status === 'running' || status === 'paused') return status
+  throw new Error('Invalid --status: expected running or paused')
+}
+
+function monitorPath(args: Record<string, string>): string {
+  return `/monitors/${encodeURIComponent(requireArg(args, 'monitor-id'))}`
 }
 
 function printJson(value: unknown): void {
@@ -263,6 +313,53 @@ export async function skyInsightsCommand(
           `/kya/screenings/${encodeURIComponent(requireArg(args, 'request-id'))}`,
         ),
       )
+      return
+
+    case 'monitor-create':
+      printJson(
+        await postSkyInsights('/monitors', {
+          chain: requireArg(args, 'chain'),
+          address: requireArg(args, 'address'),
+        }),
+      )
+      return
+
+    case 'monitor-batch-create':
+      printJson(
+        await postSkyInsights('/monitors/batch', {
+          chain: requireArg(args, 'chain'),
+          addresses: parseMonitorAddresses(args),
+        }),
+      )
+      return
+
+    case 'monitor-list':
+      printJson(
+        await getSkyInsights('/monitors', {
+          limit: parseInteger(args.limit, 'limit'),
+        }),
+      )
+      return
+
+    case 'monitor-get':
+      printJson(
+        await getSkyInsights(monitorPath(args), {
+          page: parseInteger(args.page, 'page'),
+          size: parseInteger(args.size, 'size'),
+        }),
+      )
+      return
+
+    case 'monitor-update':
+      printJson(
+        await patchSkyInsights(monitorPath(args), {
+          status: monitorStatus(args),
+        }),
+      )
+      return
+
+    case 'monitor-delete':
+      printJson(await deleteSkyInsights(monitorPath(args)))
       return
 
     default:

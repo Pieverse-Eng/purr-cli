@@ -71,11 +71,7 @@ import {
   hyperliquidCommand,
   hyperliquidHelp,
 } from '@pieverseio/purr-plugin-hyperliquid/index'
-import {
-  OseroCliError,
-  oseroCommand,
-  oseroHelp,
-} from '@pieverseio/purr-plugin-vendors/osero'
+import { OseroCliError, oseroCommand, oseroHelp } from '@pieverseio/purr-plugin-vendors/osero'
 import {
   buildPancakeAddLiquiditySteps,
   buildPancakeFarmSteps,

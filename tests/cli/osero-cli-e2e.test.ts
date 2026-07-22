@@ -354,12 +354,7 @@ describe('Osero CLI e2e', () => {
   })
 
   it('formats platform Osero errors with their code', async () => {
-    const result = await runPurr(port, tmpHome, [
-      'osero',
-      'contracts',
-      '--chain-id',
-      '999999',
-    ])
+    const result = await runPurr(port, tmpHome, ['osero', 'contracts', '--chain-id', '999999'])
 
     expect(result.code).toBe(1)
     expect(result.stdout).toBe('')

@@ -72,6 +72,11 @@ import {
   hyperliquidHelp,
 } from '@pieverseio/purr-plugin-hyperliquid/index'
 import {
+  OseroCliError,
+  oseroCommand,
+  oseroHelp,
+} from '@pieverseio/purr-plugin-vendors/osero'
+import {
   buildPancakeAddLiquiditySteps,
   buildPancakeFarmSteps,
   buildPancakeRemoveLiquiditySteps,
@@ -481,6 +486,7 @@ Groups:
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
   fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
+  osero             Osero USDS/sUSDS routes through the platform TEE wallet
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaign card flow
@@ -542,6 +548,10 @@ Examples:
   purr lista list-vaults --zone classic
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56
   purr lista deposit --vault 0x... --amount-wei 1000 --token 0x... --wallet 0x... --chain-id 56 --execute
+  purr osero balances --chain base
+  purr osero apy --chain base
+  purr osero preview --action mint-susds --chain base --amount 1000000
+  purr osero execute --action mint-susds --chain base --amount 1000000
   purr pieverse card purchase --partner okx --channel telegram
   purr pieverse card create-job --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card fund --purchase-id 00000000-0000-0000-0000-000000000000
@@ -638,6 +648,15 @@ Examples:
         return
       }
       await hyperliquidCommand(command, args)
+      return
+    }
+
+    case 'osero': {
+      if (!command || command === 'help' || command === '--help' || command === '-h') {
+        console.log(oseroHelp())
+        return
+      }
+      await oseroCommand(command, args)
       return
     }
 
@@ -1907,7 +1926,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, execute, config, version, store`,
       )
   }
 
@@ -1944,6 +1963,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
     process.exit(1)
   }
   if (err instanceof HyperliquidCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
+  }
+  if (err instanceof OseroCliError) {
     const prefix = err.code ? `error [${err.code}]` : 'error'
     console.error(`${prefix}: ${err.message}`)
     if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))

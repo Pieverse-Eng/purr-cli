@@ -226,6 +226,8 @@ describe('inferChainId', () => {
     expect(inferChainId({ chain: 'monad' })).toBe(143)
     expect(inferChainId({ chain: 'mon' })).toBe(143)
     expect(inferChainId({ chain: 'monad-testnet' })).toBe(10143)
+    expect(inferChainId({ chain: 'unichain' })).toBe(130)
+    expect(inferChainId({ chain: 'uni' })).toBe(130)
     expect(inferChainId({ chain: 'robinhood' })).toBe(4663)
     expect(inferChainId({ chain: 'robinhood-chain' })).toBe(4663)
     expect(inferChainId({ chain: 'rhc' })).toBe(4663)

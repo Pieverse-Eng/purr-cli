@@ -203,6 +203,8 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   monad: 143,
   mon: 143,
   'monad-testnet': 10143,
+  unichain: 130,
+  uni: 130,
   robinhood: 4663,
   'robinhood-chain': 4663,
   rhc: 4663,

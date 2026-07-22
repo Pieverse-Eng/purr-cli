@@ -59,10 +59,6 @@ Commands:
   screening-list [--limit <count>]
   screening-get --request-id <id>
 
-Aliases:
-  screenings        Alias for screening-list
-  screening-result  Alias for screening-get
-
 Calls /v1/instances/:id/security/skyinsights and prints the platform response data as JSON.`
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -181,15 +177,8 @@ async function postSkyInsights<T = unknown>(path: string, body: JsonRecord): Pro
   }
 }
 
-function arg(args: Record<string, string>, ...names: string[]): string | undefined {
-  for (const name of names) {
-    if (args[name] !== undefined) return args[name]
-  }
-  return undefined
-}
-
-function requireArg(args: Record<string, string>, name: string, ...aliases: string[]): string {
-  const value = arg(args, name, ...aliases)
+function requireArg(args: Record<string, string>, name: string): string {
+  const value = args[name]
   if (value === undefined) throw new Error(`Missing required argument: --${name}`)
   return value
 }
@@ -203,7 +192,7 @@ function parseInteger(value: string | undefined, name: string): number | undefin
 }
 
 function screeningBody(args: Record<string, string>): JsonRecord {
-  const ruleSetId = arg(args, 'rule-set-id', 'ruleSetId')
+  const ruleSetId = args['rule-set-id']
   return {
     chain: requireArg(args, 'chain'),
     address: requireArg(args, 'address'),
@@ -251,7 +240,7 @@ export async function skyInsightsCommand(
       printJson(
         await getSkyInsights('/kyt/risk', {
           chain: requireArg(args, 'chain'),
-          txHash: requireArg(args, 'tx-hash', 'txHash'),
+          txHash: requireArg(args, 'tx-hash'),
         }),
       )
       return
@@ -261,7 +250,6 @@ export async function skyInsightsCommand(
       return
 
     case 'screening-list':
-    case 'screenings':
       printJson(
         await getSkyInsights('/kya/screenings', {
           limit: parseInteger(args.limit, 'limit'),
@@ -270,10 +258,9 @@ export async function skyInsightsCommand(
       return
 
     case 'screening-get':
-    case 'screening-result':
       printJson(
         await getSkyInsights(
-          `/kya/screenings/${encodeURIComponent(requireArg(args, 'request-id', 'requestId'))}`,
+          `/kya/screenings/${encodeURIComponent(requireArg(args, 'request-id'))}`,
         ),
       )
       return

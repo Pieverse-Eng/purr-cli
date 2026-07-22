@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-vendors",
-  "version": "0.2.32",
+  "version": "0.2.33",
   "type": "module",
   "private": true,
   "exports": {
@@ -11,6 +11,7 @@
     "./fourmeme": "./src/fourmeme.ts",
     "./fourmeme-api": "./src/fourmeme-api.ts",
     "./lista": "./src/lista.ts",
+    "./osero": "./src/osero.ts",
     "./opensea": "./src/opensea.ts",
     "./opensea-api": "./src/opensea-api.ts",
     "./opensea-input": "./src/opensea-input.ts",

@@ -45,6 +45,7 @@ purr <group> <command> [options]
 | `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status |
 | `fourmeme` | four.meme BSC login, raised tokens, buy/sell, tax, agent, and token creation flows |
 | `opensea` | OpenSea buy and sell execution helpers |
+| `osero` | Osero USDS/sUSDS balances, yield reads, previews, plans, and execution |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
@@ -98,6 +99,10 @@ purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-s
 purr binance-onchain-pay pre-order --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --network <network> --address <wallet-address> --pay-method-code <pay-method-code>
 purr opensea buy --wallet <wallet-address> --fulfillment-file <path-to-fulfillment-json>
 purr lista list-vaults --zone <zone>
+purr osero balances --chain base
+purr osero apy --chain base
+purr osero preview --action mint-susds --chain base --amount 1000000
+purr osero execute --action redeem-susds --chain base --amount <raw-susds-amount>
 purr evm approve --token <token-address> --spender <spender-address> --amount <amount> --chain-id <chain-id>
 purr evm abi-call --to <contract-address> --signature <function-signature> --args <json-args> --chain-id <chain-id>
 purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>

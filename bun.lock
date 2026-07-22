@@ -26,6 +26,7 @@
         "@pieverseio/purr-plugin-ows": "workspace:*",
         "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
         "@pieverseio/purr-plugin-pns": "workspace:*",
+        "@pieverseio/purr-plugin-skyinsights": "workspace:*",
         "@pieverseio/purr-plugin-store": "workspace:*",
         "@pieverseio/purr-plugin-vendors": "workspace:*",
         "@pieverseio/purr-plugin-wallet": "workspace:*",
@@ -81,6 +82,13 @@
     },
     "packages/plugins/pns": {
       "name": "@pieverseio/purr-plugin-pns",
+      "version": "0.2.32",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
+      },
+    },
+    "packages/plugins/skyinsights": {
+      "name": "@pieverseio/purr-plugin-skyinsights",
       "version": "0.2.32",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
@@ -204,6 +212,8 @@
     "@pieverseio/purr-plugin-pieverse-card": ["@pieverseio/purr-plugin-pieverse-card@workspace:packages/plugins/pieverse-card"],
 
     "@pieverseio/purr-plugin-pns": ["@pieverseio/purr-plugin-pns@workspace:packages/plugins/pns"],
+
+    "@pieverseio/purr-plugin-skyinsights": ["@pieverseio/purr-plugin-skyinsights@workspace:packages/plugins/skyinsights"],
 
     "@pieverseio/purr-plugin-store": ["@pieverseio/purr-plugin-store@workspace:packages/plugins/store"],
 

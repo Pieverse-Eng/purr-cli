@@ -72,6 +72,11 @@ import {
   hyperliquidHelp,
 } from '@pieverseio/purr-plugin-hyperliquid/index'
 import {
+  SkyInsightsCliError,
+  skyInsightsCommand,
+  skyInsightsHelp,
+} from '@pieverseio/purr-plugin-skyinsights/index'
+import {
   buildPancakeAddLiquiditySteps,
   buildPancakeFarmSteps,
   buildPancakeRemoveLiquiditySteps,
@@ -491,6 +496,7 @@ Groups:
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
+  skyinsights       SkyInsights KYA labels, KYA/KYT risk checks, and screening requests
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -589,6 +595,12 @@ Examples:
   purr hyperliquid symbol --coin CXMT
   purr hyperliquid order --body-file ./hyperliquid-order.json
   purr hyperliquid deposit --amount 5
+  purr skyinsights kya-labels --chain bsc --address 0x...
+  purr skyinsights kya-risk --chain bsc --address 0x...
+  purr skyinsights kyt-risk --chain bsc --tx-hash 0x...
+  purr skyinsights screening-submit --chain bsc --address 0x...
+  purr skyinsights screening-list --limit 20
+  purr skyinsights screening-get --request-id 00000000-0000-0000-0000-000000000000
   purr instance payment-methods
   purr instance renew --token usdt-bsc --yes
   purr instance renew --token usdc-xlayer --yes
@@ -638,6 +650,15 @@ Examples:
         return
       }
       await hyperliquidCommand(command, args)
+      return
+    }
+
+    case 'skyinsights': {
+      if (!command || command === 'help' || command === '--help' || command === '-h') {
+        console.log(skyInsightsHelp())
+        return
+      }
+      await skyInsightsCommand(command, args)
       return
     }
 
@@ -1907,7 +1928,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, skyinsights, execute, config, version, store`,
       )
   }
 
@@ -1944,6 +1965,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
     process.exit(1)
   }
   if (err instanceof HyperliquidCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
+  }
+  if (err instanceof SkyInsightsCliError) {
     const prefix = err.code ? `error [${err.code}]` : 'error'
     console.error(`${prefix}: ${err.message}`)
     if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))

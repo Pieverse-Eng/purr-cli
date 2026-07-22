@@ -1,0 +1,12 @@
+{
+  "name": "@pieverseio/purr-plugin-skyinsights",
+  "version": "0.2.32",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./index": "./src/index.ts"
+  },
+  "dependencies": {
+    "@pieverseio/purr-core": "workspace:*"
+  }
+}

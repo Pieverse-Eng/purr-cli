@@ -48,6 +48,7 @@ purr <group> <command> [options]
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
+| `skyinsights` | SkyInsights KYA labels, KYA/KYT risk checks, and screening requests through the configured instance |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
@@ -114,6 +115,12 @@ purr hyperliquid order --body-file <path-to-order-json>
 purr hyperliquid deposit --amount 5
 purr hyperliquid withdraw --amount 5
 purr hyperliquid withdraw-status --nonce <nonce>
+purr skyinsights kya-labels --chain bsc --address <wallet-address>
+purr skyinsights kya-risk --chain bsc --address <wallet-address>
+purr skyinsights kyt-risk --chain bsc --tx-hash <transaction-hash>
+purr skyinsights screening-submit --chain bsc --address <wallet-address> --rule-set-id standard-mode-rule-set
+purr skyinsights screening-list --limit 20
+purr skyinsights screening-get --request-id <request-id>
 
 purr execute --steps-file <path-to-steps-json> --dedup-key <dedup-key>
 purr instance status

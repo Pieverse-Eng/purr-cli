@@ -16,6 +16,7 @@
     "@pieverseio/purr-plugin-evm": "workspace:*",
     "@pieverseio/purr-plugin-hyperliquid": "workspace:*",
     "@pieverseio/purr-plugin-ows": "workspace:*",
+    "@pieverseio/purr-plugin-skyinsights": "workspace:*",
     "@pieverseio/purr-plugin-pns": "workspace:*",
     "@pieverseio/purr-plugin-store": "workspace:*",
     "@pieverseio/purr-plugin-vendors": "workspace:*",

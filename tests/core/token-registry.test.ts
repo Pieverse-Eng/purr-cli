@@ -217,6 +217,7 @@ describe('inferChainId', () => {
     expect(inferChainId({ chain: 'arbitrum' })).toBe(42161)
     expect(inferChainId({ chain: 'matic' })).toBe(137)
     expect(inferChainId({ chain: 'polygon' })).toBe(137)
+    expect(inferChainId({ chain: 'op' })).toBe(10)
     expect(inferChainId({ chain: 'optimism' })).toBe(10)
     expect(inferChainId({ chain: 'kaia' })).toBe(8217)
     expect(inferChainId({ chain: 'kairos' })).toBe(1001)

@@ -193,6 +193,7 @@ const CHAIN_NAME_TO_ID: Record<string, number> = {
   arbitrum: 42161,
   matic: 137,
   polygon: 137,
+  op: 10,
   optimism: 10,
   morph: 2818,
   kaia: 8217,

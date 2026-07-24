@@ -85,7 +85,7 @@ Read commands:
   orders
   active-orders
   inactive-orders
-  transactions [--index <n>] [--limit <n>]
+  transactions [--offset <n>] [--limit <n>]
   transaction --tx-hash <hash>
   l1-transaction --l1-tx-hash <hash>
 
@@ -394,7 +394,7 @@ function readQueryArgs(command: string, args: Record<string, string>) {
       }
     case 'transactions':
       return {
-        index: parseInteger(args.index, 'index'),
+        offset: parseInteger(args.offset, 'offset'),
         limit: parseInteger(args.limit, 'limit'),
       }
     default:

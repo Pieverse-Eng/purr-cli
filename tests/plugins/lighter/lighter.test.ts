@@ -106,5 +106,4 @@ describe('lighter plugin', () => {
       },
     })
   })
-
 })

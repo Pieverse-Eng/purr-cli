@@ -156,15 +156,12 @@ function toLighterError(error: unknown, context?: RequestContext): Error {
   if (error instanceof LighterCliError) return error
   if (context && isTimeoutError(error)) {
     const seconds = Math.round(context.timeoutMs / 1000)
-    return new LighterCliError(
-      `Lighter request timed out after ${seconds}s.`,
-      {
-        code: 'LIGHTER_REQUEST_TIMEOUT',
-        data: {
-          timeoutMs: context.timeoutMs,
-        },
+    return new LighterCliError(`Lighter request timed out after ${seconds}s.`, {
+      code: 'LIGHTER_REQUEST_TIMEOUT',
+      data: {
+        timeoutMs: context.timeoutMs,
       },
-    )
+    })
   }
   if (error instanceof ApiClientError) {
     const body = error.body as ApiErrorBody | undefined
@@ -227,10 +224,7 @@ async function getEnvelope<T = unknown>(
   }
 }
 
-async function postEnvelope<T = unknown>(
-  path: string,
-  body: JsonRecord,
-): Promise<T> {
+async function postEnvelope<T = unknown>(path: string, body: JsonRecord): Promise<T> {
   try {
     const response = await apiPost<ApiEnvelope<T>>(path, body)
     return unwrap(response)
@@ -382,13 +376,19 @@ function readQueryArgs(command: string, args: Record<string, string>) {
       return {
         marketId: parseInteger(arg(args, 'market-id', 'marketId'), 'market-id'),
         resolution: args.resolution,
-        startTimestamp: parseInteger(arg(args, 'start-timestamp', 'startTimestamp'), 'start-timestamp'),
+        startTimestamp: parseInteger(
+          arg(args, 'start-timestamp', 'startTimestamp'),
+          'start-timestamp',
+        ),
         endTimestamp: parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp'),
       }
     case 'pnl':
       return {
         resolution: args.resolution,
-        startTimestamp: parseInteger(arg(args, 'start-timestamp', 'startTimestamp'), 'start-timestamp'),
+        startTimestamp: parseInteger(
+          arg(args, 'start-timestamp', 'startTimestamp'),
+          'start-timestamp',
+        ),
         endTimestamp: parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp'),
         countBack: parseInteger(arg(args, 'count-back', 'countBack'), 'count-back'),
       }
@@ -452,7 +452,10 @@ function readEndpoint(command: string, args: Record<string, string>): string | u
 function writeBody(command: string, args: Record<string, string>): JsonRecord {
   if (hasBodyInput(args)) return readBody(args)
 
-  const priceProtection = parseBoolean(arg(args, 'price-protection', 'priceProtection'), 'price-protection')
+  const priceProtection = parseBoolean(
+    arg(args, 'price-protection', 'priceProtection'),
+    'price-protection',
+  )
 
   switch (command) {
     case 'deposit':

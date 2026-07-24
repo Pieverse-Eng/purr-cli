@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   ApiClientError,
   apiGet,
@@ -224,9 +225,17 @@ async function getEnvelope<T = unknown>(
   }
 }
 
-async function postEnvelope<T = unknown>(path: string, body: JsonRecord): Promise<T> {
+async function postEnvelope<T = unknown>(
+  path: string,
+  body: JsonRecord,
+  idempotencyKey?: string,
+): Promise<T> {
   try {
-    const response = await apiPost<ApiEnvelope<T>>(path, body)
+    const response = await apiPost<ApiEnvelope<T>>(
+      path,
+      body,
+      idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : undefined,
+    )
     return unwrap(response)
   } catch (error) {
     throw toLighterError(error)
@@ -249,8 +258,12 @@ async function getLighter<T = unknown>(
   return getEnvelope(`${lighterBasePath()}${path}`, params)
 }
 
-async function postLighter<T = unknown>(path: string, body: JsonRecord): Promise<T> {
-  return postEnvelope(`${lighterBasePath()}${path}`, body)
+async function postLighter<T = unknown>(
+  path: string,
+  body: JsonRecord,
+  idempotencyKey?: string,
+): Promise<T> {
+  return postEnvelope(`${lighterBasePath()}${path}`, body, idempotencyKey)
 }
 
 async function getLighterTradingIntegration<T = unknown>(path = ''): Promise<T> {
@@ -603,7 +616,7 @@ export async function lighterCommand(
 
   const writeEndpoint = SIDE_EFFECT_WRITE_ENDPOINTS[command]
   if (writeEndpoint) {
-    printJson(await postLighter(writeEndpoint, writeBody(command, args)))
+    printJson(await postLighter(writeEndpoint, writeBody(command, args), randomUUID()))
     return
   }
 

@@ -41,7 +41,7 @@ describe('lighter plugin', () => {
     expect(timeoutSpy).toHaveBeenCalledWith(20_000)
   })
 
-  it('calls side-effect write endpoints without client idempotency or timeout', async () => {
+  it('calls side-effect write endpoints with generated idempotency and without timeout', async () => {
     const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
     vi.stubGlobal('fetch', mock)
@@ -62,7 +62,9 @@ describe('lighter plugin', () => {
         'Content-Type': 'application/json',
       },
     })
-    expect(mock.mock.calls[0][1].headers['Idempotency-Key']).toBeUndefined()
+    expect(mock.mock.calls[0][1].headers['Idempotency-Key']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
     expect(mock.mock.calls[0][1].signal).toBeUndefined()
     expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
       marketId: 0,
@@ -72,7 +74,7 @@ describe('lighter plugin', () => {
     })
   })
 
-  it('covers the /orders write alias without client idempotency', async () => {
+  it('covers the /orders write alias with generated idempotency', async () => {
     const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
     vi.stubGlobal('fetch', mock)
@@ -86,7 +88,9 @@ describe('lighter plugin', () => {
 
     expect(mock).toHaveBeenCalledOnce()
     expect(mock.mock.calls[0][0]).toBe('https://api.test/v1/instances/inst-123/lighter/orders')
-    expect(mock.mock.calls[0][1].headers['Idempotency-Key']).toBeUndefined()
+    expect(mock.mock.calls[0][1].headers['Idempotency-Key']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
   })
 
   it('does not return unknown status when a read request times out', async () => {

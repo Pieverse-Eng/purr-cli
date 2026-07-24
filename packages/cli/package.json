@@ -15,6 +15,7 @@
     "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
     "@pieverseio/purr-plugin-evm": "workspace:*",
     "@pieverseio/purr-plugin-hyperliquid": "workspace:*",
+    "@pieverseio/purr-plugin-lighter": "workspace:*",
     "@pieverseio/purr-plugin-ows": "workspace:*",
     "@pieverseio/purr-plugin-pns": "workspace:*",
     "@pieverseio/purr-plugin-store": "workspace:*",

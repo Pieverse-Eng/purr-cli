@@ -71,6 +71,7 @@ import {
   hyperliquidCommand,
   hyperliquidHelp,
 } from '@pieverseio/purr-plugin-hyperliquid/index'
+import { LighterCliError, lighterCommand, lighterHelp } from '@pieverseio/purr-plugin-lighter/index'
 import { OseroCliError, oseroCommand, oseroHelp } from '@pieverseio/purr-plugin-vendors/osero'
 import {
   buildPancakeAddLiquiditySteps,
@@ -493,6 +494,7 @@ Groups:
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
+  lighter           Lighter account, market data, orders, transfers, deposits, and withdrawals
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -595,6 +597,11 @@ Examples:
   purr hyperliquid symbol --coin CXMT
   purr hyperliquid order --body-file ./hyperliquid-order.json
   purr hyperliquid deposit --amount 5
+  purr lighter status
+  purr lighter account
+  purr lighter deposit-networks
+  purr lighter order --market-id 0 --side buy --size 0.01 --price 3000
+  purr lighter deposit --amount 5 --source-chain-id 8453
   purr instance payment-methods
   purr instance renew --token usdt-bsc --yes
   purr instance renew --token usdc-xlayer --yes
@@ -644,6 +651,15 @@ Examples:
         return
       }
       await hyperliquidCommand(command, args)
+      return
+    }
+
+    case 'lighter': {
+      if (!command || command === 'help' || command === '--help' || command === '-h') {
+        console.log(lighterHelp())
+        return
+      }
+      await lighterCommand(command, args)
       return
     }
 
@@ -1922,7 +1938,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, execute, config, version, store`,
       )
   }
 
@@ -1959,6 +1975,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
     process.exit(1)
   }
   if (err instanceof HyperliquidCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
+  }
+  if (err instanceof LighterCliError) {
     const prefix = err.code ? `error [${err.code}]` : 'error'
     console.error(`${prefix}: ${err.message}`)
     if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))

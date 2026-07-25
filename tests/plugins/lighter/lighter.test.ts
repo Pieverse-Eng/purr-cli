@@ -89,6 +89,39 @@ describe('lighter plugin', () => {
     expect(mock.mock.calls[0][1].headers['Idempotency-Key']).toBeUndefined()
   })
 
+  it('passes large Lighter order indexes as strings', async () => {
+    const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+    const orderIndex = '577305177111181113'
+
+    await lighterCommand('cancel', {
+      'market-id': '0',
+      'order-index': orderIndex,
+    })
+    await lighterCommand('modify', {
+      'market-id': '0',
+      'order-index': orderIndex,
+      size: '0.01',
+      price: '3000',
+    })
+
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toMatchObject({ orderIndex })
+    expect(JSON.parse(mock.mock.calls[1][1].body)).toMatchObject({ orderIndex })
+  })
+
+  it('passes large trade order indexes as query strings', async () => {
+    const mock = mockFetch({ ok: true, data: { trades: [] } })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await lighterCommand('trades', {
+      'order-index': '577305177111181113',
+    })
+
+    expect(mock.mock.calls[0][0]).toContain('orderIndex=577305177111181113')
+  })
+
   it('passes a relative order expiry to Platform without resolving it in the CLI', async () => {
     const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
@@ -105,6 +138,34 @@ describe('lighter plugin', () => {
     expect(JSON.parse(mock.mock.calls[0][1].body)).toMatchObject({
       expiresIn: '5m',
     })
+  })
+
+  it('rejects IOC market and limit order expiry locally', async () => {
+    const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(
+      lighterCommand('order', {
+        'market-id': '0',
+        side: 'buy',
+        size: '0.01',
+        price: '3000',
+        'time-in-force': 'ioc',
+        'expires-in': '5m',
+      }),
+    ).rejects.toThrow('IOC market and limit orders do not accept')
+
+    await expect(
+      lighterCommand('order', {
+        'market-id': '0',
+        side: 'buy',
+        type: 'market',
+        size: '0.01',
+        price: '3000',
+        'expires-in': '5m',
+      }),
+    ).rejects.toThrow('IOC market and limit orders do not accept')
+    expect(mock).not.toHaveBeenCalled()
   })
 
   it('normalizes an explicitly zoned order expiry to UTC', async () => {

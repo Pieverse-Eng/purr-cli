@@ -48,6 +48,7 @@ export class LighterCliError extends Error {
 }
 
 export const LIGHTER_REQUEST_TIMEOUT_MS = 20_000
+const MAX_LIGHTER_ORDER_INDEX = 9_223_372_036_854_775_807n
 
 export const LIGHTER_USAGE = `Usage: purr lighter <command> [options]
 
@@ -92,8 +93,8 @@ Write commands:
   order-preview --body-json <json> | --body-file <path>
   reconcile-deposit --request-id <id>
   deposit --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
-  order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
-  place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
   cancel (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id>
   cancel-all [--time-in-force immediate|scheduled|abortScheduled] [--time <unix-ms>]
   modify (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id> --size <amount> --price <price>
@@ -102,7 +103,8 @@ Write commands:
   withdraw --amount-base-units <integer> [--asset-index 3] [--route-type perps|spot]
   transfer --to-account-index <different-account-id> --amount-base-units <integer> [--asset-index 3] [--from-route-type perps|spot] [--to-route-type perps|spot]
 
-Lighter read requests use a 20s client timeout. Write commands wait for the Platform response.`
+Lighter read requests use a 20s client timeout. Write commands wait for the Platform response.
+IOC market/limit orders do not accept expiry flags.`
 
 const SIDE_EFFECT_WRITE_ENDPOINTS: Record<string, string> = {
   deposit: '/deposits',
@@ -281,6 +283,19 @@ function parseInteger(value: string | undefined, name: string): number | undefin
   return parsed
 }
 
+function parseIntegerString(
+  value: string | undefined,
+  name: string,
+  min = 0n,
+  max = MAX_LIGHTER_ORDER_INDEX,
+): string | undefined {
+  if (value === undefined) return undefined
+  if (!/^\d+$/.test(value)) throw new Error(`Invalid --${name}: "${value}"`)
+  const parsed = BigInt(value)
+  if (parsed < min || parsed > max) throw new Error(`Invalid --${name}: "${value}"`)
+  return value
+}
+
 function parseSignedInteger(value: string | undefined, name: string): number | undefined {
   if (value === undefined) return undefined
   if (!/^-?\d+$/.test(value)) throw new Error(`Invalid --${name}: "${value}"`)
@@ -291,6 +306,14 @@ function parseSignedInteger(value: string | undefined, name: string): number | u
 
 function requireInteger(args: Record<string, string>, name: string, ...aliases: string[]): number {
   return parseInteger(requireArg(args, name, ...aliases), name) as number
+}
+
+function requireIntegerString(
+  args: Record<string, string>,
+  name: string,
+  ...aliases: string[]
+): string {
+  return parseIntegerString(requireArg(args, name, ...aliases), name, 1n) as string
 }
 
 function requireSignedInteger(
@@ -376,7 +399,9 @@ function marketSymbolMatches(candidate: string, requested: string): boolean {
 
 function readMarketType(args: Record<string, string>, command: string): string {
   if (args.type !== undefined && !['order', 'place-orders', 'trades'].includes(command)) {
-    throw new Error('Use --market-type for Lighter market filtering; --type is reserved for order/trade type.')
+    throw new Error(
+      'Use --market-type for Lighter market filtering; --type is reserved for order/trade type.',
+    )
   }
   const value = arg(args, 'market-type', 'marketType') ?? 'all'
   if (!['perp', 'spot', 'all'].includes(value)) {
@@ -458,7 +483,7 @@ function readQueryArgs(command: string, args: Record<string, string>) {
       return {
         marketId: parseInteger(arg(args, 'market-id', 'marketId'), 'market-id'),
         marketType: arg(args, 'market-type', 'marketType'),
-        orderIndex: parseInteger(arg(args, 'order-index', 'orderIndex'), 'order-index'),
+        orderIndex: parseIntegerString(arg(args, 'order-index', 'orderIndex'), 'order-index'),
         sortBy: arg(args, 'sort-by', 'sortBy'),
         sortDir: arg(args, 'sort-dir', 'sortDir'),
         from: parseSignedInteger(args.from, 'from'),
@@ -585,6 +610,19 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
           if (provided.length > 1) {
             throw new Error('--expires-in, --expires-at, and --order-expiry are mutually exclusive')
           }
+          const orderType = args.type ?? 'limit'
+          const timeInForce =
+            arg(args, 'time-in-force', 'timeInForce') ??
+            (['market', 'stopLoss', 'takeProfit'].includes(orderType) ? 'ioc' : 'gtt')
+          if (
+            provided.length > 0 &&
+            (orderType === 'market' || orderType === 'limit') &&
+            timeInForce === 'ioc'
+          ) {
+            throw new Error(
+              'IOC market and limit orders do not accept --expires-in, --expires-at, or --order-expiry',
+            )
+          }
           if (rawOrderExpiry !== undefined) {
             return {
               orderExpiry: parseSignedInteger(rawOrderExpiry, 'order-expiry'),
@@ -613,7 +651,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
     case 'cancel':
       return compact({
         marketId: requireInteger(args, 'market-id', 'marketId'),
-        orderIndex: requireInteger(args, 'order-index', 'orderIndex'),
+        orderIndex: requireIntegerString(args, 'order-index', 'orderIndex'),
         priceProtection,
       })
     case 'cancel-all':
@@ -625,7 +663,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
     case 'modify':
       return compact({
         marketId: requireInteger(args, 'market-id', 'marketId'),
-        orderIndex: requireInteger(args, 'order-index', 'orderIndex'),
+        orderIndex: requireIntegerString(args, 'order-index', 'orderIndex'),
         size: requireArg(args, 'size'),
         price: requireArg(args, 'price'),
         triggerPrice: arg(args, 'trigger-price', 'triggerPrice'),

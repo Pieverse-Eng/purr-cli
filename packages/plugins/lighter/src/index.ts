@@ -75,13 +75,12 @@ Read commands:
   recent-trades --market-id <id> [--limit <n>]
   trades [--market-id <id>] [--market-type perp|spot|all] [--limit <n>]
   candles --market-id <id> --resolution <value> --start-timestamp <unix> [--end-timestamp <unix>] [--count-back <n>]
-  funding-rates [--market-id <id>] [--resolution <value>] [--start-timestamp <unix>] [--end-timestamp <unix>]
+  funding-rates [--market-id <id>]
   account
   balances
   positions
   limits
   pnl [--resolution <value>] [--start-timestamp <unix>] [--end-timestamp <unix>] [--count-back <n>]
-  api-keys
   orders
   active-orders
   inactive-orders
@@ -375,12 +374,6 @@ function readQueryArgs(command: string, args: Record<string, string>) {
     case 'funding-rates':
       return {
         marketId: parseInteger(arg(args, 'market-id', 'marketId'), 'market-id'),
-        resolution: args.resolution,
-        startTimestamp: parseInteger(
-          arg(args, 'start-timestamp', 'startTimestamp'),
-          'start-timestamp',
-        ),
-        endTimestamp: parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp'),
       }
     case 'pnl':
       return {
@@ -425,7 +418,6 @@ function readEndpoint(command: string, args: Record<string, string>): string | u
     positions: '/positions',
     limits: '/limits',
     pnl: '/pnl',
-    'api-keys': '/api-keys',
     orders: '/orders',
     'active-orders': '/orders/active',
     'inactive-orders': '/orders/inactive',

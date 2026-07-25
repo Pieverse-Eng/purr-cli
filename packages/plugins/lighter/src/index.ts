@@ -68,14 +68,14 @@ Read commands:
   system-config
   layer1-basic-info
   withdrawal-delay
-  markets [--market-id <id>] [--type perp|spot|all]
-  market --market-id <id>
-  order-books [--market-id <id>] [--type perp|spot|all]
-  order-book-depth --market-id <id> [--limit <n>]
-  recent-trades --market-id <id> [--limit <n>]
-  trades [--market-id <id>] [--market-type perp|spot|all] [--limit <n>]
-  candles --market-id <id> --resolution <value> --start-timestamp <unix> [--end-timestamp <unix>] [--count-back <n>]
-  funding-rates [--market-id <id>]
+  markets [--market-type perp|spot|all] [--market-id <id> | --market <symbol>]
+  market (--market-id <id> | --market <symbol> [--market-type perp|spot|all])
+  order-books [--market-type perp|spot|all] [--market-id <id> | --market <symbol>]
+  order-book-depth (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
+  recent-trades (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
+  trades [--market-id <id> | --market <symbol> [--market-type perp|spot|all]] [--limit <n>]
+  candles (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) --resolution <value> --start-timestamp <unix> [--end-timestamp <unix>] [--count-back <n>]
+  funding-rates [--market-id <id> | --market <symbol> [--market-type perp|spot|all]]
   account
   balances
   positions
@@ -86,21 +86,21 @@ Read commands:
   inactive-orders
   transactions [--offset <n>] [--limit <n>]
   transaction --tx-hash <hash>
-  l1-transaction --l1-tx-hash <hash>
+  l1-transaction --l1-tx-hash <ethereum-l1-tx-hash>
 
 Write commands:
   order-preview --body-json <json> | --body-file <path>
   reconcile-deposit --request-id <id>
   deposit --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
-  order --market-id <id> --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
-  place-orders --market-id <id> --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
-  cancel --market-id <id> --order-index <id>
+  order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  cancel (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id>
   cancel-all [--time-in-force immediate|scheduled|abortScheduled] [--time <unix-ms>]
-  modify --market-id <id> --order-index <id> --size <amount> --price <price>
-  update-leverage --market-id <id> (--leverage <n> | --initial-margin-fraction <n>) [--margin-mode cross|isolated]
-  update-margin --market-id <id> --amount <amount> --direction add|remove
+  modify (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id> --size <amount> --price <price>
+  update-leverage (--market-id <id> | --market <symbol> [--market-type perp]) (--leverage <n> | --initial-margin-fraction <n>) [--margin-mode cross|isolated]
+  update-margin (--market-id <id> | --market <symbol> [--market-type perp]) --amount <amount> --direction add|remove
   withdraw --amount-base-units <integer> [--asset-index 3] [--route-type perps|spot]
-  transfer --to-account-index <id> --amount-base-units <integer> [--asset-index 3] [--from-route-type perps|spot] [--to-route-type perps|spot]
+  transfer --to-account-index <different-account-id> --amount-base-units <integer> [--asset-index 3] [--from-route-type perps|spot] [--to-route-type perps|spot]
 
 Lighter read requests use a 20s client timeout. Write commands wait for the Platform response.`
 
@@ -329,6 +329,110 @@ function compact(record: JsonRecord): JsonRecord {
   return result
 }
 
+const MARKET_ARGUMENT_COMMANDS = new Set([
+  'markets',
+  'market',
+  'order-books',
+  'order-book-depth',
+  'recent-trades',
+  'trades',
+  'candles',
+  'funding-rates',
+  'order',
+  'place-orders',
+  'cancel',
+  'modify',
+  'update-leverage',
+  'update-margin',
+])
+
+function marketRecords(response: unknown): JsonRecord[] {
+  if (Array.isArray(response)) return response.filter(isRecord)
+  if (!isRecord(response)) return []
+  const records = response.order_books ?? response.orderBooks ?? response.markets
+  return Array.isArray(records) ? records.filter(isRecord) : []
+}
+
+function marketRecordId(record: JsonRecord): number | undefined {
+  const value = record.market_id ?? record.marketId ?? record.id
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value
+  return typeof value === 'string' ? parseInteger(value, 'market-id') : undefined
+}
+
+function marketRecordSymbol(record: JsonRecord): string | undefined {
+  return asString(record.symbol ?? record.name)
+}
+
+function marketRecordType(record: JsonRecord): string | undefined {
+  return asString(record.market_type ?? record.marketType ?? record.type)?.toLowerCase()
+}
+
+function marketSymbolMatches(candidate: string, requested: string): boolean {
+  const normalizedCandidate = candidate.trim().toUpperCase()
+  const normalizedRequested = requested.trim().toUpperCase()
+  if (normalizedCandidate === normalizedRequested) return true
+  return normalizedCandidate.split(/[-/]/, 1)[0] === normalizedRequested
+}
+
+function readMarketType(args: Record<string, string>, command: string): string {
+  if (args.type !== undefined && !['order', 'place-orders', 'trades'].includes(command)) {
+    throw new Error('Use --market-type for Lighter market filtering; --type is reserved for order/trade type.')
+  }
+  const value = arg(args, 'market-type', 'marketType') ?? 'all'
+  if (!['perp', 'spot', 'all'].includes(value)) {
+    throw new Error(`Invalid --market-type: "${value}"`)
+  }
+  return value
+}
+
+async function resolveMarketArgs(
+  command: string,
+  args: Record<string, string>,
+): Promise<Record<string, string>> {
+  if (!MARKET_ARGUMENT_COMMANDS.has(command)) return args
+  const marketId = arg(args, 'market-id', 'marketId')
+  const symbol = arg(args, 'market', 'symbol')
+  if (marketId !== undefined && symbol !== undefined) {
+    throw new Error('Pass either --market-id or --market, not both')
+  }
+  if (symbol === undefined) return args
+
+  const marketType = readMarketType(args, command)
+  const response = await getLighter('/markets', { type: marketType })
+  const matches = marketRecords(response).filter((record) => {
+    const candidate = marketRecordSymbol(record)
+    if (!candidate || !marketSymbolMatches(candidate, symbol)) return false
+    const candidateType = marketRecordType(record)
+    return marketType === 'all' || candidateType === undefined || candidateType === marketType
+  })
+  if (matches.length === 0) {
+    throw new LighterCliError(
+      `No Lighter ${marketType === 'all' ? '' : `${marketType} `}market found for "${symbol}".`,
+      { code: 'LIGHTER_MARKET_NOT_FOUND' },
+    )
+  }
+  if (matches.length > 1) {
+    const candidates = matches
+      .map((record) => {
+        const id = marketRecordId(record)
+        const type = marketRecordType(record)
+        return `${marketRecordSymbol(record) ?? 'unknown'}${type ? ` ${type}` : ''}${id === undefined ? '' : ` (${id})`}`
+      })
+      .join(', ')
+    throw new LighterCliError(
+      `Lighter market "${symbol}" is ambiguous. Pass --market-type perp or spot. Matches: ${candidates}`,
+      { code: 'LIGHTER_MARKET_AMBIGUOUS' },
+    )
+  }
+  const resolvedMarketId = marketRecordId(matches[0])
+  if (resolvedMarketId === undefined) {
+    throw new LighterCliError(`Lighter market "${symbol}" has no valid market id.`, {
+      code: 'LIGHTER_MARKET_INVALID_RESPONSE',
+    })
+  }
+  return { ...args, 'market-id': String(resolvedMarketId) }
+}
+
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2))
 }
@@ -342,7 +446,7 @@ function readQueryArgs(command: string, args: Record<string, string>) {
     case 'order-books':
       return {
         marketId: parseInteger(arg(args, 'market-id', 'marketId'), 'market-id'),
-        type: args.type,
+        type: readMarketType(args, command),
       }
     case 'order-book-depth':
     case 'recent-trades':
@@ -608,9 +712,10 @@ export async function lighterCommand(
     return
   }
 
-  const endpoint = readEndpoint(command, args)
+  const resolvedArgs = await resolveMarketArgs(command, args)
+  const endpoint = readEndpoint(command, resolvedArgs)
   if (endpoint) {
-    printJson(await getLighter(endpoint, readQueryArgs(command, args)))
+    printJson(await getLighter(endpoint, readQueryArgs(command, resolvedArgs)))
     return
   }
 
@@ -627,7 +732,7 @@ export async function lighterCommand(
 
   const writeEndpoint = SIDE_EFFECT_WRITE_ENDPOINTS[command]
   if (writeEndpoint) {
-    printJson(await postLighter(writeEndpoint, writeBody(command, args)))
+    printJson(await postLighter(writeEndpoint, writeBody(command, resolvedArgs)))
     return
   }
 

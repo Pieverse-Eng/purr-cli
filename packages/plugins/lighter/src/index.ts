@@ -92,8 +92,8 @@ Write commands:
   order-preview --body-json <json> | --body-file <path>
   reconcile-deposit --request-id <id>
   deposit --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
-  order --market-id <id> --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly]
-  place-orders --market-id <id> --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly]
+  order --market-id <id> --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  place-orders --market-id <id> --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
   cancel --market-id <id> --order-index <id>
   cancel-all [--time-in-force immediate|scheduled|abortScheduled] [--time <unix-ms>]
   modify --market-id <id> --order-index <id> --size <amount> --price <price>
@@ -471,7 +471,43 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
           'client-order-index',
         ),
         triggerPrice: arg(args, 'trigger-price', 'triggerPrice'),
-        orderExpiry: parseSignedInteger(arg(args, 'order-expiry', 'orderExpiry'), 'order-expiry'),
+        ...(() => {
+          const expiresIn = arg(args, 'expires-in', 'expiresIn')
+          const expiresAt = arg(args, 'expires-at', 'expiresAt')
+          const rawOrderExpiry = arg(args, 'order-expiry', 'orderExpiry')
+          const provided = [expiresIn, expiresAt, rawOrderExpiry].filter(
+            (value) => value !== undefined,
+          )
+          if (provided.length > 1) {
+            throw new Error(
+              '--expires-in, --expires-at, and --order-expiry are mutually exclusive',
+            )
+          }
+          if (rawOrderExpiry !== undefined) {
+            return {
+              orderExpiry: parseSignedInteger(rawOrderExpiry, 'order-expiry'),
+            }
+          }
+          if (expiresAt !== undefined) {
+            if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(expiresAt)) {
+              throw new Error('--expires-at must include Z or an explicit UTC offset')
+            }
+            const timestamp = Date.parse(expiresAt)
+            if (!Number.isFinite(timestamp)) {
+              throw new Error('--expires-at must be a valid ISO-8601 timestamp')
+            }
+            return { expiresAt: new Date(timestamp).toISOString() }
+          }
+          if (expiresIn !== undefined) {
+            if (!/^(\d+)(ms|s|m|h|d|w)$/.test(expiresIn)) {
+              throw new Error(
+                '--expires-in must be an integer duration such as 30m, 24h, or 7d',
+              )
+            }
+            return { expiresIn }
+          }
+          return {}
+        })(),
         priceProtection,
       })
     case 'cancel':

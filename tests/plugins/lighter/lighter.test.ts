@@ -89,6 +89,75 @@ describe('lighter plugin', () => {
     expect(mock.mock.calls[0][1].headers['Idempotency-Key']).toBeUndefined()
   })
 
+  it('passes a relative order expiry to Platform without resolving it in the CLI', async () => {
+    const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await lighterCommand('order', {
+      'market-id': '0',
+      side: 'buy',
+      size: '0.01',
+      price: '3000',
+      'expires-in': '5m',
+    })
+
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toMatchObject({
+      expiresIn: '5m',
+    })
+  })
+
+  it('normalizes an explicitly zoned order expiry to UTC', async () => {
+    const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await lighterCommand('order', {
+      'market-id': '0',
+      side: 'buy',
+      size: '0.01',
+      price: '3000',
+      'expires-at': '2026-07-26T12:00:00+09:00',
+    })
+
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toMatchObject({
+      expiresAt: '2026-07-26T03:00:00.000Z',
+    })
+  })
+
+  it('rejects an order expiry without an explicit timezone', async () => {
+    const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(
+      lighterCommand('order', {
+        'market-id': '0',
+        side: 'buy',
+        size: '0.01',
+        price: '3000',
+        'expires-at': '2026-07-26T12:00:00',
+      }),
+    ).rejects.toThrow('must include Z or an explicit UTC offset')
+    expect(mock).not.toHaveBeenCalled()
+  })
+
+  it('rejects multiple order expiry representations', async () => {
+    const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(
+      lighterCommand('order', {
+        'market-id': '0',
+        side: 'buy',
+        size: '0.01',
+        price: '3000',
+        'expires-in': '24h',
+        'order-expiry': '1785050939871',
+      }),
+    ).rejects.toThrow('are mutually exclusive')
+    expect(mock).not.toHaveBeenCalled()
+  })
+
   it('does not return unknown status when a read request times out', async () => {
     const timeout = Object.assign(new Error('timeout'), { name: 'TimeoutError' })
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(timeout))

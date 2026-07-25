@@ -479,9 +479,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
             (value) => value !== undefined,
           )
           if (provided.length > 1) {
-            throw new Error(
-              '--expires-in, --expires-at, and --order-expiry are mutually exclusive',
-            )
+            throw new Error('--expires-in, --expires-at, and --order-expiry are mutually exclusive')
           }
           if (rawOrderExpiry !== undefined) {
             return {
@@ -500,9 +498,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
           }
           if (expiresIn !== undefined) {
             if (!/^(\d+)(ms|s|m|h|d|w)$/.test(expiresIn)) {
-              throw new Error(
-                '--expires-in must be an integer duration such as 30m, 24h, or 7d',
-              )
+              throw new Error('--expires-in must be an integer duration such as 30m, 24h, or 7d')
             }
             return { expiresIn }
           }

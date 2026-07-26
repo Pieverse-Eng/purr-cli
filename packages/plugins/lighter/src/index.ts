@@ -94,8 +94,8 @@ Write commands:
   reconcile-deposit --request-id <id>
   open-account --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
   deposit --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
-  order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
-  place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--reduce-only true|false] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--reduce-only true|false] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
   cancel (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id>
   cancel-all [--time-in-force immediate|scheduled|abortScheduled] [--time <unix-ms>]
   modify (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id> --size <amount> --price <price>

@@ -82,13 +82,13 @@ Read commands:
   order-book-depth (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
   recent-trades (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
   trades [--market-id <id> | --market <symbol> [--market-type perp|spot|all]] [--limit <n>]
-  candles (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) --resolution <value> --start-at <rfc3339> --end-at <rfc3339> --count-back <n>
+  candles (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) --resolution <1m|5m|15m|30m|1h|4h|12h|1d|1w> --start-at <rfc3339> --end-at <rfc3339> --count-back <n>
   funding-rates [--market-id <id> | --market <symbol> [--market-type perp|spot|all]]
   account
   balances
   positions
   limits
-  pnl --resolution <value> --start-at <rfc3339> --end-at <rfc3339> --count-back <n>
+  pnl --resolution <1h|1d> --start-at <rfc3339> --end-at <rfc3339> --count-back <n>
   orders
   active-orders
   inactive-orders
@@ -391,7 +391,8 @@ const MARKET_ARGUMENT_COMMANDS = new Set([
 ])
 
 const CANDLE_RESOLUTIONS = new Set(['1m', '5m', '15m', '30m', '1h', '4h', '12h', '1d', '1w'])
-const PNL_RESOLUTIONS = new Set(['1m', '5m', '15m', '1h', '4h', '1d'])
+// Lighter mainnet currently rejects the other resolutions documented in its OpenAPI spec.
+const PNL_RESOLUTIONS = new Set(['1h', '1d'])
 const RFC3339_WITH_TIMEZONE =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/
 

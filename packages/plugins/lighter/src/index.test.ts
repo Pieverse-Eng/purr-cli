@@ -181,14 +181,30 @@ describe('lighter account opening', () => {
     mocks.apiGet.mockResolvedValue({ ok: true, data: {} })
 
     await lighterCommand('pnl', {
-      resolution: '1m',
+      resolution: '1h',
       'start-at': '2026-07-27T09:00:00+09:00',
       'end-at': '2026-07-27T10:00:00+09:00',
       'count-back': '3',
     })
 
     expect(mocks.apiGet).toHaveBeenCalledWith(
-      '/v1/instances/instance-123/lighter/pnl?resolution=1m&startTimestamp=1785110400&endTimestamp=1785114000&countBack=3',
+      '/v1/instances/instance-123/lighter/pnl?resolution=1h&startTimestamp=1785110400&endTimestamp=1785114000&countBack=3',
+      { timeoutMs: 20_000 },
+    )
+  })
+
+  it('supports the daily PnL resolution available on Lighter mainnet', async () => {
+    mocks.apiGet.mockResolvedValue({ ok: true, data: {} })
+
+    await lighterCommand('pnl', {
+      resolution: '1d',
+      'start-at': '2026-07-26T00:00:00Z',
+      'end-at': '2026-07-27T00:00:00Z',
+      'count-back': '1',
+    })
+
+    expect(mocks.apiGet).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/pnl?resolution=1d&startTimestamp=1785024000&endTimestamp=1785110400&countBack=1',
       { timeoutMs: 20_000 },
     )
   })
@@ -206,12 +222,12 @@ describe('lighter account opening', () => {
 
     await expect(
       lighterCommand('pnl', {
-        resolution: '30m',
+        resolution: '5m',
         'start-at': '2026-07-27T00:00:00Z',
         'end-at': '2026-07-27T01:00:00Z',
         'count-back': '3',
       }),
-    ).rejects.toThrow('--resolution must be one of: 1m, 5m, 15m, 1h, 4h, 1d')
+    ).rejects.toThrow('--resolution must be one of: 1h, 1d')
 
     expect(mocks.apiGet).not.toHaveBeenCalled()
   })

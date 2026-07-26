@@ -90,6 +90,20 @@ describe('lighter account opening', () => {
     expect(mocks.apiPost).not.toHaveBeenCalled()
   })
 
+  it('rejects conflicting candle range and count-back parameters before requesting data', async () => {
+    await expect(
+      lighterCommand('candles', {
+        'market-id': '0',
+        resolution: '1m',
+        'start-timestamp': '1785060000',
+        'end-timestamp': '1785063600',
+        'count-back': '3',
+      }),
+    ).rejects.toThrow('--end-timestamp and --count-back cannot be used together')
+
+    expect(mocks.apiGet).not.toHaveBeenCalled()
+  })
+
   it('preserves wallet policy approval details from a deferred write', async () => {
     mocks.apiPost.mockResolvedValue({
       code: 'POLICY_DEFERRED',

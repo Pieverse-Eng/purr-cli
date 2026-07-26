@@ -80,7 +80,7 @@ Read commands:
   order-book-depth (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
   recent-trades (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
   trades [--market-id <id> | --market <symbol> [--market-type perp|spot|all]] [--limit <n>]
-  candles (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) --resolution <value> --start-timestamp <unix> [--end-timestamp <unix>] [--count-back <n>]
+  candles (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) --resolution <value> --start-timestamp <unix> [--end-timestamp <unix> | --count-back <n>]
   funding-rates [--market-id <id> | --market <symbol> [--market-type perp|spot|all]]
   account
   balances
@@ -514,14 +514,23 @@ function readQueryArgs(command: string, args: Record<string, string>) {
         limit: parseInteger(args.limit, 'limit'),
         aggregate: parseBoolean(args.aggregate, 'aggregate'),
       }
-    case 'candles':
+    case 'candles': {
+      const endTimestamp = parseInteger(
+        arg(args, 'end-timestamp', 'endTimestamp'),
+        'end-timestamp',
+      )
+      const countBack = parseInteger(arg(args, 'count-back', 'countBack'), 'count-back')
+      if (endTimestamp !== undefined && countBack !== undefined) {
+        throw new Error('--end-timestamp and --count-back cannot be used together')
+      }
       return {
         marketId: requireInteger(args, 'market-id', 'marketId'),
         resolution: requireArg(args, 'resolution'),
         startTimestamp: requireInteger(args, 'start-timestamp', 'startTimestamp'),
-        endTimestamp: parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp'),
-        countBack: parseInteger(arg(args, 'count-back', 'countBack'), 'count-back'),
+        endTimestamp,
+        countBack,
       }
+    }
     case 'funding-rates':
       return {
         marketId: parseInteger(arg(args, 'market-id', 'marketId'), 'market-id'),

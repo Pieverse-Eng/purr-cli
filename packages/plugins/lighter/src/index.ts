@@ -92,6 +92,7 @@ Read commands:
 Write commands:
   order-preview --body-json <json> | --body-file <path>
   reconcile-deposit --request-id <id>
+  open-account --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
   deposit --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
   order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
   place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
@@ -107,6 +108,7 @@ Lighter read requests use a 20s client timeout. Write commands wait for the Plat
 IOC market/limit orders do not accept expiry flags.`
 
 const SIDE_EFFECT_WRITE_ENDPOINTS: Record<string, string> = {
+  'open-account': '/account/open',
   deposit: '/deposits',
   order: '/order',
   'place-orders': '/orders',
@@ -579,6 +581,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
   )
 
   switch (command) {
+    case 'open-account':
     case 'deposit':
       return compact({
         amount: requireArg(args, 'amount'),
@@ -719,6 +722,29 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
   }
 }
 
+function openAccountCommand(args: Record<string, string>): string {
+  const amount = requireArg(args, 'amount')
+  const sourceChainId = requireInteger(args, 'source-chain-id', 'sourceChainId')
+  const routeType = arg(args, 'route-type', 'routeType')
+  return [
+    'purr lighter open-account',
+    `--amount ${amount}`,
+    `--source-chain-id ${sourceChainId}`,
+    ...(routeType ? [`--route-type ${routeType}`] : []),
+  ].join(' ')
+}
+
+function addAccountOpeningResumeCommand(
+  result: unknown,
+  args: Record<string, string>,
+): unknown {
+  if (!isRecord(result) || result.nextAction !== 'resume_account_opening') return result
+  return {
+    ...result,
+    resumeCommand: openAccountCommand(args),
+  }
+}
+
 export function lighterHelp(): string {
   return LIGHTER_USAGE
 }
@@ -770,7 +796,31 @@ export async function lighterCommand(
 
   const writeEndpoint = SIDE_EFFECT_WRITE_ENDPOINTS[command]
   if (writeEndpoint) {
-    printJson(await postLighter(writeEndpoint, writeBody(command, resolvedArgs)))
+    try {
+      const result = await postLighter(writeEndpoint, writeBody(command, resolvedArgs))
+      printJson(
+        command === 'open-account'
+          ? addAccountOpeningResumeCommand(result, resolvedArgs)
+          : result,
+      )
+    } catch (error) {
+      if (
+        command === 'deposit' &&
+        error instanceof LighterCliError &&
+        error.code === 'LIGHTER_ACCOUNT_NOT_READY'
+      ) {
+        throw new LighterCliError(
+          `${error.message}\nRun: ${openAccountCommand(resolvedArgs)}`,
+          {
+          code: error.code,
+          status: error.status,
+          data: error.data,
+          exitCode: error.exitCode,
+          },
+        )
+      }
+      throw error
+    }
     return
   }
 

@@ -21,7 +21,12 @@ interface ApiErrorBody {
   error?: string | JsonRecord
   code?: string
   message?: string
+  reason?: string
   data?: unknown
+  request_id?: string
+  matched_rule_id?: string
+  matched_policy_id?: string
+  expires_at?: string
 }
 
 interface RequestContext {
@@ -147,7 +152,18 @@ function extractErrorMessage(body: unknown): string | undefined {
   const err = nestedError(body)
   if (typeof err === 'string') return err
   if (isRecord(err)) return asString(err.message) ?? asString(err.error)
-  return asString(body.message) ?? asString(body.error)
+  return asString(body.reason) ?? asString(body.message) ?? asString(body.error)
+}
+
+function extractErrorData(body: unknown): unknown {
+  if (!isRecord(body)) return undefined
+  if (body.data !== undefined) return body.data
+
+  const details: JsonRecord = {}
+  for (const key of ['request_id', 'matched_rule_id', 'matched_policy_id', 'expires_at'] as const) {
+    if (typeof body[key] === 'string') details[key] = body[key]
+  }
+  return Object.keys(details).length > 0 ? details : undefined
 }
 
 function isTimeoutError(error: unknown): boolean {
@@ -172,7 +188,7 @@ function toLighterError(error: unknown, context?: RequestContext): Error {
     return new LighterCliError(message, {
       code: extractErrorCode(body),
       status: error.status,
-      data: body?.data,
+      data: extractErrorData(body),
     })
   }
   return error instanceof Error ? error : new Error(String(error))
@@ -180,8 +196,9 @@ function toLighterError(error: unknown, context?: RequestContext): Error {
 
 function unwrap<T>(response: ApiEnvelope<T>): T {
   if (!response.ok || response.data === undefined) {
-    throw new LighterCliError(response.error ?? response.code ?? 'Lighter request failed', {
+    throw new LighterCliError(extractErrorMessage(response) ?? response.code ?? 'Lighter request failed', {
       code: response.code,
+      data: extractErrorData(response),
     })
   }
   return response.data

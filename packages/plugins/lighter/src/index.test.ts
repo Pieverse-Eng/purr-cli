@@ -82,4 +82,36 @@ describe('lighter account opening', () => {
         'Lighter account must be opened before depositing\nRun: purr lighter open-account --amount 5 --source-chain-id 42161',
     })
   })
+
+  it('preserves wallet policy approval details from a deferred write', async () => {
+    mocks.apiPost.mockResolvedValue({
+      code: 'POLICY_DEFERRED',
+      reason: 'manual_approval_required',
+      request_id: 'req-policy-123',
+      matched_rule_id: 'policy-123:0:claw:manual_approval',
+      matched_policy_id: 'policy-123',
+      expires_at: '2026-07-26T10:00:00.000Z',
+    })
+
+    await expect(
+      lighterCommand('order', {
+        'market-id': '0',
+        side: 'buy',
+        size: '0.006',
+        price: '1800',
+        type: 'limit',
+        'time-in-force': 'gtt',
+        'expires-in': '10m',
+      }),
+    ).rejects.toMatchObject({
+      code: 'POLICY_DEFERRED',
+      message: 'manual_approval_required',
+      data: {
+        request_id: 'req-policy-123',
+        matched_rule_id: 'policy-123:0:claw:manual_approval',
+        matched_policy_id: 'policy-123',
+        expires_at: '2026-07-26T10:00:00.000Z',
+      },
+    })
+  })
 })

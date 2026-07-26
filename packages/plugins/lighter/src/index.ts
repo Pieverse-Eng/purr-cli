@@ -734,10 +734,7 @@ function openAccountCommand(args: Record<string, string>): string {
   ].join(' ')
 }
 
-function addAccountOpeningResumeCommand(
-  result: unknown,
-  args: Record<string, string>,
-): unknown {
+function addAccountOpeningResumeCommand(result: unknown, args: Record<string, string>): unknown {
   if (!isRecord(result) || result.nextAction !== 'resume_account_opening') return result
   return {
     ...result,
@@ -799,9 +796,7 @@ export async function lighterCommand(
     try {
       const result = await postLighter(writeEndpoint, writeBody(command, resolvedArgs))
       printJson(
-        command === 'open-account'
-          ? addAccountOpeningResumeCommand(result, resolvedArgs)
-          : result,
+        command === 'open-account' ? addAccountOpeningResumeCommand(result, resolvedArgs) : result,
       )
     } catch (error) {
       if (
@@ -809,15 +804,12 @@ export async function lighterCommand(
         error instanceof LighterCliError &&
         error.code === 'LIGHTER_ACCOUNT_NOT_READY'
       ) {
-        throw new LighterCliError(
-          `${error.message}\nRun: ${openAccountCommand(resolvedArgs)}`,
-          {
+        throw new LighterCliError(`${error.message}\nRun: ${openAccountCommand(resolvedArgs)}`, {
           code: error.code,
           status: error.status,
           data: error.data,
           exitCode: error.exitCode,
-          },
-        )
+        })
       }
       throw error
     }

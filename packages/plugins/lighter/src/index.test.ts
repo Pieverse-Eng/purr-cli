@@ -90,6 +90,29 @@ describe('lighter account opening', () => {
     expect(mocks.apiPost).not.toHaveBeenCalled()
   })
 
+  it('exposes partner fee status and approval commands', async () => {
+    mocks.apiGet.mockResolvedValue({
+      ok: true,
+      data: { status: 'approval_required', feeBps: 5 },
+    })
+    mocks.apiPost.mockResolvedValue({
+      ok: true,
+      data: { status: 'succeeded' },
+    })
+
+    await lighterCommand('partner-fee-status', {})
+    expect(mocks.apiGet).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/partner-fee/status',
+      { timeoutMs: 20_000 },
+    )
+
+    await lighterCommand('approve-partner-fee', {})
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/partner-fee/approve',
+      {},
+    )
+  })
+
   it('rejects conflicting candle range and count-back parameters before requesting data', async () => {
     await expect(
       lighterCommand('candles', {

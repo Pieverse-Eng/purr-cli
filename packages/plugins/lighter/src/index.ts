@@ -61,6 +61,8 @@ Integration commands:
   status
   enable
   disable
+  partner-fee-status
+  approve-partner-fee
 
 Read commands:
   sdk-status
@@ -111,6 +113,7 @@ Lighter read requests use a 20s client timeout. Write commands wait for the Plat
 IOC market/limit orders do not accept expiry flags.`
 
 const SIDE_EFFECT_WRITE_ENDPOINTS: Record<string, string> = {
+  'approve-partner-fee': '/partner-fee/approve',
   'open-account': '/account/open',
   deposit: '/deposits',
   order: '/order',
@@ -547,6 +550,7 @@ function readEndpoint(command: string, args: Record<string, string>): string | u
     'deposit-networks': '/deposit-networks',
     deposits: '/deposits',
     requests: '/requests',
+    'partner-fee-status': '/partner-fee/status',
     'system-status': '/system/status',
     'system-info': '/system/info',
     'system-config': '/system/config',
@@ -596,6 +600,8 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
   )
 
   switch (command) {
+    case 'approve-partner-fee':
+      return {}
     case 'open-account':
     case 'deposit':
       return compact({

@@ -108,7 +108,9 @@ Write commands:
   modify (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id> --size <amount> --price <price>
   update-leverage (--market-id <id> | --market <symbol> [--market-type perp]) (--leverage <n> | --initial-margin-fraction <n>) [--margin-mode cross|isolated]
   update-margin (--market-id <id> | --market <symbol> [--market-type perp]) --amount <amount> --direction add|remove
-  withdraw --amount-base-units <integer> [--asset-index 3] [--route-type perps|spot]
+  withdraw --amount <USDC> [--yes]
+  fast-withdraw --amount <USDC> [--yes]
+Withdrawal commands preview without --yes. Adding --yes fetches and executes the latest quote, which may differ from an earlier preview.
 Lighter read requests use a 20s client timeout. Write commands wait for the Platform response.
 IOC market/limit orders do not accept expiry flags.`
 
@@ -124,6 +126,7 @@ const SIDE_EFFECT_WRITE_ENDPOINTS: Record<string, string> = {
   'update-leverage': '/update-leverage',
   'update-margin': '/update-margin',
   withdraw: '/withdraw',
+  'fast-withdraw': '/fast-withdraw',
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -718,12 +721,10 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
         priceProtection,
       })
     case 'withdraw':
-      return compact({
-        assetIndex: parseInteger(arg(args, 'asset-index', 'assetIndex'), 'asset-index'),
-        routeType: arg(args, 'route-type', 'routeType'),
-        amountBaseUnits: requireInteger(args, 'amount-base-units', 'amountBaseUnits'),
-        priceProtection,
-      })
+    case 'fast-withdraw':
+      return {
+        amount: requireArg(args, 'amount'),
+      }
     default:
       throw new Error(`Unknown lighter write command: ${command}`)
   }
@@ -807,7 +808,17 @@ export async function lighterCommand(
   const writeEndpoint = SIDE_EFFECT_WRITE_ENDPOINTS[command]
   if (writeEndpoint) {
     try {
-      const result = await postLighter(writeEndpoint, writeBody(command, resolvedArgs))
+      const body = writeBody(command, resolvedArgs)
+      const isWithdrawal = command === 'withdraw' || command === 'fast-withdraw'
+      const confirmed = parseBoolean(args.yes, 'yes') === true
+      if (isWithdrawal && !confirmed) {
+        printJson(await postLighter(`${writeEndpoint}/preview`, body))
+        return
+      }
+      const result = await postLighter(
+        writeEndpoint,
+        isWithdrawal ? { ...body, confirmed: true } : body,
+      )
       printJson(
         command === 'open-account' ? addAccountOpeningResumeCommand(result, resolvedArgs) : result,
       )

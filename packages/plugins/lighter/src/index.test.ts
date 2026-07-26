@@ -113,6 +113,51 @@ describe('lighter account opening', () => {
     )
   })
 
+  it('previews withdrawals and requires --yes before execution', async () => {
+    await lighterCommand('withdraw', { help: 'true' })
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('Adding --yes fetches and executes the latest quote'),
+    )
+    vi.mocked(console.log).mockClear()
+
+    mocks.apiPost.mockResolvedValue({
+      ok: true,
+      data: { requiresConfirmation: true },
+    })
+
+    await lighterCommand('fast-withdraw', { amount: '5.25' })
+
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/fast-withdraw/preview',
+      { amount: '5.25' },
+    )
+
+    mocks.apiPost.mockClear()
+    mocks.apiPost.mockResolvedValue({
+      ok: true,
+      data: { actionType: 'fastWithdraw', status: 'succeeded' },
+    })
+    await lighterCommand('fast-withdraw', { amount: '5.25', yes: 'true' })
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/fast-withdraw',
+      { amount: '5.25', confirmed: true },
+    )
+
+    mocks.apiPost.mockClear()
+    await lighterCommand('withdraw', { amount: '1.5' })
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/withdraw/preview',
+      { amount: '1.5' },
+    )
+
+    mocks.apiPost.mockClear()
+    await lighterCommand('withdraw', { amount: '1.5', yes: 'true' })
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/withdraw',
+      { amount: '1.5', confirmed: true },
+    )
+  })
+
   it('rejects conflicting candle range and count-back parameters before requesting data', async () => {
     await expect(
       lighterCommand('candles', {

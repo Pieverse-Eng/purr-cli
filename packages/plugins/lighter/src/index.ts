@@ -557,18 +557,13 @@ function readQueryArgs(command: string, args: Record<string, string>) {
     case 'candles': {
       const resolution = requireArg(args, 'resolution')
       if (!CANDLE_RESOLUTIONS.has(resolution)) {
-        throw new Error(
-          `--resolution must be one of: ${[...CANDLE_RESOLUTIONS].join(', ')}`,
-        )
+        throw new Error(`--resolution must be one of: ${[...CANDLE_RESOLUTIONS].join(', ')}`)
       }
       const startTimestamp = rfc3339ToUnixSeconds(
         requireArg(args, 'start-at', 'startAt'),
         '--start-at',
       )
-      const endTimestamp = rfc3339ToUnixSeconds(
-        requireArg(args, 'end-at', 'endAt'),
-        '--end-at',
-      )
+      const endTimestamp = rfc3339ToUnixSeconds(requireArg(args, 'end-at', 'endAt'), '--end-at')
       if (startTimestamp > endTimestamp) {
         throw new Error('--start-at must be earlier than or equal to --end-at')
       }
@@ -593,10 +588,7 @@ function readQueryArgs(command: string, args: Record<string, string>) {
         requireArg(args, 'start-at', 'startAt'),
         '--start-at',
       )
-      const endTimestamp = rfc3339ToUnixSeconds(
-        requireArg(args, 'end-at', 'endAt'),
-        '--end-at',
-      )
+      const endTimestamp = rfc3339ToUnixSeconds(requireArg(args, 'end-at', 'endAt'), '--end-at')
       if (startTimestamp > endTimestamp) {
         throw new Error('--start-at must be earlier than or equal to --end-at')
       }

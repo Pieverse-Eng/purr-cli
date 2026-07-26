@@ -107,8 +107,6 @@ Write commands:
   update-leverage (--market-id <id> | --market <symbol> [--market-type perp]) (--leverage <n> | --initial-margin-fraction <n>) [--margin-mode cross|isolated]
   update-margin (--market-id <id> | --market <symbol> [--market-type perp]) --amount <amount> --direction add|remove
   withdraw --amount-base-units <integer> [--asset-index 3] [--route-type perps|spot]
-  transfer --to-account-index <different-account-id> --amount-base-units <integer> [--asset-index 3] [--from-route-type perps|spot] [--to-route-type perps|spot]
-
 Lighter read requests use a 20s client timeout. Write commands wait for the Platform response.
 IOC market/limit orders do not accept expiry flags.`
 
@@ -123,7 +121,6 @@ const SIDE_EFFECT_WRITE_ENDPOINTS: Record<string, string> = {
   'update-leverage': '/update-leverage',
   'update-margin': '/update-margin',
   withdraw: '/withdraw',
-  transfer: '/transfer',
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -338,13 +335,6 @@ function requireIntegerString(
   return parseIntegerString(requireArg(args, name, ...aliases), name, 1n) as string
 }
 
-function requireSignedInteger(
-  args: Record<string, string>,
-  name: string,
-  ...aliases: string[]
-): number {
-  return parseSignedInteger(requireArg(args, name, ...aliases), name) as number
-}
 
 function parseBoolean(value: string | undefined, name: string): boolean | undefined {
   if (value === undefined) return undefined
@@ -730,20 +720,6 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
         assetIndex: parseInteger(arg(args, 'asset-index', 'assetIndex'), 'asset-index'),
         routeType: arg(args, 'route-type', 'routeType'),
         amountBaseUnits: requireInteger(args, 'amount-base-units', 'amountBaseUnits'),
-        priceProtection,
-      })
-    case 'transfer':
-      return compact({
-        toAccountIndex: requireSignedInteger(args, 'to-account-index', 'toAccountIndex'),
-        assetIndex: parseInteger(arg(args, 'asset-index', 'assetIndex'), 'asset-index'),
-        fromRouteType: arg(args, 'from-route-type', 'fromRouteType'),
-        toRouteType: arg(args, 'to-route-type', 'toRouteType'),
-        amountBaseUnits: requireInteger(args, 'amount-base-units', 'amountBaseUnits'),
-        usdcFeeBaseUnits: parseInteger(
-          arg(args, 'usdc-fee-base-units', 'usdcFeeBaseUnits'),
-          'usdc-fee-base-units',
-        ),
-        memo: args.memo,
         priceProtection,
       })
     default:

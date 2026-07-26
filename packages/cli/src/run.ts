@@ -494,7 +494,7 @@ Groups:
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
-  lighter           Lighter account, market data, orders, transfers, deposits, and withdrawals
+  lighter           Lighter account, market data, orders, deposits, and withdrawals
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)

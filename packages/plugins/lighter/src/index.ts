@@ -111,7 +111,7 @@ Write commands:
   withdraw --amount <USDC> [--yes]
   fast-withdraw --amount <USDC> [--yes]
 Withdrawal commands preview without --yes. Adding --yes fetches and executes the latest quote, which may differ from an earlier preview.
-Lighter read requests use a 20s client timeout. Write commands wait for the Platform response.
+Lighter read and preview requests use a 20s client timeout. Confirmed write commands wait for the Platform response.
 IOC market/limit orders do not accept expiry flags.`
 
 const SIDE_EFFECT_WRITE_ENDPOINTS: Record<string, string> = {
@@ -251,11 +251,15 @@ async function getEnvelope<T = unknown>(
 }
 
 async function postEnvelope<T = unknown>(path: string, body: JsonRecord): Promise<T> {
+  const timeoutMs = path.endsWith('/preview') ? LIGHTER_REQUEST_TIMEOUT_MS : undefined
   try {
-    const response = await apiPost<ApiEnvelope<T>>(path, body)
+    const response =
+      timeoutMs === undefined
+        ? await apiPost<ApiEnvelope<T>>(path, body)
+        : await apiPost<ApiEnvelope<T>>(path, body, { timeoutMs })
     return unwrap(response)
   } catch (error) {
-    throw toLighterError(error)
+    throw timeoutMs === undefined ? toLighterError(error) : toLighterError(error, { timeoutMs })
   }
 }
 
@@ -527,16 +531,22 @@ function readQueryArgs(command: string, args: Record<string, string>) {
       return {
         marketId: parseInteger(arg(args, 'market-id', 'marketId'), 'market-id'),
       }
-    case 'pnl':
+    case 'pnl': {
+      const endTimestamp = parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp')
+      const countBack = parseInteger(arg(args, 'count-back', 'countBack'), 'count-back')
+      if (endTimestamp !== undefined && countBack !== undefined) {
+        throw new Error('--end-timestamp and --count-back cannot be used together')
+      }
       return {
         resolution: args.resolution,
         startTimestamp: parseInteger(
           arg(args, 'start-timestamp', 'startTimestamp'),
           'start-timestamp',
         ),
-        endTimestamp: parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp'),
-        countBack: parseInteger(arg(args, 'count-back', 'countBack'), 'count-back'),
+        endTimestamp,
+        countBack,
       }
+    }
     case 'transactions':
       return {
         offset: parseInteger(args.offset, 'offset'),

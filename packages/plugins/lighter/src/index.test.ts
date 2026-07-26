@@ -130,6 +130,7 @@ describe('lighter account opening', () => {
     expect(mocks.apiPost).toHaveBeenCalledWith(
       '/v1/instances/instance-123/lighter/fast-withdraw/preview',
       { amount: '5.25' },
+      { timeoutMs: 20_000 },
     )
 
     mocks.apiPost.mockClear()
@@ -138,24 +139,25 @@ describe('lighter account opening', () => {
       data: { actionType: 'fastWithdraw', status: 'succeeded' },
     })
     await lighterCommand('fast-withdraw', { amount: '5.25', yes: 'true' })
-    expect(mocks.apiPost).toHaveBeenCalledWith(
-      '/v1/instances/instance-123/lighter/fast-withdraw',
-      { amount: '5.25', confirmed: true },
-    )
+    expect(mocks.apiPost).toHaveBeenCalledWith('/v1/instances/instance-123/lighter/fast-withdraw', {
+      amount: '5.25',
+      confirmed: true,
+    })
 
     mocks.apiPost.mockClear()
     await lighterCommand('withdraw', { amount: '1.5' })
     expect(mocks.apiPost).toHaveBeenCalledWith(
       '/v1/instances/instance-123/lighter/withdraw/preview',
       { amount: '1.5' },
+      { timeoutMs: 20_000 },
     )
 
     mocks.apiPost.mockClear()
     await lighterCommand('withdraw', { amount: '1.5', yes: 'true' })
-    expect(mocks.apiPost).toHaveBeenCalledWith(
-      '/v1/instances/instance-123/lighter/withdraw',
-      { amount: '1.5', confirmed: true },
-    )
+    expect(mocks.apiPost).toHaveBeenCalledWith('/v1/instances/instance-123/lighter/withdraw', {
+      amount: '1.5',
+      confirmed: true,
+    })
   })
 
   it('rejects conflicting candle range and count-back parameters before requesting data', async () => {
@@ -163,6 +165,18 @@ describe('lighter account opening', () => {
       lighterCommand('candles', {
         'market-id': '0',
         resolution: '1m',
+        'start-timestamp': '1785060000',
+        'end-timestamp': '1785063600',
+        'count-back': '3',
+      }),
+    ).rejects.toThrow('--end-timestamp and --count-back cannot be used together')
+
+    expect(mocks.apiGet).not.toHaveBeenCalled()
+  })
+
+  it('rejects conflicting pnl range and count-back parameters before requesting data', async () => {
+    await expect(
+      lighterCommand('pnl', {
         'start-timestamp': '1785060000',
         'end-timestamp': '1785063600',
         'count-back': '3',

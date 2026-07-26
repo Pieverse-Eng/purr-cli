@@ -82,13 +82,13 @@ Read commands:
   order-book-depth (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
   recent-trades (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) [--limit <n>]
   trades [--market-id <id> | --market <symbol> [--market-type perp|spot|all]] [--limit <n>]
-  candles (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) --resolution <value> --start-timestamp <unix> [--end-timestamp <unix> | --count-back <n>]
+  candles (--market-id <id> | --market <symbol> [--market-type perp|spot|all]) --resolution <value> --start-at <rfc3339> --end-at <rfc3339> --count-back <n>
   funding-rates [--market-id <id> | --market <symbol> [--market-type perp|spot|all]]
   account
   balances
   positions
   limits
-  pnl [--resolution <value>] [--start-timestamp <unix>] [--end-timestamp <unix>] [--count-back <n>]
+  pnl --resolution <value> --start-at <rfc3339> --end-at <rfc3339> --count-back <n>
   orders
   active-orders
   inactive-orders
@@ -390,6 +390,47 @@ const MARKET_ARGUMENT_COMMANDS = new Set([
   'update-margin',
 ])
 
+const CANDLE_RESOLUTIONS = new Set(['1m', '5m', '15m', '30m', '1h', '4h', '12h', '1d', '1w'])
+const PNL_RESOLUTIONS = new Set(['1m', '5m', '15m', '1h', '4h', '1d'])
+const RFC3339_WITH_TIMEZONE =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-](\d{2}):(\d{2}))$/
+
+function rfc3339ToUnixSeconds(value: string, option: string): number {
+  const match = RFC3339_WITH_TIMEZONE.exec(value)
+  if (!match) {
+    throw new Error(`${option} must be an RFC 3339 timestamp with a timezone`)
+  }
+  const [, yearValue, monthValue, dayValue, hourValue, minuteValue, secondValue] = match
+  const year = Number(yearValue)
+  const month = Number(monthValue)
+  const day = Number(dayValue)
+  const hour = Number(hourValue)
+  const minute = Number(minuteValue)
+  const second = Number(secondValue)
+  const offsetHour = Number(match[7] ?? 0)
+  const offsetMinute = Number(match[8] ?? 0)
+  const calendarDate = new Date(0)
+  calendarDate.setUTCFullYear(year, month - 1, day)
+  calendarDate.setUTCHours(hour, minute, second, 0)
+  if (
+    calendarDate.getUTCFullYear() !== year ||
+    calendarDate.getUTCMonth() !== month - 1 ||
+    calendarDate.getUTCDate() !== day ||
+    calendarDate.getUTCHours() !== hour ||
+    calendarDate.getUTCMinutes() !== minute ||
+    calendarDate.getUTCSeconds() !== second ||
+    offsetHour > 23 ||
+    offsetMinute > 59
+  ) {
+    throw new Error(`${option} must be a valid RFC 3339 timestamp`)
+  }
+  const milliseconds = Date.parse(value)
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) {
+    throw new Error(`${option} must be a valid RFC 3339 timestamp`)
+  }
+  return Math.floor(milliseconds / 1000)
+}
+
 function marketRecords(response: unknown): JsonRecord[] {
   if (Array.isArray(response)) return response.filter(isRecord)
   if (!isRecord(response)) return []
@@ -514,17 +555,29 @@ function readQueryArgs(command: string, args: Record<string, string>) {
         aggregate: parseBoolean(args.aggregate, 'aggregate'),
       }
     case 'candles': {
-      const endTimestamp = parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp')
-      const countBack = parseInteger(arg(args, 'count-back', 'countBack'), 'count-back')
-      if (endTimestamp !== undefined && countBack !== undefined) {
-        throw new Error('--end-timestamp and --count-back cannot be used together')
+      const resolution = requireArg(args, 'resolution')
+      if (!CANDLE_RESOLUTIONS.has(resolution)) {
+        throw new Error(
+          `--resolution must be one of: ${[...CANDLE_RESOLUTIONS].join(', ')}`,
+        )
+      }
+      const startTimestamp = rfc3339ToUnixSeconds(
+        requireArg(args, 'start-at', 'startAt'),
+        '--start-at',
+      )
+      const endTimestamp = rfc3339ToUnixSeconds(
+        requireArg(args, 'end-at', 'endAt'),
+        '--end-at',
+      )
+      if (startTimestamp > endTimestamp) {
+        throw new Error('--start-at must be earlier than or equal to --end-at')
       }
       return {
         marketId: requireInteger(args, 'market-id', 'marketId'),
-        resolution: requireArg(args, 'resolution'),
-        startTimestamp: requireInteger(args, 'start-timestamp', 'startTimestamp'),
+        resolution,
+        startTimestamp,
         endTimestamp,
-        countBack,
+        countBack: requireInteger(args, 'count-back', 'countBack'),
       }
     }
     case 'funding-rates':
@@ -532,19 +585,26 @@ function readQueryArgs(command: string, args: Record<string, string>) {
         marketId: parseInteger(arg(args, 'market-id', 'marketId'), 'market-id'),
       }
     case 'pnl': {
-      const endTimestamp = parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp')
-      const countBack = parseInteger(arg(args, 'count-back', 'countBack'), 'count-back')
-      if (endTimestamp !== undefined && countBack !== undefined) {
-        throw new Error('--end-timestamp and --count-back cannot be used together')
+      const resolution = requireArg(args, 'resolution')
+      if (!PNL_RESOLUTIONS.has(resolution)) {
+        throw new Error(`--resolution must be one of: ${[...PNL_RESOLUTIONS].join(', ')}`)
+      }
+      const startTimestamp = rfc3339ToUnixSeconds(
+        requireArg(args, 'start-at', 'startAt'),
+        '--start-at',
+      )
+      const endTimestamp = rfc3339ToUnixSeconds(
+        requireArg(args, 'end-at', 'endAt'),
+        '--end-at',
+      )
+      if (startTimestamp > endTimestamp) {
+        throw new Error('--start-at must be earlier than or equal to --end-at')
       }
       return {
-        resolution: args.resolution,
-        startTimestamp: parseInteger(
-          arg(args, 'start-timestamp', 'startTimestamp'),
-          'start-timestamp',
-        ),
+        resolution,
+        startTimestamp,
         endTimestamp,
-        countBack,
+        countBack: requireInteger(args, 'count-back', 'countBack'),
       }
     }
     case 'transactions':

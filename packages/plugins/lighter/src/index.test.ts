@@ -160,28 +160,104 @@ describe('lighter account opening', () => {
     })
   })
 
-  it('rejects conflicting candle range and count-back parameters before requesting data', async () => {
+  it('forwards the complete official candle query', async () => {
+    mocks.apiGet.mockResolvedValue({ ok: true, data: {} })
+
+    await lighterCommand('candles', {
+      'market-id': '0',
+      resolution: '1m',
+      'start-at': '2026-07-27T00:00:00Z',
+      'end-at': '2026-07-27T01:00:00Z',
+      'count-back': '3',
+    })
+
+    expect(mocks.apiGet).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/candles?marketId=0&resolution=1m&startTimestamp=1785110400&endTimestamp=1785114000&countBack=3',
+      { timeoutMs: 20_000 },
+    )
+  })
+
+  it('forwards the complete official PnL query', async () => {
+    mocks.apiGet.mockResolvedValue({ ok: true, data: {} })
+
+    await lighterCommand('pnl', {
+      resolution: '1m',
+      'start-at': '2026-07-27T09:00:00+09:00',
+      'end-at': '2026-07-27T10:00:00+09:00',
+      'count-back': '3',
+    })
+
+    expect(mocks.apiGet).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/lighter/pnl?resolution=1m&startTimestamp=1785110400&endTimestamp=1785114000&countBack=3',
+      { timeoutMs: 20_000 },
+    )
+  })
+
+  it('rejects resolutions unsupported by the corresponding official endpoint', async () => {
     await expect(
       lighterCommand('candles', {
         'market-id': '0',
-        resolution: '1m',
-        'start-timestamp': '1785060000',
-        'end-timestamp': '1785063600',
+        resolution: '2m',
+        'start-at': '2026-07-27T00:00:00Z',
+        'end-at': '2026-07-27T01:00:00Z',
         'count-back': '3',
       }),
-    ).rejects.toThrow('--end-timestamp and --count-back cannot be used together')
+    ).rejects.toThrow('--resolution must be one of: 1m, 5m, 15m, 30m, 1h, 4h, 12h, 1d, 1w')
+
+    await expect(
+      lighterCommand('pnl', {
+        resolution: '30m',
+        'start-at': '2026-07-27T00:00:00Z',
+        'end-at': '2026-07-27T01:00:00Z',
+        'count-back': '3',
+      }),
+    ).rejects.toThrow('--resolution must be one of: 1m, 5m, 15m, 1h, 4h, 1d')
 
     expect(mocks.apiGet).not.toHaveBeenCalled()
   })
 
-  it('rejects conflicting pnl range and count-back parameters before requesting data', async () => {
+  it('requires explicit timezones for candle and PnL timestamps', async () => {
     await expect(
-      lighterCommand('pnl', {
-        'start-timestamp': '1785060000',
-        'end-timestamp': '1785063600',
+      lighterCommand('candles', {
+        'market-id': '0',
+        resolution: '1m',
+        'start-at': '2026-07-27T00:00:00',
+        'end-at': '2026-07-27T01:00:00Z',
         'count-back': '3',
       }),
-    ).rejects.toThrow('--end-timestamp and --count-back cannot be used together')
+    ).rejects.toThrow('--start-at must be an RFC 3339 timestamp with a timezone')
+
+    await expect(
+      lighterCommand('pnl', {
+        resolution: '1h',
+        'start-at': '2026-07-27T00:00:00Z',
+        'end-at': '2026-07-27T01:00:00',
+        'count-back': '1',
+      }),
+    ).rejects.toThrow('--end-at must be an RFC 3339 timestamp with a timezone')
+
+    expect(mocks.apiGet).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid calendar dates and reversed time ranges', async () => {
+    await expect(
+      lighterCommand('candles', {
+        'market-id': '0',
+        resolution: '1m',
+        'start-at': '2026-02-30T00:00:00Z',
+        'end-at': '2026-03-02T01:00:00Z',
+        'count-back': '3',
+      }),
+    ).rejects.toThrow('--start-at must be a valid RFC 3339 timestamp')
+
+    await expect(
+      lighterCommand('pnl', {
+        resolution: '1h',
+        'start-at': '2026-07-27T02:00:00Z',
+        'end-at': '2026-07-27T01:00:00Z',
+        'count-back': '1',
+      }),
+    ).rejects.toThrow('--start-at must be earlier than or equal to --end-at')
 
     expect(mocks.apiGet).not.toHaveBeenCalled()
   })

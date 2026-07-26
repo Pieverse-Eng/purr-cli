@@ -767,7 +767,13 @@ export async function lighterCommand(
   command: string | undefined,
   args: Record<string, string>,
 ): Promise<void> {
-  if (!command || command === 'help' || command === '--help' || command === '-h') {
+  if (
+    !command ||
+    command === 'help' ||
+    command === '--help' ||
+    command === '-h' ||
+    ['help', 'h', '--help', '-h'].some((flag) => Object.hasOwn(args, flag))
+  ) {
     console.log(lighterHelp())
     return
   }

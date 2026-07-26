@@ -83,6 +83,13 @@ describe('lighter account opening', () => {
     })
   })
 
+  it('prints help before validating deposit arguments', async () => {
+    await lighterCommand('deposit', { help: 'true' })
+
+    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('deposit --amount <amount>'))
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+  })
+
   it('preserves wallet policy approval details from a deferred write', async () => {
     mocks.apiPost.mockResolvedValue({
       code: 'POLICY_DEFERRED',

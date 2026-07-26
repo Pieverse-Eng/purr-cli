@@ -196,10 +196,13 @@ function toLighterError(error: unknown, context?: RequestContext): Error {
 
 function unwrap<T>(response: ApiEnvelope<T>): T {
   if (!response.ok || response.data === undefined) {
-    throw new LighterCliError(extractErrorMessage(response) ?? response.code ?? 'Lighter request failed', {
-      code: response.code,
-      data: extractErrorData(response),
-    })
+    throw new LighterCliError(
+      extractErrorMessage(response) ?? response.code ?? 'Lighter request failed',
+      {
+        code: response.code,
+        data: extractErrorData(response),
+      },
+    )
   }
   return response.data
 }

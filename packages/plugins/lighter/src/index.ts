@@ -335,7 +335,6 @@ function requireIntegerString(
   return parseIntegerString(requireArg(args, name, ...aliases), name, 1n) as string
 }
 
-
 function parseBoolean(value: string | undefined, name: string): boolean | undefined {
   if (value === undefined) return undefined
   const normalized = value.trim().toLowerCase()
@@ -505,10 +504,7 @@ function readQueryArgs(command: string, args: Record<string, string>) {
         aggregate: parseBoolean(args.aggregate, 'aggregate'),
       }
     case 'candles': {
-      const endTimestamp = parseInteger(
-        arg(args, 'end-timestamp', 'endTimestamp'),
-        'end-timestamp',
-      )
+      const endTimestamp = parseInteger(arg(args, 'end-timestamp', 'endTimestamp'), 'end-timestamp')
       const countBack = parseInteger(arg(args, 'count-back', 'countBack'), 'count-back')
       if (endTimestamp !== undefined && countBack !== undefined) {
         throw new Error('--end-timestamp and --count-back cannot be used together')

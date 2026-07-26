@@ -104,7 +104,7 @@ describe('lighter account opening', () => {
     expect(mocks.apiGet).not.toHaveBeenCalled()
   })
 
-  it('preserves wallet policy approval details from a deferred write', async () => {
+  it('preserves wallet policy approval details from a deferred deposit', async () => {
     mocks.apiPost.mockResolvedValue({
       code: 'POLICY_DEFERRED',
       reason: 'manual_approval_required',
@@ -115,14 +115,9 @@ describe('lighter account opening', () => {
     })
 
     await expect(
-      lighterCommand('order', {
-        'market-id': '0',
-        side: 'buy',
-        size: '0.006',
-        price: '1800',
-        type: 'limit',
-        'time-in-force': 'gtt',
-        'expires-in': '10m',
+      lighterCommand('deposit', {
+        amount: '5',
+        'source-chain-id': '1',
       }),
     ).rejects.toMatchObject({
       code: 'POLICY_DEFERRED',

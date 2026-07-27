@@ -70,6 +70,7 @@ export interface ApiCredentials {
 
 export interface ApiRequestOptions {
   headers?: Record<string, string>
+  timeoutMs?: number
 }
 
 export class ApiClientError extends Error {
@@ -155,7 +156,14 @@ export function resolveCredentials(): Credentials {
   }
 }
 
-export async function apiGet<T = unknown>(path: string): Promise<T> {
+function requestSignal(timeoutMs: number | undefined): AbortSignal | undefined {
+  return timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs)
+}
+
+export async function apiGet<T = unknown>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
   const { apiUrl, apiToken } = resolveApiCredentials()
   const url = `${apiUrl.replace(/\/$/, '')}${path}`
 
@@ -164,7 +172,9 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
     headers: {
       Authorization: `Bearer ${apiToken}`,
       'Content-Type': 'application/json',
+      ...options.headers,
     },
+    signal: requestSignal(options.timeoutMs),
   })
 
   if (!res.ok) {
@@ -198,6 +208,7 @@ export async function apiPost<T = unknown>(
       ...options.headers,
     },
     body: JSON.stringify(body),
+    signal: requestSignal(options.timeoutMs),
   })
 
   if (!res.ok) {
@@ -231,6 +242,7 @@ export async function apiPut<T = unknown>(
       ...options.headers,
     },
     body: JSON.stringify(body),
+    signal: requestSignal(options.timeoutMs),
   })
 
   if (!res.ok) {

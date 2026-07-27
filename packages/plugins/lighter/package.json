@@ -1,10 +1,10 @@
 {
-  "name": "@pieverseio/purr-plugin-balancer",
+  "name": "@pieverseio/purr-plugin-lighter",
   "version": "0.2.34",
   "type": "module",
   "private": true,
   "exports": {
-    ".": "./src/index.ts"
+    "./index": "./src/index.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*"

@@ -1,4 +1,3 @@
-import { generateKeyPairSync } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createOrder,
@@ -11,460 +10,288 @@ import {
 } from '@pieverseio/purr-plugin-vendors/binance-onchain-pay'
 import { mockFetch } from '../../helpers.js'
 
-// Generate a test RSA key pair for signing
-const { privateKey: TEST_PRIVATE_KEY } = generateKeyPairSync('rsa', {
-  modulusLength: 2048,
-  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-  publicKeyEncoding: { type: 'spki', format: 'pem' },
-})
+const INSTANCE_ID = '11111111-1111-4111-8111-111111111111'
+const PLATFORM_URL = 'https://platform.test'
 
-describe('binance-onchain-pay', () => {
+function parsedRequest(mock: ReturnType<typeof mockFetch>, index = 0) {
+  const [url, options] = mock.mock.calls[index]
+  return {
+    url,
+    options,
+    body: JSON.parse(String(options.body)) as Record<string, unknown>,
+  }
+}
+
+describe('binance-onchain-pay platform broker client', () => {
   beforeEach(() => {
-    process.env.BINANCE_CONNECT_CLIENT_ID = 'test-client-id'
-    process.env.BINANCE_CONNECT_ACCESS_TOKEN = 'test-access-token'
-    process.env.BINANCE_CONNECT_PRIVATE_KEY = TEST_PRIVATE_KEY
-    process.env.BINANCE_CONNECT_BASE_URL = 'https://test.example.com'
+    process.env.WALLET_API_URL = PLATFORM_URL
+    process.env.WALLET_API_TOKEN = 'instance-token'
+    process.env.INSTANCE_ID = INSTANCE_ID
     process.env.BINANCE_CONNECT_MERCHANT_CODE = 'test-merchant-code'
     process.env.BINANCE_CONNECT_MERCHANT_NAME = 'Test Merchant'
   })
 
   afterEach(() => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    delete process.env.BINANCE_CONNECT_MERCHANT_CODE
+    delete process.env.BINANCE_CONNECT_MERCHANT_NAME
     delete process.env.BINANCE_CONNECT_CLIENT_ID
     delete process.env.BINANCE_CONNECT_ACCESS_TOKEN
     delete process.env.BINANCE_CONNECT_PRIVATE_KEY
     delete process.env.BINANCE_CONNECT_BASE_URL
-    delete process.env.BINANCE_CONNECT_MERCHANT_CODE
-    delete process.env.BINANCE_CONNECT_MERCHANT_NAME
+    vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
-  describe('config validation', () => {
-    it('throws listing missing env vars', async () => {
-      delete process.env.BINANCE_CONNECT_CLIENT_ID
-      delete process.env.BINANCE_CONNECT_PRIVATE_KEY
-      await expect(getTradingPairs()).rejects.toThrow('BINANCE_CONNECT_CLIENT_ID')
-      await expect(getTradingPairs()).rejects.toThrow('BINANCE_CONNECT_PRIVATE_KEY')
+  it('requires the existing platform credentials instead of Binance credentials', async () => {
+    // Empty env values deliberately override any developer-local purr config.
+    process.env.WALLET_API_TOKEN = ''
+
+    await expect(getTradingPairs()).rejects.toThrow('WALLET_API_TOKEN')
+  })
+
+  it('calls the instance-scoped broker with the per-instance bearer token', async () => {
+    const mock = mockFetch({ ok: true, data: { fiatCurrencies: ['USD'] } })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(getTradingPairs()).resolves.toEqual({ fiatCurrencies: ['USD'] })
+
+    const { url, options, body } = parsedRequest(mock)
+    expect(url).toBe(
+      `${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/trading-pairs`,
+    )
+    expect(options.method).toBe('POST')
+    expect(options.headers.Authorization).toBe('Bearer instance-token')
+    expect(options.headers['Content-Type']).toBe('application/json')
+    expect(options.headers).not.toHaveProperty('X-Tesla-ClientId')
+    expect(options.headers).not.toHaveProperty('X-Tesla-SignAccessToken')
+    expect(options.headers).not.toHaveProperty('X-Tesla-Signature')
+    expect(body).toEqual({})
+  })
+
+  it('never uses legacy Binance credentials or a caller-controlled Binance base URL', async () => {
+    process.env.BINANCE_CONNECT_CLIENT_ID = 'legacy-client'
+    process.env.BINANCE_CONNECT_ACCESS_TOKEN = 'legacy-token'
+    process.env.BINANCE_CONNECT_PRIVATE_KEY = 'legacy-private-key'
+    process.env.BINANCE_CONNECT_BASE_URL = 'https://attacker.example'
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
+
+    await getTradingPairs()
+
+    const { url, options } = parsedRequest(mock)
+    expect(url).toMatch(/^https:\/\/platform\.test\/v1\/instances\//)
+    expect(url).not.toContain('attacker.example')
+    expect(JSON.stringify(options)).not.toContain('legacy-client')
+    expect(JSON.stringify(options)).not.toContain('legacy-token')
+    expect(JSON.stringify(options)).not.toContain('legacy-private-key')
+  })
+
+  it('maps network and P2P reads to fixed broker operations', async () => {
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
+
+    await getNetworks()
+    await getP2PTradingPairs({ fiatCurrency: 'USD' })
+
+    expect(parsedRequest(mock, 0).url).toBe(
+      `${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/crypto-networks`,
+    )
+    expect(parsedRequest(mock, 0).body).toEqual({})
+    expect(parsedRequest(mock, 1).url).toBe(
+      `${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/p2p-trading-pairs`,
+    )
+    expect(parsedRequest(mock, 1).body).toEqual({ fiatCurrency: 'USD' })
+  })
+
+  it('uses the catalog payment-method operation when only lang is supplied', async () => {
+    const mock = mockFetch({ ok: true, data: { methods: ['BUY_CARD'] } })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(getPaymentMethods({ lang: 'en' })).resolves.toEqual({ methods: ['BUY_CARD'] })
+
+    const { url, body } = parsedRequest(mock)
+    expect(url).toBe(
+      `${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/payment-methods`,
+    )
+    expect(body).toEqual({ lang: 'en' })
+  })
+
+  it('uses the eligible payment-method operation for pair-scoped requests', async () => {
+    const mock = mockFetch({ ok: true, data: { methods: ['BUY_CARD'] } })
+    vi.stubGlobal('fetch', mock)
+
+    await getPaymentMethods({
+      fiatCurrency: 'USD',
+      cryptoCurrency: 'USDT',
+      totalAmount: 50,
+      amountType: 2,
+      network: 'BSC',
     })
 
-    it('throws when access token is missing', async () => {
-      delete process.env.BINANCE_CONNECT_ACCESS_TOKEN
-      await expect(getTradingPairs()).rejects.toThrow('BINANCE_CONNECT_ACCESS_TOKEN')
-    })
-
-    it('throws when base URL is missing', async () => {
-      delete process.env.BINANCE_CONNECT_BASE_URL
-      await expect(getTradingPairs()).rejects.toThrow('BINANCE_CONNECT_BASE_URL')
+    const { url, body } = parsedRequest(mock)
+    expect(url).toBe(
+      `${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/payment-methods/eligible`,
+    )
+    expect(body).toEqual({
+      fiatCurrency: 'USD',
+      cryptoCurrency: 'USDT',
+      totalAmount: 50,
+      amountType: 2,
+      network: 'BSC',
     })
   })
 
-  describe('getTradingPairs', () => {
-    it('calls correct endpoint with Tesla headers', async () => {
-      const mock = mockFetch({ data: { fiatCurrencies: ['USD'], cryptoCurrencies: ['BTC'] } })
-      vi.stubGlobal('fetch', mock)
+  it('rejects incomplete pair-scoped payment-method requests before fetch', async () => {
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
 
-      const result = await getTradingPairs()
-      expect(result).toEqual({ fiatCurrencies: ['USD'], cryptoCurrencies: ['BTC'] })
-      expect(mock).toHaveBeenCalledOnce()
-
-      const [url, options] = mock.mock.calls[0]
-      expect(url).toBe('https://test.example.com/papi/v1/ramp/connect/buy/trading-pairs')
-      expect(options.method).toBe('POST')
-      expect(options.headers['X-Tesla-ClientId']).toBe('test-client-id')
-      expect(options.headers['X-Tesla-SignAccessToken']).toBe('test-access-token')
-      expect(options.headers['X-Tesla-Signature']).toBeTruthy()
-      expect(options.headers['X-Tesla-Timestamp']).toMatch(/^\d+$/)
-      expect(options.headers['User-Agent']).toBe('onchain-pay-open-api/0.1.2 (Skill)')
-      expect(options.body).toBeUndefined()
-    })
+    await expect(getPaymentMethods({ fiatCurrency: 'USD' })).rejects.toThrow(
+      'requires --fiat, --crypto, --total-amount, and --amount-type',
+    )
+    expect(mock).not.toHaveBeenCalled()
   })
 
-  describe('getNetworks', () => {
-    it('calls crypto-network-list endpoint', async () => {
-      const mock = mockFetch({ data: { networks: ['BSC', 'ETH'] } })
-      vi.stubGlobal('fetch', mock)
+  it('maps estimated quotes to the fixed quote operation', async () => {
+    const mock = mockFetch({ ok: true, data: { cryptoAmount: '49.85' } })
+    vi.stubGlobal('fetch', mock)
 
-      const result = await getNetworks()
-      expect(result).toEqual({ networks: ['BSC', 'ETH'] })
-
-      const [url] = mock.mock.calls[0]
-      expect(url).toContain('/crypto-network')
-    })
-  })
-
-  describe('getP2PTradingPairs', () => {
-    it('calls p2p trading-pairs endpoint with optional fiatCurrency', async () => {
-      const mock = mockFetch({ data: { fiatCurrencies: ['USD'] } })
-      vi.stubGlobal('fetch', mock)
-
-      const result = await getP2PTradingPairs({ fiatCurrency: 'USD' })
-
-      expect(result).toEqual({ fiatCurrencies: ['USD'] })
-      const [url, options] = mock.mock.calls[0]
-      expect(url).toBe('https://test.example.com/papi/v1/ramp/connect/buy/p2p/trading-pairs')
-      expect(JSON.parse(options.body)).toEqual({ fiatCurrency: 'USD' })
-    })
-
-    it('omits request body when optional fiatCurrency is not provided', async () => {
-      const mock = mockFetch({ data: { fiatCurrencies: ['USD'] } })
-      vi.stubGlobal('fetch', mock)
-
-      await getP2PTradingPairs()
-
-      const [, options] = mock.mock.calls[0]
-      expect(options.body).toBeUndefined()
-    })
-  })
-
-  describe('getPaymentMethods', () => {
-    it('calls v2 payment-method-list when no pair is provided', async () => {
-      const mock = mockFetch({ data: { methods: ['BUY_CARD'] } })
-      vi.stubGlobal('fetch', mock)
-
-      const result = await getPaymentMethods({ lang: 'en' })
-
-      expect(result).toEqual({ methods: ['BUY_CARD'] })
-      const [url, options] = mock.mock.calls[0]
-      expect(url).toBe('https://test.example.com/papi/v2/ramp/connect/buy/payment-method-list')
-      expect(JSON.parse(options.body)).toEqual({ lang: 'en' })
-    })
-
-    it('omits request body for v2 payment-method-list without lang', async () => {
-      const mock = mockFetch({ data: { methods: ['BUY_CARD'] } })
-      vi.stubGlobal('fetch', mock)
-
-      await getPaymentMethods()
-
-      const [url, options] = mock.mock.calls[0]
-      expect(url).toBe('https://test.example.com/papi/v2/ramp/connect/buy/payment-method-list')
-      expect(options.body).toBeUndefined()
-    })
-
-    it('calls v1 payment-method-list for a fiat/crypto amount', async () => {
-      const mock = mockFetch({ data: { methods: ['BUY_CARD'] } })
-      vi.stubGlobal('fetch', mock)
-
-      await getPaymentMethods({
-        fiatCurrency: 'USD',
-        cryptoCurrency: 'USDT',
-        totalAmount: 50,
-        amountType: 2,
-        network: 'BSC',
-      })
-
-      const [url, options] = mock.mock.calls[0]
-      expect(url).toBe('https://test.example.com/papi/v1/ramp/connect/buy/payment-method-list')
-      const body = JSON.parse(options.body)
-      expect(body.fiatCurrency).toBe('USD')
-      expect(body.cryptoCurrency).toBe('USDT')
-      expect(body.totalAmount).toBe(50)
-      expect(body.amountType).toBe(2)
-      expect(body.network).toBe('BSC')
-    })
-
-    it('requires fiat, crypto, amount, and amountType for pair-specific payment methods', async () => {
-      await expect(getPaymentMethods({ fiatCurrency: 'USD' })).rejects.toThrow(
-        'requires --fiat, --crypto, --total-amount, and --amount-type',
-      )
-      await expect(
-        getPaymentMethods({
-          fiatCurrency: 'USD',
-          cryptoCurrency: 'USDT',
-          totalAmount: 50,
-        }),
-      ).rejects.toThrow('requires --fiat, --crypto, --total-amount, and --amount-type')
-    })
-  })
-
-  describe('getQuote', () => {
-    it('sends required params in body', async () => {
-      const mock = mockFetch({ data: { cryptoAmount: '49.85', fee: '0.50' } })
-      vi.stubGlobal('fetch', mock)
-
-      const result = await getQuote({
+    await expect(
+      getQuote({
         fiatCurrency: 'USD',
         requestedAmount: 50,
         payMethodCode: 'BUY_CARD',
         amountType: 1,
-      })
-
-      expect(result).toEqual({ cryptoAmount: '49.85', fee: '0.50' })
-      const body = JSON.parse(mock.mock.calls[0][1].body)
-      expect(body.fiatCurrency).toBe('USD')
-      expect(body.requestedAmount).toBe(50)
-      expect(body.payMethodCode).toBe('BUY_CARD')
-      expect(body.amountType).toBe(1)
-    })
-
-    it('requires amountType', async () => {
-      await expect(
-        getQuote({
-          fiatCurrency: 'USD',
-          requestedAmount: 50,
-          payMethodCode: 'BUY_CARD',
-        } as Parameters<typeof getQuote>[0]),
-      ).rejects.toThrow('Estimated quote requires --amount-type')
-    })
-
-    it('includes optional quote params', async () => {
-      const mock = mockFetch({ data: {} })
-      vi.stubGlobal('fetch', mock)
-
-      await getQuote({
-        fiatCurrency: 'USD',
-        requestedAmount: 50,
-        payMethodCode: 'BUY_CARD',
-        amountType: 2,
         cryptoCurrency: 'USDT',
-        address: '0x1234567890123456789012345678901234567890',
-        contractAddress: '0x0000000000000000000000000000000000000001',
-      })
+      }),
+    ).resolves.toEqual({ cryptoAmount: '49.85' })
 
-      const body = JSON.parse(mock.mock.calls[0][1].body)
-      expect(body.payMethodCode).toBe('BUY_CARD')
-      expect(body.amountType).toBe(2)
-      expect(body.cryptoCurrency).toBe('USDT')
-      expect(body.address).toBe('0x1234567890123456789012345678901234567890')
-      expect(body.contractAddress).toBe('0x0000000000000000000000000000000000000001')
+    const { url, body } = parsedRequest(mock)
+    expect(url).toBe(`${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/quote`)
+    expect(body).toEqual({
+      fiatCurrency: 'USD',
+      requestedAmount: 50,
+      payMethodCode: 'BUY_CARD',
+      amountType: 1,
+      cryptoCurrency: 'USDT',
     })
   })
 
-  describe('createOrder', () => {
-    it('sends wallet address and network', async () => {
-      const mock = mockFetch({
-        data: { orderId: 'bc-123', redirectUrl: 'https://pay.binance.com/checkout/abc' },
-      })
-      vi.stubGlobal('fetch', mock)
+  it('creates pre-orders without caller-controlled externalOrderId or timestamp', async () => {
+    const mock = mockFetch({
+      ok: true,
+      externalOrderId: 'pc0123456789abcdef0123456789abcdef',
+      idempotent: false,
+      data: { orderId: 'provider-order', redirectUrl: 'https://pay.example/checkout' },
+    })
+    vi.stubGlobal('fetch', mock)
 
-      const result = await createOrder({
+    await expect(
+      createOrder({
+        idempotencyKey: 'checkout-123',
         fiatCurrency: 'USD',
-        cryptoCurrency: 'USDT',
         requestedAmount: 50,
         amountType: 1,
-        network: 'BSC',
-        address: '0x1234567890123456789012345678901234567890',
-      })
-
-      expect(result).toEqual({
-        orderId: 'bc-123',
-        redirectUrl: 'https://pay.binance.com/checkout/abc',
-        externalOrderId: expect.stringMatching(/^oc_unknown_\d+_[a-z0-9]+$/),
-      })
-      const body = JSON.parse(mock.mock.calls[0][1].body)
-      expect(body.network).toBe('BSC')
-      expect(body.address).toBe('0x1234567890123456789012345678901234567890')
-      expect(body.requestedAmount).toBe(50)
-      expect(body.amountType).toBe(1)
-      expect(body.externalOrderId).toMatch(/^oc_unknown_\d+_[a-z0-9]+$/)
-      expect(body.ts).toEqual(expect.any(Number))
-      expect(body.merchantCode).toBe('test-merchant-code')
-      expect(body.merchantName).toBe('Test Merchant')
-    })
-
-    it('auto-generates externalOrderId', async () => {
-      const mock = mockFetch({ data: {} })
-      vi.stubGlobal('fetch', mock)
-
-      await createOrder({
-        fiatCurrency: 'USD',
         cryptoCurrency: 'USDT',
-        requestedAmount: 50,
-        amountType: 1,
         network: 'BSC',
         address: '0x1234567890123456789012345678901234567890',
-      })
-
-      const body = JSON.parse(mock.mock.calls[0][1].body)
-      expect(body.externalOrderId).toMatch(/^oc_unknown_\d+_[a-z0-9]+$/)
+      }),
+    ).resolves.toEqual({
+      orderId: 'provider-order',
+      redirectUrl: 'https://pay.example/checkout',
+      externalOrderId: 'pc0123456789abcdef0123456789abcdef',
+      idempotencyKey: 'checkout-123',
+      idempotent: false,
     })
 
-    it('uses custom externalOrderId when provided', async () => {
-      const mock = mockFetch({ data: {} })
-      vi.stubGlobal('fetch', mock)
-
-      await createOrder({
-        fiatCurrency: 'USD',
-        cryptoCurrency: 'USDT',
-        requestedAmount: 50,
-        amountType: 1,
-        network: 'BSC',
-        address: '0x1234567890123456789012345678901234567890',
-        externalOrderId: 'custom-id-123',
-      })
-
-      const body = JSON.parse(mock.mock.calls[0][1].body)
-      expect(body.externalOrderId).toBe('custom-id-123')
-    })
-
-    it('includes optional merchant and redirect fields', async () => {
-      const mock = mockFetch({ data: {} })
-      vi.stubGlobal('fetch', mock)
-
-      await createOrder({
-        fiatCurrency: 'USD',
-        fiatAmount: 50,
-        cryptoCurrency: 'USDT',
-        requestedAmount: 50,
-        amountType: 2,
-        network: 'BSC',
-        address: '0x1234567890123456789012345678901234567890',
-        payMethodCode: 'BUY_CARD',
-        payMethodSubCode: 'card',
-        merchantCode: 'merchant-code',
-        merchantName: 'Merchant Name',
-        redirectUrl: 'https://example.com/success',
-        failRedirectUrl: 'https://example.com/fail',
-        redirectDeepLink: 'app://success',
-        failRedirectDeepLink: 'app://fail',
-        contractAddress: '0x0000000000000000000000000000000000000001',
-        customization: { SEND_PRIMARY: true },
-        destContractAddress: '0x0000000000000000000000000000000000000002',
-        destContractABI: 'deposit',
-        destContractParams: { amount: 50 },
-        affiliateCode: 'affiliate',
-        gtrTemplateCode: 'OTHERS',
-      })
-
-      const body = JSON.parse(mock.mock.calls[0][1].body)
-      expect(body.fiatAmount).toBe(50)
-      expect(body.requestedAmount).toBe(50)
-      expect(body.amountType).toBe(2)
-      expect(body.payMethodCode).toBe('BUY_CARD')
-      expect(body.payMethodSubCode).toBe('card')
-      expect(body.merchantCode).toBe('merchant-code')
-      expect(body.merchantName).toBe('Merchant Name')
-      expect(body.redirectUrl).toBe('https://example.com/success')
-      expect(body.failRedirectUrl).toBe('https://example.com/fail')
-      expect(body.redirectDeepLink).toBe('app://success')
-      expect(body.failRedirectDeepLink).toBe('app://fail')
-      expect(body.contractAddress).toBe('0x0000000000000000000000000000000000000001')
-      expect(body.customization).toEqual({ SEND_PRIMARY: true })
-      expect(body.destContractAddress).toBe('0x0000000000000000000000000000000000000002')
-      expect(body.destContractABI).toBe('deposit')
-      expect(body.destContractParams).toEqual({ amount: 50 })
-      expect(body.affiliateCode).toBe('affiliate')
-      expect(body.gtrTemplateCode).toBe('OTHERS')
-    })
-
-    it('requires merchant identity from args or env', async () => {
-      delete process.env.BINANCE_CONNECT_MERCHANT_CODE
-      await expect(
-        createOrder({
-          fiatCurrency: 'USD',
-          cryptoCurrency: 'USDT',
-          requestedAmount: 50,
-          amountType: 1,
-          network: 'BSC',
-          address: '0x1234567890123456789012345678901234567890',
-        }),
-      ).rejects.toThrow('Pre-order requires --merchant-code or BINANCE_CONNECT_MERCHANT_CODE')
-    })
-
-    it('requires fiatAmount or requestedAmount with amountType', async () => {
-      await expect(
-        createOrder({
-          fiatCurrency: 'USD',
-          cryptoCurrency: 'USDT',
-          requestedAmount: 50,
-          network: 'BSC',
-          address: '0x1234567890123456789012345678901234567890',
-        }),
-      ).rejects.toThrow(
-        'Pre-order requires --fiat-amount or both --requested-amount and --amount-type',
-      )
-    })
+    const { url, options, body } = parsedRequest(mock)
+    expect(url).toBe(`${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/pre-orders`)
+    expect(options.headers['Idempotency-Key']).toBe('checkout-123')
+    expect(body).not.toHaveProperty('externalOrderId')
+    expect(body).not.toHaveProperty('ts')
+    expect(body.merchantCode).toBe('test-merchant-code')
+    expect(body.merchantName).toBe('Test Merchant')
   })
 
-  describe('queryOrder', () => {
-    it('sends orderId and returns status', async () => {
-      const mock = mockFetch({ data: { status: 'completed', cryptoAmount: '49.85' } })
-      vi.stubGlobal('fetch', mock)
-
-      const result = await queryOrder('bc-123')
-      expect(result).toEqual({ status: 'completed', cryptoAmount: '49.85' })
-
-      const body = JSON.parse(mock.mock.calls[0][1].body)
-      expect(body.externalOrderId).toBe('bc-123')
+  it('generates and returns a retryable idempotency key when one is omitted', async () => {
+    const mock = mockFetch({
+      ok: true,
+      externalOrderId: 'pc0123456789abcdef0123456789abcdef',
+      data: {},
     })
+    vi.stubGlobal('fetch', mock)
+
+    const result = (await createOrder({
+      fiatAmount: 50,
+      fiatCurrency: 'USD',
+    })) as Record<string, unknown>
+
+    const { options } = parsedRequest(mock)
+    expect(options.headers['Idempotency-Key']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    expect(result.idempotencyKey).toBe(options.headers['Idempotency-Key'])
   })
 
-  describe('error handling', () => {
-    it('throws on HTTP error', async () => {
-      const mock = mockFetch({ message: 'Bad Request' }, 400)
-      vi.stubGlobal('fetch', mock)
+  it('includes the idempotency key in request failures so callers can retry safely', async () => {
+    const mock = mockFetch(
+      { ok: false, code: 'BINANCE_CONNECT_TIMEOUT', error: 'Binance Connect request timed out' },
+      504,
+    )
+    vi.stubGlobal('fetch', mock)
 
-      await expect(getTradingPairs()).rejects.toThrow('HTTP 400')
-    })
-
-    it('throws on API error code', async () => {
-      const mock = mockFetch({ code: '100001', message: 'Invalid signature' })
-      vi.stubGlobal('fetch', mock)
-
-      await expect(getTradingPairs()).rejects.toThrow('Invalid signature')
-    })
-
-    it('passes through response when code is 000000 (success)', async () => {
-      const mock = mockFetch({ code: '000000', data: { pairs: [] } })
-      vi.stubGlobal('fetch', mock)
-
-      const result = await getTradingPairs()
-      expect(result).toEqual({ pairs: [] })
-    })
-
-    it('returns full response when no data field', async () => {
-      const mock = mockFetch({ code: '000000', success: true })
-      vi.stubGlobal('fetch', mock)
-
-      const result = await getTradingPairs()
-      expect(result).toEqual({ code: '000000', success: true })
-    })
+    await expect(
+      createOrder({ idempotencyKey: 'retry-this-order', fiatAmount: 50 }),
+    ).rejects.toThrow('Retry with --idempotency-key retry-this-order')
   })
 
-  describe('RSA signing', () => {
-    it('signs body + timestamp (not body alone)', async () => {
-      const mock = vi.fn().mockImplementation(() => {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ data: {} }),
-        })
-      })
-      vi.stubGlobal('fetch', mock)
+  it('validates merchant identity and idempotency keys before fetch', async () => {
+    delete process.env.BINANCE_CONNECT_MERCHANT_CODE
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
 
-      await getTradingPairs()
+    await expect(createOrder({ fiatAmount: 50 })).rejects.toThrow(
+      'requires --merchant-code or BINANCE_CONNECT_MERCHANT_CODE',
+    )
+    await expect(
+      createOrder({ idempotencyKey: 'x'.repeat(129), merchantCode: 'merchant', fiatAmount: 50 }),
+    ).rejects.toThrow('must be at most 128 characters')
+    await expect(
+      createOrder({ idempotencyKey: '   ', merchantCode: 'merchant', fiatAmount: 50 }),
+    ).rejects.toThrow('must not be blank')
+    expect(mock).not.toHaveBeenCalled()
+  })
 
-      const headers = mock.mock.calls[0][1].headers
-      // Signature and timestamp must both exist
-      expect(headers['X-Tesla-Signature']).toBeTruthy()
-      expect(headers['X-Tesla-Timestamp']).toBeTruthy()
+  it('looks up only platform-issued order IDs through the broker', async () => {
+    const externalOrderId = 'pc0123456789abcdef0123456789abcdef'
+    const mock = mockFetch({
+      ok: true,
+      externalOrderId,
+      data: { status: 'completed', cryptoAmount: '49.85' },
+    })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(queryOrder(externalOrderId)).resolves.toEqual({
+      status: 'completed',
+      cryptoAmount: '49.85',
+      externalOrderId,
     })
 
-    it('produces different signatures for different bodies', async () => {
-      const signatures: string[] = []
-      const mock = vi
-        .fn()
-        .mockImplementation((_url: string, options: { headers: Record<string, string> }) => {
-          signatures.push(options.headers['X-Tesla-Signature'])
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ data: {} }),
-          })
-        })
-      vi.stubGlobal('fetch', mock)
+    const { url, body } = parsedRequest(mock)
+    expect(url).toBe(`${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/orders/lookup`)
+    expect(body).toEqual({ externalOrderId })
+  })
 
-      await getQuote({
-        fiatCurrency: 'USD',
-        requestedAmount: 50,
-        amountType: 1,
-        payMethodCode: 'BUY_CARD',
-      })
-      await getQuote({
-        fiatCurrency: 'EUR',
-        requestedAmount: 100,
-        amountType: 1,
-        payMethodCode: 'BUY_CARD',
-      })
+  it('surfaces sanitized broker failures without making a fallback provider request', async () => {
+    const mock = mockFetch(
+      { ok: false, code: 'BINANCE_CONNECT_UPSTREAM_ERROR', error: 'Binance Connect is unavailable' },
+      502,
+    )
+    vi.stubGlobal('fetch', mock)
 
-      expect(signatures).toHaveLength(2)
-      expect(signatures[0]).not.toBe(signatures[1])
-    })
+    await expect(getTradingPairs()).rejects.toThrow('Binance Connect is unavailable')
+    expect(mock).toHaveBeenCalledOnce()
   })
 })

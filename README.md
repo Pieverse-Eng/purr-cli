@@ -42,7 +42,7 @@ purr <group> <command> [options]
 |-------|-------------|
 | `aster` | Aster DEX API signing and on-chain deposits |
 | `bitget` | Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing |
-| `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status |
+| `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status through the instance-scoped platform broker |
 | `fourmeme` | four.meme BSC login, raised tokens, buy/sell, tax, agent, and token creation flows |
 | `opensea` | OpenSea buy and sell execution helpers |
 | `osero` | Osero USDS/sUSDS balances, yield reads, previews, plans, and execution |
@@ -96,7 +96,7 @@ purr bitget x402-pay --url <paid-resource-url> --method POST --data <json-body>
 purr binance-onchain-pay payment-method-list --fiat <fiat-symbol> --crypto <crypto-symbol> --total-amount <amount> --amount-type <1|2> --network <network>
 purr binance-onchain-pay p2p-trading-pairs --fiat <fiat-symbol>
 purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --pay-method-code <pay-method-code>
-purr binance-onchain-pay pre-order --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --network <network> --address <wallet-address> --pay-method-code <pay-method-code>
+purr binance-onchain-pay pre-order --idempotency-key <retry-key> --merchant-code <code> --merchant-name <name> --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --network <network> --address <wallet-address> --pay-method-code <pay-method-code>
 purr opensea buy --wallet <wallet-address> --fulfillment-file <path-to-fulfillment-json>
 purr lista list-vaults --zone <zone>
 purr osero balances --chain base

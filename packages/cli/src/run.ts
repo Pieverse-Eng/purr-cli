@@ -1176,11 +1176,18 @@ Examples:
           })
           break
         case 'pre-order':
+          if (args['external-order-id'] !== undefined || args.ts !== undefined) {
+            throw new Error(
+              'Pre-order externalOrderId and timestamp are platform-managed; use --idempotency-key for safe retries',
+            )
+          }
+          if (args['merchant-code'] !== undefined || args['merchant-name'] !== undefined) {
+            throw new Error(
+              'Pre-order merchant identity is derived from the platform Binance account; remove --merchant-code and --merchant-name',
+            )
+          }
           result = await createOrder({
-            externalOrderId: args['external-order-id'],
-            merchantCode: args['merchant-code'],
-            merchantName: args['merchant-name'],
-            ts: parseIntegerArg(args.ts, 'ts'),
+            idempotencyKey: args['idempotency-key'],
             fiatCurrency: args.fiat,
             fiatAmount: parseNumberArg(args['fiat-amount'], 'fiat-amount'),
             cryptoCurrency: args.crypto,

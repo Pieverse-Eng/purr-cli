@@ -1,147 +1,76 @@
 /**
  * Binance Onchain Pay fiat on/off-ramp client for purr CLI.
  *
- * RSA-signed HTTP client for Binance Onchain Pay API endpoints.
- *
- * Auth headers (from Binance docs):
- *   X-Tesla-ClientId       — partner client ID
- *   X-Tesla-SignAccessToken — access token
- *   X-Tesla-Timestamp      — ms timestamp
- *   X-Tesla-Signature      — SHA256withRSA(body + timestamp, privateKey)
+ * All provider authentication and RSA signing lives in the platform Binance
+ * Connect broker. The CLI authenticates with its existing per-instance
+ * platform credentials and never reads reusable Binance credentials.
  *
  * Env vars:
- *   BINANCE_CONNECT_CLIENT_ID       — X-Tesla-ClientId
- *   BINANCE_CONNECT_ACCESS_TOKEN    — X-Tesla-SignAccessToken
- *   BINANCE_CONNECT_PRIVATE_KEY     — RSA private key (PEM)
- *   BINANCE_CONNECT_BASE_URL        — API base URL (provided by Binance team)
- *   BINANCE_CONNECT_MERCHANT_CODE   — optional default pre-order merchantCode
- *   BINANCE_CONNECT_MERCHANT_NAME   — optional default pre-order merchantName
- *   INSTANCE_ID                     — optional externalOrderId namespace for webhook routing
+ *   WALLET_API_URL                  — platform API base URL
+ *   WALLET_API_TOKEN                — per-instance platform bearer token
+ *   INSTANCE_ID                     — hosted instance ID
  */
 
-import { createSign, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
-function getConfig() {
-  const clientId = process.env.BINANCE_CONNECT_CLIENT_ID
-  const accessToken = process.env.BINANCE_CONNECT_ACCESS_TOKEN
-  const privateKey = process.env.BINANCE_CONNECT_PRIVATE_KEY
-  const baseUrl = process.env.BINANCE_CONNECT_BASE_URL
-
-  if (!clientId || !accessToken || !privateKey || !baseUrl) {
-    const missing = [
-      !clientId && 'BINANCE_CONNECT_CLIENT_ID',
-      !accessToken && 'BINANCE_CONNECT_ACCESS_TOKEN',
-      !privateKey && 'BINANCE_CONNECT_PRIVATE_KEY',
-      !baseUrl && 'BINANCE_CONNECT_BASE_URL',
-    ].filter(Boolean)
-    throw new Error(
-      `Missing env vars: ${missing.join(', ')}. ` +
-        'These are provided during Binance Onchain Pay partner onboarding.',
-    )
-  }
-
-  return { clientId, accessToken, privateKey, baseUrl: baseUrl.replace(/\/+$/, '') }
-}
-
-// ---------------------------------------------------------------------------
-// RSA signing
-// ---------------------------------------------------------------------------
-
-/**
- * Sign with SHA256withRSA.
- *
- * Per Binance docs, the signed payload is: jsonBody + timestamp (concatenated).
- * The private key signs this string, result is base64-encoded.
- */
-function signPayload(body: string, timestamp: string, privateKeyPem: string): string {
-  const signer = createSign('SHA256')
-  signer.update(body + timestamp)
-  return signer.sign(privateKeyPem, 'base64')
-}
-
-// ---------------------------------------------------------------------------
-// HTTP client
-// ---------------------------------------------------------------------------
-
-interface ApiResponse {
-  success?: boolean
+interface BrokerResponse<T = unknown> {
+  ok: boolean
+  data?: T
+  error?: string
   code?: string
-  data?: unknown
-  message?: string
+}
+
+interface OrderBrokerResponse<T = unknown> extends BrokerResponse<T> {
+  externalOrderId?: string
+  idempotent?: boolean
 }
 
 type AmountType = 1 | 2
 
-function hasRequestBody(
-  body: Record<string, unknown> | undefined,
-): body is Record<string, unknown> {
-  return body != null && Object.keys(body).length > 0
+function brokerPath(suffix: string): string {
+  const { instanceId } = resolveCredentials()
+  return `/v1/instances/${instanceId}/binance-connect${suffix}`
 }
 
-async function request(path: string, body?: Record<string, unknown>): Promise<unknown> {
-  const { clientId, accessToken, privateKey, baseUrl } = getConfig()
-  const timestamp = String(Date.now())
-  const withBody = hasRequestBody(body)
-  const bodyStr = withBody ? JSON.stringify(body) : ''
-  const signature = signPayload(bodyStr, timestamp, privateKey)
+function unwrapBrokerResponse<T>(response: BrokerResponse<T>, operation: string): T {
+  if (!response.ok) {
+    throw new Error(response.error ?? `Binance Connect ${operation} failed`)
+  }
+  return response.data as T
+}
 
-  const res = await fetch(`${baseUrl}${path}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Tesla-ClientId': clientId,
-      'X-Tesla-SignAccessToken': accessToken,
-      'X-Tesla-Timestamp': timestamp,
-      'X-Tesla-Signature': signature,
-      'User-Agent': 'onchain-pay-open-api/0.1.2 (Skill)',
-    },
-    ...(withBody ? { body: bodyStr } : {}),
+async function request<T = unknown>(
+  suffix: string,
+  body: Record<string, unknown> = {},
+): Promise<T> {
+  const response = await apiPost<BrokerResponse<T>>(brokerPath(suffix), body, {
+    timeoutMs: 15_000,
   })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Binance Onchain Pay HTTP ${res.status}: ${text.slice(0, 500)}`)
-  }
-
-  const json = (await res.json()) as ApiResponse
-  if (json.code && json.code !== '000000') {
-    throw new Error(
-      `Binance Onchain Pay error ${json.code}: ${json.message ?? JSON.stringify(json)}`,
-    )
-  }
-
-  return json.data ?? json
+  return unwrapBrokerResponse(response, suffix)
 }
 
-// ---------------------------------------------------------------------------
-// Endpoints
-// ---------------------------------------------------------------------------
-
-const BASE = '/papi/v1/ramp/connect'
-const BUY = `${BASE}/buy`
-const BUY_V2 = '/papi/v2/ramp/connect/buy'
-
-function appendExternalOrderId(result: unknown, externalOrderId: string): unknown {
+function appendOrderMetadata(
+  result: unknown,
+  externalOrderId: string,
+  metadata: { idempotencyKey?: string; idempotent?: boolean } = {},
+): unknown {
   if (result && typeof result === 'object' && !Array.isArray(result)) {
-    return { ...result, externalOrderId }
+    return { ...result, externalOrderId, ...metadata }
   }
-  return { externalOrderId, data: result }
+  return { externalOrderId, data: result, ...metadata }
 }
 
 export async function getTradingPairs(): Promise<unknown> {
-  return request(`${BUY}/trading-pairs`)
+  return request('/trading-pairs')
 }
 
 export async function getNetworks(): Promise<unknown> {
-  return request(`${BASE}/crypto-network`)
+  return request('/crypto-networks')
 }
 
 export async function getP2PTradingPairs(args: { fiatCurrency?: string } = {}): Promise<unknown> {
-  return request(`${BUY}/p2p/trading-pairs`, {
+  return request('/p2p-trading-pairs', {
     ...(args.fiatCurrency != null && { fiatCurrency: args.fiatCurrency }),
   })
 }
@@ -166,7 +95,7 @@ export async function getPaymentMethods(
     args.contractAddress != null
 
   if (!scopedRequest) {
-    return request(`${BUY_V2}/payment-method-list`, {
+    return request('/payment-methods', {
       ...(args.lang != null && { lang: args.lang }),
     })
   }
@@ -182,7 +111,7 @@ export async function getPaymentMethods(
     )
   }
 
-  return request(`${BUY}/payment-method-list`, {
+  return request('/payment-methods/eligible', {
     fiatCurrency: args.fiatCurrency,
     cryptoCurrency: args.cryptoCurrency,
     totalAmount: args.totalAmount,
@@ -206,7 +135,7 @@ export async function getQuote(args: {
     throw new Error('Estimated quote requires --amount-type')
   }
 
-  return request(`${BUY}/estimated-quote`, {
+  return request('/quote', {
     fiatCurrency: args.fiatCurrency,
     requestedAmount: args.requestedAmount,
     payMethodCode: args.payMethodCode,
@@ -219,10 +148,7 @@ export async function getQuote(args: {
 }
 
 export async function createOrder(args: {
-  externalOrderId?: string
-  merchantCode?: string
-  merchantName?: string
-  ts?: number
+  idempotencyKey?: string
   fiatCurrency?: string
   fiatAmount?: number
   cryptoCurrency?: string
@@ -244,53 +170,74 @@ export async function createOrder(args: {
   affiliateCode?: string
   gtrTemplateCode?: string
 }): Promise<unknown> {
-  const instanceId = process.env.INSTANCE_ID ?? 'unknown'
-  const externalOrderId =
-    args.externalOrderId ??
-    `oc_${instanceId}_${Date.now()}_${randomUUID().slice(0, 8).replace(/-/g, '')}`
-  const merchantCode = args.merchantCode ?? process.env.BINANCE_CONNECT_MERCHANT_CODE
-  const merchantName = args.merchantName ?? process.env.BINANCE_CONNECT_MERCHANT_NAME
+  const idempotencyKey =
+    args.idempotencyKey === undefined ? randomUUID() : args.idempotencyKey.trim()
+  if (!idempotencyKey) {
+    throw new Error('Pre-order --idempotency-key must not be blank')
+  }
+  if (idempotencyKey.length > 128) {
+    throw new Error('Pre-order --idempotency-key must be at most 128 characters')
+  }
 
-  if (!merchantCode) {
-    throw new Error('Pre-order requires --merchant-code or BINANCE_CONNECT_MERCHANT_CODE')
-  }
-  if (!merchantName) {
-    throw new Error('Pre-order requires --merchant-name or BINANCE_CONNECT_MERCHANT_NAME')
-  }
   if (args.fiatAmount == null && (args.requestedAmount == null || args.amountType == null)) {
     throw new Error('Pre-order requires --fiat-amount or both --requested-amount and --amount-type')
   }
 
-  const result = await request(`${BUY}/pre-order`, {
-    externalOrderId,
-    ts: args.ts ?? Date.now(),
-    ...(merchantCode != null && { merchantCode }),
-    ...(merchantName != null && { merchantName }),
-    ...(args.fiatCurrency != null && { fiatCurrency: args.fiatCurrency }),
-    ...(args.fiatAmount != null && { fiatAmount: args.fiatAmount }),
-    ...(args.cryptoCurrency != null && { cryptoCurrency: args.cryptoCurrency }),
-    ...(args.requestedAmount != null && { requestedAmount: args.requestedAmount }),
-    ...(args.amountType != null && { amountType: args.amountType }),
-    ...(args.address != null && { address: args.address }),
-    ...(args.network != null && { network: args.network }),
-    ...(args.payMethodCode != null && { payMethodCode: args.payMethodCode }),
-    ...(args.payMethodSubCode != null && { payMethodSubCode: args.payMethodSubCode }),
-    ...(args.redirectUrl != null && { redirectUrl: args.redirectUrl }),
-    ...(args.failRedirectUrl != null && { failRedirectUrl: args.failRedirectUrl }),
-    ...(args.redirectDeepLink != null && { redirectDeepLink: args.redirectDeepLink }),
-    ...(args.failRedirectDeepLink != null && { failRedirectDeepLink: args.failRedirectDeepLink }),
-    ...(args.contractAddress != null && { contractAddress: args.contractAddress }),
-    ...(args.customization != null && { customization: args.customization }),
-    ...(args.destContractAddress != null && { destContractAddress: args.destContractAddress }),
-    ...(args.destContractABI != null && { destContractABI: args.destContractABI }),
-    ...(args.destContractParams != null && { destContractParams: args.destContractParams }),
-    ...(args.affiliateCode != null && { affiliateCode: args.affiliateCode }),
-    ...(args.gtrTemplateCode != null && { gtrTemplateCode: args.gtrTemplateCode }),
-  })
-
-  return appendExternalOrderId(result, externalOrderId)
+  try {
+    const response = await apiPost<OrderBrokerResponse>(
+      brokerPath('/pre-orders'),
+      {
+        ...(args.fiatCurrency != null && { fiatCurrency: args.fiatCurrency }),
+        ...(args.fiatAmount != null && { fiatAmount: args.fiatAmount }),
+        ...(args.cryptoCurrency != null && { cryptoCurrency: args.cryptoCurrency }),
+        ...(args.requestedAmount != null && { requestedAmount: args.requestedAmount }),
+        ...(args.amountType != null && { amountType: args.amountType }),
+        ...(args.address != null && { address: args.address }),
+        ...(args.network != null && { network: args.network }),
+        ...(args.payMethodCode != null && { payMethodCode: args.payMethodCode }),
+        ...(args.payMethodSubCode != null && { payMethodSubCode: args.payMethodSubCode }),
+        ...(args.redirectUrl != null && { redirectUrl: args.redirectUrl }),
+        ...(args.failRedirectUrl != null && { failRedirectUrl: args.failRedirectUrl }),
+        ...(args.redirectDeepLink != null && { redirectDeepLink: args.redirectDeepLink }),
+        ...(args.failRedirectDeepLink != null && {
+          failRedirectDeepLink: args.failRedirectDeepLink,
+        }),
+        ...(args.contractAddress != null && { contractAddress: args.contractAddress }),
+        ...(args.customization != null && { customization: args.customization }),
+        ...(args.destContractAddress != null && { destContractAddress: args.destContractAddress }),
+        ...(args.destContractABI != null && { destContractABI: args.destContractABI }),
+        ...(args.destContractParams != null && { destContractParams: args.destContractParams }),
+        ...(args.affiliateCode != null && { affiliateCode: args.affiliateCode }),
+        ...(args.gtrTemplateCode != null && { gtrTemplateCode: args.gtrTemplateCode }),
+      },
+      {
+        headers: { 'Idempotency-Key': idempotencyKey },
+        timeoutMs: 15_000,
+      },
+    )
+    if (!response.ok || !response.externalOrderId) {
+      throw new Error(response.error ?? 'Binance Connect pre-order failed')
+    }
+    return appendOrderMetadata(response.data, response.externalOrderId, {
+      idempotencyKey,
+      idempotent: response.idempotent ?? false,
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`${message}. Retry with --idempotency-key ${idempotencyKey}`, {
+      cause: error,
+    })
+  }
 }
 
 export async function queryOrder(externalOrderId: string): Promise<unknown> {
-  return request(`${BASE}/order`, { externalOrderId })
+  const response = await apiPost<OrderBrokerResponse>(
+    brokerPath('/orders/lookup'),
+    { externalOrderId },
+    { timeoutMs: 15_000 },
+  )
+  if (!response.ok || !response.externalOrderId) {
+    throw new Error(response.error ?? 'Binance Connect order lookup failed')
+  }
+  return appendOrderMetadata(response.data, response.externalOrderId)
 }

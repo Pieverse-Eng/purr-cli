@@ -42,7 +42,7 @@ purr <group> <command> [options]
 |-------|-------------|
 | `aster` | Aster DEX API signing and on-chain deposits |
 | `bitget` | Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing |
-| `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status |
+| `binance-onchain-pay` | Binance Onchain Pay payment methods, quotes, networks, orders, and order status through the instance-scoped platform broker |
 | `fourmeme` | four.meme BSC login, raised tokens, buy/sell, tax, agent, and token creation flows |
 | `opensea` | OpenSea buy and sell execution helpers |
 | `osero` | Osero USDS/sUSDS balances, yield reads, previews, plans, and execution |

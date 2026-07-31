@@ -9,8 +9,6 @@
  *   WALLET_API_URL                  — platform API base URL
  *   WALLET_API_TOKEN                — per-instance platform bearer token
  *   INSTANCE_ID                     — hosted instance ID
- *   BINANCE_CONNECT_MERCHANT_CODE   — optional default pre-order merchantCode
- *   BINANCE_CONNECT_MERCHANT_NAME   — optional default pre-order merchantName
  */
 
 import { randomUUID } from 'node:crypto'
@@ -151,8 +149,6 @@ export async function getQuote(args: {
 
 export async function createOrder(args: {
   idempotencyKey?: string
-  merchantCode?: string
-  merchantName?: string
   fiatCurrency?: string
   fiatAmount?: number
   cryptoCurrency?: string
@@ -183,15 +179,6 @@ export async function createOrder(args: {
     throw new Error('Pre-order --idempotency-key must be at most 128 characters')
   }
 
-  const merchantCode = args.merchantCode ?? process.env.BINANCE_CONNECT_MERCHANT_CODE
-  const merchantName = args.merchantName ?? process.env.BINANCE_CONNECT_MERCHANT_NAME
-
-  if (!merchantCode) {
-    throw new Error('Pre-order requires --merchant-code or BINANCE_CONNECT_MERCHANT_CODE')
-  }
-  if (!merchantName) {
-    throw new Error('Pre-order requires --merchant-name or BINANCE_CONNECT_MERCHANT_NAME')
-  }
   if (args.fiatAmount == null && (args.requestedAmount == null || args.amountType == null)) {
     throw new Error('Pre-order requires --fiat-amount or both --requested-amount and --amount-type')
   }
@@ -200,8 +187,6 @@ export async function createOrder(args: {
     const response = await apiPost<OrderBrokerResponse>(
       brokerPath('/pre-orders'),
       {
-        merchantCode,
-        merchantName,
         ...(args.fiatCurrency != null && { fiatCurrency: args.fiatCurrency }),
         ...(args.fiatAmount != null && { fiatAmount: args.fiatAmount }),
         ...(args.cryptoCurrency != null && { cryptoCurrency: args.cryptoCurrency }),

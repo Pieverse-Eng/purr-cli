@@ -147,10 +147,6 @@ describe('Binance Onchain Pay CLI broker cutover', () => {
       'pre-order',
       '--idempotency-key',
       'checkout-123',
-      '--merchant-code',
-      'merchant-code',
-      '--merchant-name',
-      'Merchant Name',
       '--fiat-amount',
       '50',
       '--fiat',
@@ -170,8 +166,6 @@ describe('Binance Onchain Pay CLI broker cutover', () => {
         authorization: `Bearer ${API_TOKEN}`,
         idempotencyKey: 'checkout-123',
         body: {
-          merchantCode: 'merchant-code',
-          merchantName: 'Merchant Name',
           fiatCurrency: 'USD',
           fiatAmount: 50,
         },
@@ -185,10 +179,6 @@ describe('Binance Onchain Pay CLI broker cutover', () => {
       'pre-order',
       '--external-order-id',
       'legacy-order',
-      '--merchant-code',
-      'merchant-code',
-      '--merchant-name',
-      'Merchant Name',
       '--fiat-amount',
       '50',
     ])
@@ -196,6 +186,23 @@ describe('Binance Onchain Pay CLI broker cutover', () => {
     expect(result.code).toBe(1)
     expect(result.stderr).toContain(
       'externalOrderId and timestamp are platform-managed; use --idempotency-key',
+    )
+    expect(requestCount).toBe(0)
+  })
+
+  it('rejects legacy caller-controlled merchant identity before any request', async () => {
+    const result = await runPurr(port, [
+      'binance-onchain-pay',
+      'pre-order',
+      '--merchant-code',
+      'legacy-merchant',
+      '--fiat-amount',
+      '50',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain(
+      'merchant identity is derived from the platform Binance account',
     )
     expect(requestCount).toBe(0)
   })

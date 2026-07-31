@@ -27,16 +27,12 @@ describe('binance-onchain-pay platform broker client', () => {
     process.env.WALLET_API_URL = PLATFORM_URL
     process.env.WALLET_API_TOKEN = 'instance-token'
     process.env.INSTANCE_ID = INSTANCE_ID
-    process.env.BINANCE_CONNECT_MERCHANT_CODE = 'test-merchant-code'
-    process.env.BINANCE_CONNECT_MERCHANT_NAME = 'Test Merchant'
   })
 
   afterEach(() => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
-    delete process.env.BINANCE_CONNECT_MERCHANT_CODE
-    delete process.env.BINANCE_CONNECT_MERCHANT_NAME
     delete process.env.BINANCE_CONNECT_CLIENT_ID
     delete process.env.BINANCE_CONNECT_ACCESS_TOKEN
     delete process.env.BINANCE_CONNECT_PRIVATE_KEY
@@ -207,8 +203,8 @@ describe('binance-onchain-pay platform broker client', () => {
     expect(options.headers['Idempotency-Key']).toBe('checkout-123')
     expect(body).not.toHaveProperty('externalOrderId')
     expect(body).not.toHaveProperty('ts')
-    expect(body.merchantCode).toBe('test-merchant-code')
-    expect(body.merchantName).toBe('Test Merchant')
+    expect(body).not.toHaveProperty('merchantCode')
+    expect(body).not.toHaveProperty('merchantName')
   })
 
   it('generates and returns a retryable idempotency key when one is omitted', async () => {
@@ -243,19 +239,15 @@ describe('binance-onchain-pay platform broker client', () => {
     ).rejects.toThrow('Retry with --idempotency-key retry-this-order')
   })
 
-  it('validates merchant identity and idempotency keys before fetch', async () => {
-    delete process.env.BINANCE_CONNECT_MERCHANT_CODE
+  it('validates idempotency keys before fetch', async () => {
     const mock = mockFetch({ ok: true, data: {} })
     vi.stubGlobal('fetch', mock)
 
-    await expect(createOrder({ fiatAmount: 50 })).rejects.toThrow(
-      'requires --merchant-code or BINANCE_CONNECT_MERCHANT_CODE',
-    )
     await expect(
-      createOrder({ idempotencyKey: 'x'.repeat(129), merchantCode: 'merchant', fiatAmount: 50 }),
+      createOrder({ idempotencyKey: 'x'.repeat(129), fiatAmount: 50 }),
     ).rejects.toThrow('must be at most 128 characters')
     await expect(
-      createOrder({ idempotencyKey: '   ', merchantCode: 'merchant', fiatAmount: 50 }),
+      createOrder({ idempotencyKey: '   ', fiatAmount: 50 }),
     ).rejects.toThrow('must not be blank')
     expect(mock).not.toHaveBeenCalled()
   })

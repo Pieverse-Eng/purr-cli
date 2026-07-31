@@ -533,7 +533,7 @@ Examples:
   purr binance-onchain-pay payment-method-list --fiat USD --crypto USDT --total-amount 50 --amount-type 1 --network BSC
   purr binance-onchain-pay p2p-trading-pairs --fiat USD
   purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
-  purr binance-onchain-pay pre-order --merchant-code <code> --merchant-name <name> --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
+  purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -1181,10 +1181,13 @@ Examples:
               'Pre-order externalOrderId and timestamp are platform-managed; use --idempotency-key for safe retries',
             )
           }
+          if (args['merchant-code'] !== undefined || args['merchant-name'] !== undefined) {
+            throw new Error(
+              'Pre-order merchant identity is derived from the platform Binance account; remove --merchant-code and --merchant-name',
+            )
+          }
           result = await createOrder({
             idempotencyKey: args['idempotency-key'],
-            merchantCode: args['merchant-code'],
-            merchantName: args['merchant-name'],
             fiatCurrency: args.fiat,
             fiatAmount: parseNumberArg(args['fiat-amount'], 'fiat-amount'),
             cryptoCurrency: args.crypto,

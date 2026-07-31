@@ -59,9 +59,7 @@ describe('binance-onchain-pay platform broker client', () => {
     await expect(getTradingPairs()).resolves.toEqual({ fiatCurrencies: ['USD'] })
 
     const { url, options, body } = parsedRequest(mock)
-    expect(url).toBe(
-      `${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/trading-pairs`,
-    )
+    expect(url).toBe(`${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/trading-pairs`)
     expect(options.method).toBe('POST')
     expect(options.headers.Authorization).toBe('Bearer instance-token')
     expect(options.headers['Content-Type']).toBe('application/json')
@@ -113,9 +111,7 @@ describe('binance-onchain-pay platform broker client', () => {
     await expect(getPaymentMethods({ lang: 'en' })).resolves.toEqual({ methods: ['BUY_CARD'] })
 
     const { url, body } = parsedRequest(mock)
-    expect(url).toBe(
-      `${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/payment-methods`,
-    )
+    expect(url).toBe(`${PLATFORM_URL}/v1/instances/${INSTANCE_ID}/binance-connect/payment-methods`)
     expect(body).toEqual({ lang: 'en' })
   })
 
@@ -286,7 +282,11 @@ describe('binance-onchain-pay platform broker client', () => {
 
   it('surfaces sanitized broker failures without making a fallback provider request', async () => {
     const mock = mockFetch(
-      { ok: false, code: 'BINANCE_CONNECT_UPSTREAM_ERROR', error: 'Binance Connect is unavailable' },
+      {
+        ok: false,
+        code: 'BINANCE_CONNECT_UPSTREAM_ERROR',
+        error: 'Binance Connect is unavailable',
+      },
       502,
     )
     vi.stubGlobal('fetch', mock)

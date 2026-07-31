@@ -174,7 +174,8 @@ export async function createOrder(args: {
   affiliateCode?: string
   gtrTemplateCode?: string
 }): Promise<unknown> {
-  const idempotencyKey = args.idempotencyKey === undefined ? randomUUID() : args.idempotencyKey.trim()
+  const idempotencyKey =
+    args.idempotencyKey === undefined ? randomUUID() : args.idempotencyKey.trim()
   if (!idempotencyKey) {
     throw new Error('Pre-order --idempotency-key must not be blank')
   }
@@ -213,7 +214,9 @@ export async function createOrder(args: {
         ...(args.redirectUrl != null && { redirectUrl: args.redirectUrl }),
         ...(args.failRedirectUrl != null && { failRedirectUrl: args.failRedirectUrl }),
         ...(args.redirectDeepLink != null && { redirectDeepLink: args.redirectDeepLink }),
-        ...(args.failRedirectDeepLink != null && { failRedirectDeepLink: args.failRedirectDeepLink }),
+        ...(args.failRedirectDeepLink != null && {
+          failRedirectDeepLink: args.failRedirectDeepLink,
+        }),
         ...(args.contractAddress != null && { contractAddress: args.contractAddress }),
         ...(args.customization != null && { customization: args.customization }),
         ...(args.destContractAddress != null && { destContractAddress: args.destContractAddress }),

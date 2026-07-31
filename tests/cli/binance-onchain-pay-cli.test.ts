@@ -190,20 +190,23 @@ describe('Binance Onchain Pay CLI broker cutover', () => {
     expect(requestCount).toBe(0)
   })
 
-  it('rejects legacy caller-controlled merchant identity before any request', async () => {
-    const result = await runPurr(port, [
-      'binance-onchain-pay',
-      'pre-order',
-      '--merchant-code',
-      'legacy-merchant',
-      '--fiat-amount',
-      '50',
-    ])
+  it.each(['merchant-code', 'merchant-name'])(
+    'rejects legacy caller-controlled --%s before any request',
+    async (merchantFlag) => {
+      const result = await runPurr(port, [
+        'binance-onchain-pay',
+        'pre-order',
+        `--${merchantFlag}`,
+        'legacy-merchant',
+        '--fiat-amount',
+        '50',
+      ])
 
-    expect(result.code).toBe(1)
-    expect(result.stderr).toContain(
-      'merchant identity is derived from the platform Binance account',
-    )
-    expect(requestCount).toBe(0)
-  })
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain(
+        'merchant identity is derived from the platform Binance account',
+      )
+      expect(requestCount).toBe(0)
+    },
+  )
 })

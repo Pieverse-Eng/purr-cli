@@ -243,12 +243,12 @@ describe('binance-onchain-pay platform broker client', () => {
     const mock = mockFetch({ ok: true, data: {} })
     vi.stubGlobal('fetch', mock)
 
-    await expect(
-      createOrder({ idempotencyKey: 'x'.repeat(129), fiatAmount: 50 }),
-    ).rejects.toThrow('must be at most 128 characters')
-    await expect(
-      createOrder({ idempotencyKey: '   ', fiatAmount: 50 }),
-    ).rejects.toThrow('must not be blank')
+    await expect(createOrder({ idempotencyKey: 'x'.repeat(129), fiatAmount: 50 })).rejects.toThrow(
+      'must be at most 128 characters',
+    )
+    await expect(createOrder({ idempotencyKey: '   ', fiatAmount: 50 })).rejects.toThrow(
+      'must not be blank',
+    )
     expect(mock).not.toHaveBeenCalled()
   })
 

@@ -102,6 +102,7 @@ describe('dflow execution helpers', () => {
           )
           expect(parsed.searchParams.get('amount')).toBe('1000000')
           expect(parsed.searchParams.get('slippageBps')).toBe('auto')
+          expect(parsed.searchParams.get('dynamicComputeUnitLimit')).toBe('true')
           return jsonResponse({
             inAmount: '1000000',
             outAmount: '24000000',
@@ -136,6 +137,25 @@ describe('dflow execution helpers', () => {
       },
     })
     expect(calls.map((c) => c.url)).toHaveLength(2)
+  })
+
+  it('rejects explicit dynamic compute flags before resolving the wallet', async () => {
+    const fetchMock = vi.fn()
+    Object.defineProperty(globalThis, 'fetch', {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    })
+
+    await expect(
+      dflowOrder({
+        inputMint: 'input',
+        outputMint: 'output',
+        amount: '1',
+        paramsJson: JSON.stringify({ dynamicComputeUnitLimit: false }),
+      }),
+    ).rejects.toThrow(/dynamicComputeUnitLimit is not supported in --params-json/)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('rejects sponsor parameters before resolving the wallet', async () => {
@@ -173,6 +193,25 @@ describe('dflow execution helpers', () => {
         paramsJson: JSON.stringify({ userPublicKey: OTHER_SOLANA_ADDRESS }),
       }),
     ).rejects.toThrow(/userPublicKey is managed by purr/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects response-only DFlow order parameters before resolving the wallet', async () => {
+    const fetchMock = vi.fn()
+    Object.defineProperty(globalThis, 'fetch', {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    })
+
+    await expect(
+      dflowOrder({
+        inputMint: 'input',
+        outputMint: 'output',
+        amount: '1',
+        paramsJson: JSON.stringify({ computeUnitLimit: 400000 }),
+      }),
+    ).rejects.toThrow(/response field/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

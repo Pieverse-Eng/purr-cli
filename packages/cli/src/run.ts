@@ -365,6 +365,15 @@ function omitApiKeyPresence<T extends Record<string, unknown>>(value: T): Omit<T
   return safeValue as Omit<T, 'apiKeyPresent'>
 }
 
+function dflowOrderOutput<T extends Record<string, unknown>>(
+  value: T,
+  raw: boolean,
+): Omit<T, 'apiKeyPresent'> {
+  const safeValue: Record<string, unknown> = omitApiKeyPresence(value)
+  if (!raw) delete safeValue.order
+  return safeValue as Omit<T, 'apiKeyPresent'>
+}
+
 function owsBitgetSigner(
   ows: PluginRuntimeMap['ows'],
   args: Record<string, string>,
@@ -964,6 +973,7 @@ Examples:
             args['params-json'] !== undefined || args['params-file'] !== undefined
               ? requireArgOrFile(args, 'params-json', 'params-file')
               : undefined
+          const raw = parseBooleanFlag(args.raw)
           const result = await dflowOrder({
             inputMint: args['input-mint'],
             outputMint: args['output-mint'],
@@ -971,10 +981,10 @@ Examples:
             apiKey: args['api-key'],
             baseUrl: args['base-url'],
             paramsJson,
-            raw: parseBooleanFlag(args.raw),
+            raw,
           })
           if (parseBooleanFlag(args.execute) === true) {
-            const safeResult = omitApiKeyPresence(result)
+            const safeResult = dflowOrderOutput(result, raw)
             const executed = await dflowExecuteOrder({
               orderJson: JSON.stringify(result.order),
               rpcUrl: args['rpc-url'],
@@ -983,12 +993,12 @@ Examples:
               poll: parseBooleanFlag(args.poll),
               pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
               pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
-              raw: parseBooleanFlag(args.raw),
+              raw,
             })
             console.log(JSON.stringify({ ...safeResult, execution: executed }, null, 2))
             return
           }
-          console.log(JSON.stringify(omitApiKeyPresence(result), null, 2))
+          console.log(JSON.stringify(dflowOrderOutput(result, raw), null, 2))
           return
         }
         case 'execute-order': {

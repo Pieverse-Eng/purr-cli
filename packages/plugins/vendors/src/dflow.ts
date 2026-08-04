@@ -4,9 +4,25 @@ import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 const PROD_TRADE_API_BASE_URL = 'https://quote-api.dflow.net'
 const DEV_TRADE_API_BASE_URL = 'https://dev-quote-api.dflow.net'
 const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com'
+const DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM = 'dynamicComputeUnitLimit'
 
 const UNSUPPORTED_ORDER_PARAMS = new Set(['sponsor', 'sponsorExec', 'predictionMarketInitPayer'])
-const RESERVED_ORDER_PARAMS = new Set(['userPublicKey', 'inputMint', 'outputMint', 'amount'])
+const RESERVED_ORDER_PARAMS = new Set([
+  'userPublicKey',
+  'inputMint',
+  'outputMint',
+  'amount',
+])
+const RESPONSE_ONLY_ORDER_PARAM_MESSAGES = new Map([
+  [
+    DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM,
+    'DFlow order parameter dynamicComputeUnitLimit is not supported in --params-json; purr sends dynamicComputeUnitLimit=true automatically',
+  ],
+  [
+    'computeUnitLimit',
+    'DFlow order parameter computeUnitLimit is a response field, not a request parameter; purr already sends dynamicComputeUnitLimit=true',
+  ],
+])
 const TERMINAL_ORDER_STATES = new Set([
   'closed',
   'complete',
@@ -177,6 +193,10 @@ function assertNoUnsupportedOrderParams(params: JsonObject): void {
     if (RESERVED_ORDER_PARAMS.has(key)) {
       throw new Error(`DFlow order parameter ${key} is managed by purr and cannot be overridden`)
     }
+    const responseOnlyMessage = RESPONSE_ONLY_ORDER_PARAM_MESSAGES.get(key)
+    if (responseOnlyMessage) {
+      throw new Error(responseOnlyMessage)
+    }
     if (UNSUPPORTED_ORDER_PARAMS.has(key)) {
       throw new Error(
         `DFlow ${key} is out of scope because purr signing currently supports one signer only`,
@@ -304,6 +324,7 @@ export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
   params.set('inputMint', requireString(args.inputMint, 'input-mint'))
   params.set('outputMint', requireString(args.outputMint, 'output-mint'))
   params.set('amount', requireString(args.amount, 'amount'))
+  params.set(DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM, 'true')
   for (const [key, value] of Object.entries(extraParams)) {
     addParam(params, key, value)
   }

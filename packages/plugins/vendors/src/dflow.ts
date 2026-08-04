@@ -7,12 +7,7 @@ const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com'
 const DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM = 'dynamicComputeUnitLimit'
 
 const UNSUPPORTED_ORDER_PARAMS = new Set(['sponsor', 'sponsorExec', 'predictionMarketInitPayer'])
-const RESERVED_ORDER_PARAMS = new Set([
-  'userPublicKey',
-  'inputMint',
-  'outputMint',
-  'amount',
-])
+const RESERVED_ORDER_PARAMS = new Set(['userPublicKey', 'inputMint', 'outputMint', 'amount'])
 const RESPONSE_ONLY_ORDER_PARAM_MESSAGES = new Map([
   [
     DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM,

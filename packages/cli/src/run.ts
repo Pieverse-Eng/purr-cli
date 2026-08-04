@@ -973,7 +973,7 @@ Examples:
             args['params-json'] !== undefined || args['params-file'] !== undefined
               ? requireArgOrFile(args, 'params-json', 'params-file')
               : undefined
-          const raw = parseBooleanFlag(args.raw)
+          const raw = parseBooleanFlag(args.raw) === true
           const result = await dflowOrder({
             inputMint: args['input-mint'],
             outputMint: args['output-mint'],

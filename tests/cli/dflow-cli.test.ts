@@ -99,8 +99,8 @@ async function withDflowServer(
   const server = createServer(async (req, res) => {
     try {
       await handler(req, res)
-    } catch (err) {
-      writeJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) })
+    } catch {
+      writeJson(res, 500, { ok: false, error: 'Internal server error' })
     }
   })
   const port = await listen(server)

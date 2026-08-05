@@ -74,6 +74,7 @@ async function runPurr(port: number, args: string[]): Promise<CommandResult> {
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: API_TOKEN,
         INSTANCE_ID,
+        DFLOW_API_KEY: 'test-dflow-key',
         DFLOW_TRADE_API_BASE_URL: `http://127.0.0.1:${port}`,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -178,6 +179,39 @@ describe('DFlow CLI output', () => {
         expect(raw.stdout).toContain(SERIALIZED_TRANSACTION)
         const rawOutput = JSON.parse(raw.stdout) as { order?: Record<string, unknown> }
         expect(rawOutput.order?.transaction).toBe(SERIALIZED_TRANSACTION)
+      },
+    )
+  })
+
+  it('queries DFlow order status by transaction signature', async () => {
+    await withDflowServer(
+      async (req, res) => {
+        if (req.method === 'GET' && req.url?.startsWith('/order-status?')) {
+          const parsed = new URL(req.url, 'http://127.0.0.1')
+          assert.equal(parsed.searchParams.get('signature'), 'transaction-signature-1')
+          assert.equal(req.headers['x-api-key'], 'test-dflow-key')
+          writeJson(res, 200, { status: 'closed', signature: 'transaction-signature-1' })
+          return
+        }
+
+        writeJson(res, 404, { ok: false, error: 'not found' })
+      },
+      async (port) => {
+        const result = await runPurr(port, [
+          'dflow',
+          'status',
+          '--signature',
+          'transaction-signature-1',
+        ])
+
+        expect(result.code).toBe(0)
+        expect(result.stderr).toBe('')
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          type: 'dflow-status',
+          signature: 'transaction-signature-1',
+          terminal: true,
+          status: { status: 'closed' },
+        })
       },
     )
   })

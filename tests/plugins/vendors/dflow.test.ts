@@ -56,7 +56,7 @@ describe('dflow execution helpers', () => {
     process.env.WALLET_API_URL = 'https://platform.example.com'
     process.env.WALLET_API_TOKEN = 'test-token'
     process.env.INSTANCE_ID = 'test-instance'
-    delete process.env.DFLOW_API_KEY
+    process.env.DFLOW_API_KEY = 'test-dflow-key'
     delete process.env.DFLOW_TRADE_API_BASE_URL
     delete process.env.SOLANA_RPC_URL
   })
@@ -91,7 +91,7 @@ describe('dflow execution helpers', () => {
             data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
           })
         }
-        if (url.startsWith('https://dev-quote-api.dflow.net/order?')) {
+        if (url.startsWith('https://quote-api.dflow.net/order?')) {
           const parsed = new URL(url)
           expect(parsed.searchParams.get('userPublicKey')).toBe(SOLANA_ADDRESS)
           expect(parsed.searchParams.get('inputMint')).toBe(
@@ -127,8 +127,8 @@ describe('dflow execution helpers', () => {
     expect(result).toMatchObject({
       type: 'dflow-order',
       userPublicKey: SOLANA_ADDRESS,
-      apiBaseUrl: 'https://dev-quote-api.dflow.net',
-      apiKeyPresent: false,
+      apiBaseUrl: 'https://quote-api.dflow.net',
+      apiKeyPresent: true,
       summary: {
         inAmount: '1000000',
         outAmount: '24000000',
@@ -155,6 +155,21 @@ describe('dflow execution helpers', () => {
         paramsJson: JSON.stringify({ dynamicComputeUnitLimit: false }),
       }),
     ).rejects.toThrow(/dynamicComputeUnitLimit is not supported in --params-json/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('requires a DFlow API key before resolving the wallet', async () => {
+    delete process.env.DFLOW_API_KEY
+    const fetchMock = vi.fn()
+    Object.defineProperty(globalThis, 'fetch', {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    })
+
+    await expect(
+      dflowOrder({ inputMint: 'input', outputMint: 'output', amount: '1' }),
+    ).rejects.toThrow(/Missing required DFlow API key/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -247,6 +262,12 @@ describe('dflow execution helpers', () => {
             data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
           })
         }
+        if (url.startsWith('https://quote-api.dflow.net/order-status?')) {
+          const parsed = new URL(url)
+          expect(parsed.searchParams.get('signature')).toBe('5sig')
+          expect(init?.headers).toMatchObject({ 'x-api-key': 'test-dflow-key' })
+          return jsonResponse({ status: 'closed', signature: '5sig' })
+        }
         throw new Error(`unexpected fetch ${url}`)
       }),
       configurable: true,
@@ -260,6 +281,7 @@ describe('dflow execution helpers', () => {
         orderAddress: 'order-address-1',
       }),
       rpcUrl: 'https://rpc.example.com',
+      poll: true,
     })
 
     expect(sendSpy).toHaveBeenCalledTimes(1)
@@ -278,6 +300,11 @@ describe('dflow execution helpers', () => {
       recentBlockhash: RECENT_BLOCKHASH,
       lastValidBlockHeight: 999,
       orderAddress: 'order-address-1',
+      status: {
+        signature: '5sig',
+        terminal: true,
+        status: { status: 'closed' },
+      },
     })
   })
 
@@ -495,25 +522,63 @@ describe('dflow execution helpers', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('checks DFlow order status by orderAddress', async () => {
+  it('requires a DFlow API key before signing an async order that will be polled', async () => {
+    delete process.env.DFLOW_API_KEY
+    const fetchMock = vi.fn()
+    Object.defineProperty(globalThis, 'fetch', {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    })
+
+    await expect(
+      dflowExecuteOrder({
+        orderJson: JSON.stringify({
+          transaction: dflowTransactionBase64(),
+          lastValidBlockHeight: 999,
+          orderAddress: 'order-address-1',
+        }),
+        rpcUrl: 'https://rpc.example.com',
+        poll: true,
+      }),
+    ).rejects.toThrow(/Missing required DFlow API key/)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('checks DFlow order status by transaction signature', async () => {
     Object.defineProperty(globalThis, 'fetch', {
       value: vi.fn(async (input: RequestInfo | URL) => {
         const url = typeof input === 'string' ? input : input.toString()
         const parsed = new URL(url)
-        expect(parsed.origin).toBe('https://dev-quote-api.dflow.net')
+        expect(parsed.origin).toBe('https://quote-api.dflow.net')
         expect(parsed.pathname).toBe('/order-status')
-        expect(parsed.searchParams.get('orderAddress')).toBe('order-address-1')
-        return jsonResponse({ status: 'closed', orderAddress: 'order-address-1' })
+        expect(parsed.searchParams.get('signature')).toBe('transaction-signature-1')
+        return jsonResponse({ status: 'closed', signature: 'transaction-signature-1' })
       }),
       configurable: true,
       writable: true,
     })
 
-    await expect(dflowStatus({ orderAddress: 'order-address-1' })).resolves.toMatchObject({
+    await expect(dflowStatus({ signature: 'transaction-signature-1' })).resolves.toMatchObject({
       type: 'dflow-status',
-      orderAddress: 'order-address-1',
+      signature: 'transaction-signature-1',
       terminal: true,
       status: { status: 'closed' },
     })
+  })
+
+  it('requires a DFlow API key before checking order status', async () => {
+    delete process.env.DFLOW_API_KEY
+    const fetchMock = vi.fn()
+    Object.defineProperty(globalThis, 'fetch', {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    })
+
+    await expect(dflowStatus({ signature: 'transaction-signature-1' })).rejects.toThrow(
+      /Missing required DFlow API key/,
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

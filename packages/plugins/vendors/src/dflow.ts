@@ -2,7 +2,6 @@ import { Connection, VersionedTransaction } from '@solana/web3.js'
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 
 const PROD_TRADE_API_BASE_URL = 'https://quote-api.dflow.net'
-const DEV_TRADE_API_BASE_URL = 'https://dev-quote-api.dflow.net'
 const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com'
 const DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM = 'dynamicComputeUnitLimit'
 
@@ -53,7 +52,7 @@ export interface DflowExecuteOrderArgs {
 }
 
 export interface DflowStatusArgs {
-  orderAddress?: string
+  signature?: string
   apiKey?: string
   baseUrl?: string
   poll?: boolean
@@ -109,12 +108,20 @@ function getDflowApiKey(explicit?: string): string | undefined {
   return key && key.trim() !== '' ? key : undefined
 }
 
-function getDflowBaseUrl(args: { baseUrl?: string; apiKey?: string }): string {
+function requireDflowApiKey(explicit?: string): string {
+  const key = getDflowApiKey(explicit)
+  if (!key) {
+    throw new Error('Missing required DFlow API key: set DFLOW_API_KEY or pass --api-key')
+  }
+  return key
+}
+
+function getDflowBaseUrl(args: { baseUrl?: string }): string {
   if (args.baseUrl && args.baseUrl.trim() !== '') return args.baseUrl.replace(/\/$/, '')
   if (process.env.DFLOW_TRADE_API_BASE_URL) {
     return process.env.DFLOW_TRADE_API_BASE_URL.replace(/\/$/, '')
   }
-  return getDflowApiKey(args.apiKey) ? PROD_TRADE_API_BASE_URL : DEV_TRADE_API_BASE_URL
+  return PROD_TRADE_API_BASE_URL
 }
 
 function dflowHeaders(apiKey?: string): HeadersInit {
@@ -129,8 +136,8 @@ async function dflowGet(
   params: URLSearchParams,
   args: { apiKey?: string; baseUrl?: string },
 ): Promise<JsonObject> {
-  const apiKey = getDflowApiKey(args.apiKey)
-  const baseUrl = getDflowBaseUrl({ ...args, apiKey })
+  const apiKey = requireDflowApiKey(args.apiKey)
+  const baseUrl = getDflowBaseUrl(args)
   const query = params.toString()
   const res = await fetch(`${baseUrl}${path}${query ? `?${query}` : ''}`, {
     method: 'GET',
@@ -312,6 +319,7 @@ function sleep(ms: number): Promise<void> {
 export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
   const extraParams = args.paramsJson ? parseJsonObject(args.paramsJson, '--params-json') : {}
   assertNoUnsupportedOrderParams(extraParams)
+  requireDflowApiKey(args.apiKey)
   const userPublicKey = await resolvePlatformSolanaAddress()
 
   const params = new URLSearchParams()
@@ -345,7 +353,8 @@ export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
 }
 
 export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
-  const orderAddress = requireString(args.orderAddress, 'order-address')
+  const signature = requireString(args.signature, 'signature')
+  requireDflowApiKey(args.apiKey)
   const timeoutMs = args.timeoutMs ?? 120_000
   const intervalMs = args.intervalMs ?? 2_000
   validatePositiveInteger(timeoutMs, 'timeout-ms')
@@ -355,7 +364,7 @@ export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
 
   while (true) {
     const params = new URLSearchParams()
-    params.set('orderAddress', orderAddress)
+    params.set('signature', signature)
     const status = await dflowGet('/order-status', params, args)
     snapshots.push(status)
 
@@ -363,14 +372,14 @@ export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
       return args.raw
         ? {
             type: 'dflow-status',
-            orderAddress,
+            signature,
             terminal: isTerminalStatus(status),
             status,
             snapshots,
           }
         : {
             type: 'dflow-status',
-            orderAddress,
+            signature,
             terminal: isTerminalStatus(status),
             status,
           }
@@ -379,7 +388,7 @@ export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
     if (Date.now() - started >= timeoutMs) {
       return {
         type: 'dflow-status',
-        orderAddress,
+        signature,
         terminal: false,
         timedOut: true,
         status,
@@ -397,6 +406,8 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
     parseJsonObject(requireString(args.orderJson, 'order-json'), '--order-json'),
   )
   const { transaction, lastValidBlockHeight } = requireOrderTransaction(order)
+  const orderAddress = getOrderAddress(order)
+  if (args.poll && orderAddress) requireDflowApiKey(args.apiKey)
   const tx = parseDflowTransaction(transaction)
   const recentBlockhash = tx.message.recentBlockhash
   const rpcUrl = resolveSolanaRpcUrl(args.rpcUrl)
@@ -423,11 +434,10 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
     )
   }
 
-  const orderAddress = getOrderAddress(order)
   const status =
     args.poll && orderAddress
       ? await dflowStatus({
-          orderAddress,
+          signature,
           apiKey: args.apiKey,
           baseUrl: args.baseUrl,
           poll: true,

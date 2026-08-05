@@ -529,7 +529,7 @@ Examples:
   purr ows-wallet bitget-x402-pay --ows-wallet treasury --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
   purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --params-json '{"slippageBps":"auto"}'
   purr dflow execute-order --order-file /tmp/dflow-order.json
-  purr dflow status --order-address <addr> --poll true
+  purr dflow status --signature <transaction-signature> --poll true
   purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
@@ -1018,7 +1018,7 @@ Examples:
         }
         case 'status': {
           const result = await dflowStatus({
-            orderAddress: args['order-address'],
+            signature: args.signature,
             apiKey: args['api-key'],
             baseUrl: args['base-url'],
             poll: parseBooleanFlag(args.poll),

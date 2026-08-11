@@ -1610,9 +1610,9 @@ Execution:
           const allowedArgsByCommand: Record<string, readonly string[]> = {
             contracts: ['chain-id'],
             positions: ['chain-id'],
-            stake: ['amount-wei', 'duration', 'chain-id', 'execute', 'dedup-key'],
-            withdraw: ['stake-id', 'chain-id', 'execute', 'dedup-key'],
-            'withdraw-batch': ['stake-ids', 'chain-id', 'execute', 'dedup-key'],
+            stake: ['amount-wei', 'duration', 'chain-id', 'execute'],
+            withdraw: ['stake-id', 'chain-id', 'execute'],
+            'withdraw-batch': ['stake-ids', 'chain-id', 'execute'],
           }
           const allowedArgs = allowedArgsByCommand[stakingCommand]
           if (allowedArgs) {

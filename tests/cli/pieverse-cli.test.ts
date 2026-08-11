@@ -227,6 +227,26 @@ describe('Pieverse CLI routing', () => {
     }
   })
 
+  it('does not expose dedup keys for Pieverse staking writes', async () => {
+    const result = await runPurr([
+      'pieverse',
+      'staking',
+      'withdraw',
+      '--stake-id',
+      '0',
+      '--chain-id',
+      '97',
+      '--dedup-key',
+      'user-supplied-key',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain(
+      'Unsupported argument for purr pieverse staking withdraw: --dedup-key',
+    )
+  })
+
   it('executes Pieverse staking steps through the configured agent wallet', async () => {
     let executeBody: Record<string, unknown> | undefined
     let executePath: string | undefined
@@ -274,8 +294,6 @@ describe('Pieverse CLI routing', () => {
           '10m',
           '--chain-id',
           '97',
-          '--dedup-key',
-          'pieverse-stake-test',
           '--execute',
         ],
         {
@@ -290,7 +308,7 @@ describe('Pieverse CLI routing', () => {
       expect(JSON.parse(result.stdout)).toMatchObject({ chainId: 97, chainType: 'ethereum' })
       expect(executePath).toBe('/v1/instances/inst-pieverse-staking-test/wallet/execute')
       expect(authorization).toBe('Bearer test-token')
-      expect(executeBody?.dedupKey).toBe('pieverse-stake-test')
+      expect(executeBody).not.toHaveProperty('dedupKey')
       const steps = executeBody?.steps as Array<Record<string, unknown>>
       expect(steps).toHaveLength(2)
       expect(steps.map((step) => step.chainId)).toEqual([97, 97])

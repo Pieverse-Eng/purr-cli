@@ -13,6 +13,12 @@ export interface ExecuteResult {
   chainType: string
 }
 
+interface ExecuteResponseEnvelope {
+  ok: boolean
+  data?: ExecuteResult
+  error?: string
+}
+
 /**
  * Execute steps from a file path. Reads the JSON file, validates it
  * contains a steps array, and POSTs to the wallet execute endpoint.
@@ -59,5 +65,18 @@ export async function executeStepsFromJson(
   }
 
   const { instanceId } = resolveCredentials()
-  return apiPost(`/v1/instances/${instanceId}/wallet/execute`, body) as Promise<ExecuteResult>
+  const response = await apiPost<ExecuteResponseEnvelope>(
+    `/v1/instances/${instanceId}/wallet/execute`,
+    body,
+  )
+  if (typeof response.ok !== 'boolean') {
+    throw new Error('Invalid wallet execution response')
+  }
+  if (!response.ok) {
+    throw new Error(response.error ?? 'Wallet execution failed')
+  }
+  if (!response.data) {
+    throw new Error('Wallet execution response is missing data')
+  }
+  return response.data
 }

@@ -272,15 +272,18 @@ describe('Kaia CLI dry-run', () => {
             assert.equal(step.chainId, 8217)
           }
           writeJson(res, 200, {
-            results: (body.steps as Array<JsonObject>).map((step, index) => ({
-              stepIndex: index,
-              label: step.label,
-              hash: `0x${String(index + 1).padStart(64, '0')}`,
-              status: 'success',
-            })),
-            from: EVM_ADDRESS,
-            chainId: 8217,
-            chainType: 'ethereum',
+            ok: true,
+            data: {
+              results: (body.steps as Array<JsonObject>).map((step, index) => ({
+                stepIndex: index,
+                label: step.label,
+                hash: `0x${String(index + 1).padStart(64, '0')}`,
+                status: 'success',
+              })),
+              from: EVM_ADDRESS,
+              chainId: 8217,
+              chainType: 'ethereum',
+            },
           })
           return
         }

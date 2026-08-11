@@ -262,23 +262,26 @@ describe('Pieverse CLI routing', () => {
       response.writeHead(200, { 'content-type': 'application/json' })
       response.end(
         JSON.stringify({
-          results: [
-            {
-              stepIndex: 0,
-              label: 'Approve BURR for Pieverse staking',
-              hash: '',
-              status: 'skipped',
-            },
-            {
-              stepIndex: 1,
-              label: 'Stake BURR for 600 seconds',
-              hash: `0x${'1'.repeat(64)}`,
-              status: 'success',
-            },
-          ],
-          from: '0x1111111111111111111111111111111111111111',
-          chainId: 97,
-          chainType: 'ethereum',
+          ok: true,
+          data: {
+            results: [
+              {
+                stepIndex: 0,
+                label: 'Approve BURR for Pieverse staking',
+                hash: '',
+                status: 'skipped',
+              },
+              {
+                stepIndex: 1,
+                label: 'Stake BURR for 600 seconds',
+                hash: `0x${'1'.repeat(64)}`,
+                status: 'success',
+              },
+            ],
+            from: '0x1111111111111111111111111111111111111111',
+            chainId: 97,
+            chainType: 'ethereum',
+          },
         }),
       )
     })
@@ -307,7 +310,10 @@ describe('Pieverse CLI routing', () => {
 
       expect(result.code).toBe(0)
       expect(result.stderr).toBe('')
-      expect(JSON.parse(result.stdout)).toMatchObject({ chainId: 97, chainType: 'ethereum' })
+      const output = JSON.parse(result.stdout) as Record<string, unknown>
+      expect(output).toMatchObject({ chainId: 97, chainType: 'ethereum' })
+      expect(output).not.toHaveProperty('ok')
+      expect(output).not.toHaveProperty('data')
       expect(executePath).toBe('/v1/instances/inst-pieverse-staking-test/wallet/execute')
       expect(authorization).toBe('Bearer test-token')
       expect(executeBody).not.toHaveProperty('dedupKey')

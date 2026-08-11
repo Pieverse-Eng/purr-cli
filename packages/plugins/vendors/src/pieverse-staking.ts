@@ -3,7 +3,7 @@ import { createPublicClient, encodeFunctionData, http, parseAbi } from 'viem'
 import { buildApprovalStep, parseBigInt, requireAddress } from '@pieverseio/purr-core/shared'
 import type { StepOutput } from '@pieverseio/purr-core/types'
 
-const BURR_ABI = parseAbi(['function balanceOf(address account) view returns (uint256)'])
+const PIEVERSE_TOKEN_ABI = parseAbi(['function balanceOf(address account) view returns (uint256)'])
 
 const STAKING_ABI = parseAbi([
   'function stake(uint256 amount, uint256 duration) returns (uint256 stakeId)',
@@ -16,37 +16,48 @@ const STAKING_ABI = parseAbi([
 ])
 
 export interface PieverseStakingDeployment {
+  /** Public network ID accepted and returned by the CLI. */
   chainId: number
   chain: string
-  burr: `0x${string}`
+  /** Temporary network used to execute the current staging deployment. */
+  executionChainId: number
+  pieverse: `0x${string}`
   staking: `0x${string}`
   rpcUrl: string
   explorerUrl: string
-  durations: readonly number[]
+  durations: readonly string[]
 }
 
 const DEPLOYMENTS: Record<number, PieverseStakingDeployment> = {
-  11155111: {
-    chainId: 11155111,
-    chain: 'sepolia',
-    burr: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
+  1: {
+    chainId: 1,
+    chain: 'ethereum',
+    executionChainId: 11155111,
+    pieverse: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
     staking: '0x198658Ba2e01132fc16C05809704BA8873d0056a',
     rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
     explorerUrl: 'https://sepolia.etherscan.io',
-    durations: [300, 600, 900],
+    durations: ['90d', '180d', '365d'],
   },
-  97: {
-    chainId: 97,
-    chain: 'bsc-testnet',
-    burr: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
+  56: {
+    chainId: 56,
+    chain: 'bnb-chain',
+    executionChainId: 97,
+    pieverse: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
     staking: '0x366b3edF40456439aF125949Fa35dE337C506168',
     rpcUrl: 'https://bsc-testnet-rpc.publicnode.com',
     explorerUrl: 'https://testnet.bscscan.com',
-    durations: [300, 600, 900],
+    durations: ['90d', '180d', '365d'],
   },
 }
 
-const SUPPORTED_CHAIN_IDS = [11155111, 97] as const
+const SUPPORTED_CHAIN_IDS = [1, 56] as const
+
+const DURATION_MAPPINGS = [
+  { days: 90, publicSeconds: 7_776_000, executionSeconds: 300 },
+  { days: 180, publicSeconds: 15_552_000, executionSeconds: 600 },
+  { days: 365, publicSeconds: 31_536_000, executionSeconds: 900 },
+] as const
 
 const STATUS_NAMES = ['active', 'matured', 'closed'] as const
 
@@ -64,7 +75,7 @@ export interface PieverseStakePosition {
 export interface PieverseStakingPositions {
   chainId: number
   wallet: string
-  burrBalanceWei: string
+  pieverseBalanceWei: string
   paused: boolean
   stakes: PieverseStakePosition[]
 }
@@ -73,7 +84,7 @@ export function getPieverseStakingDeployment(chainId: number): PieverseStakingDe
   const deployment = DEPLOYMENTS[chainId]
   if (!deployment) {
     throw new Error(
-      `Pieverse staking is not configured for chain ID ${chainId}. Supported chain IDs: 11155111 (Sepolia), 97 (BSC Testnet)`,
+      `Pieverse staking is not configured for chain ID ${chainId}. Supported chain IDs: 1 (Ethereum), 56 (BNB Chain)`,
     )
   }
   return deployment
@@ -85,18 +96,16 @@ export function listPieverseStakingDeployments(): PieverseStakingDeployment[] {
 
 export function parsePieverseStakingDuration(value: string, chainId: number): number {
   const deployment = getPieverseStakingDeployment(chainId)
-  const aliases: Record<string, number> = {
-    '5m': 300,
-    '10m': 600,
-    '15m': 900,
-  }
-  const duration = aliases[value.toLowerCase()] ?? Number(value)
-  if (!Number.isSafeInteger(duration) || !deployment.durations.includes(duration)) {
+  const normalized = value.toLowerCase()
+  const mapping = DURATION_MAPPINGS.find(
+    ({ days, publicSeconds }) => normalized === `${days}d` || normalized === String(publicSeconds),
+  )
+  if (!mapping || !deployment.durations.includes(`${mapping.days}d`)) {
     throw new Error(
-      `Invalid staking duration: "${value}". Supported testnet durations: 5m, 10m, 15m (300, 600, 900 seconds)`,
+      `Invalid staking duration: "${value}". Supported durations: 90d, 180d, 365d`,
     )
   }
-  return duration
+  return mapping.executionSeconds
 }
 
 export function buildPieverseStakeSteps(args: {
@@ -107,14 +116,18 @@ export function buildPieverseStakeSteps(args: {
   const deployment = getPieverseStakingDeployment(args.chainId)
   const amount = parseBigInt(args.amountWei, 'amount-wei')
   const duration = parsePieverseStakingDuration(args.duration, args.chainId)
+  const durationDays = DURATION_MAPPINGS.find(
+    ({ executionSeconds }) => executionSeconds === duration,
+  )?.days
+  if (!durationDays) throw new Error(`No public duration configured for ${duration} seconds`)
   return {
     steps: [
       buildApprovalStep(
-        deployment.burr,
+        deployment.pieverse,
         deployment.staking,
         amount.toString(),
-        args.chainId,
-        'Approve BURR for Pieverse staking',
+        deployment.executionChainId,
+        'Approve PIEVERSE for Pieverse staking',
       ),
       {
         to: deployment.staking,
@@ -124,8 +137,8 @@ export function buildPieverseStakeSteps(args: {
           args: [amount, BigInt(duration)],
         }),
         value: '0x0',
-        chainId: args.chainId,
-        label: `Stake BURR for ${duration} seconds`,
+        chainId: deployment.executionChainId,
+        label: `Stake PIEVERSE for ${durationDays} days`,
       },
     ],
   }
@@ -144,7 +157,7 @@ export function buildPieverseWithdrawSteps(args: { chainId: number; stakeId: str
           args: [stakeId],
         }),
         value: '0x0',
-        chainId: args.chainId,
+        chainId: deployment.executionChainId,
         label: `Withdraw Pieverse stake ${stakeId}`,
       },
     ],
@@ -175,7 +188,7 @@ export function buildPieverseWithdrawBatchSteps(args: {
           args: [stakeIds],
         }),
         value: '0x0',
-        chainId: args.chainId,
+        chainId: deployment.executionChainId,
         label: `Withdraw Pieverse stakes ${stakeIds.join(', ')}`,
       },
     ],
@@ -189,10 +202,10 @@ export async function readPieverseStakingPositions(
   const deployment = getPieverseStakingDeployment(args.chainId)
   const wallet = requireAddress(args.wallet, 'wallet')
   const rpc = client ?? createStakingReadClient(deployment)
-  const [burrBalance, paused, stakeCount] = await Promise.all([
+  const [pieverseBalance, paused, stakeCount] = await Promise.all([
     rpc.readContract({
-      address: deployment.burr,
-      abi: BURR_ABI,
+      address: deployment.pieverse,
+      abi: PIEVERSE_TOKEN_ABI,
       functionName: 'balanceOf',
       args: [wallet],
     }),
@@ -251,7 +264,7 @@ export async function readPieverseStakingPositions(
   return {
     chainId: deployment.chainId,
     wallet,
-    burrBalanceWei: requireBigIntResult(burrBalance, 'BURR balance').toString(),
+    pieverseBalanceWei: requireBigIntResult(pieverseBalance, 'PIEVERSE balance').toString(),
     paused: requireBooleanResult(paused, 'paused'),
     stakes: positions.filter((position) => position !== undefined),
   }
@@ -259,9 +272,9 @@ export async function readPieverseStakingPositions(
 
 function createStakingReadClient(deployment: PieverseStakingDeployment): ContractReadClient {
   const rpcUrl =
-    process.env[`EVM_RPC_${deployment.chainId}`] ||
-    (deployment.chainId === 11155111 ? process.env.SEPOLIA_RPC_URL : undefined) ||
-    (deployment.chainId === 97 ? process.env.BSC_TESTNET_RPC_URL : undefined) ||
+    process.env[`EVM_RPC_${deployment.executionChainId}`] ||
+    (deployment.executionChainId === 11155111 ? process.env.SEPOLIA_RPC_URL : undefined) ||
+    (deployment.executionChainId === 97 ? process.env.BSC_TESTNET_RPC_URL : undefined) ||
     deployment.rpcUrl
   const publicClient = createPublicClient({ transport: http(rpcUrl) })
   return {

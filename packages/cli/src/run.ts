@@ -538,7 +538,7 @@ Groups:
   osero             Osero USDS/sUSDS routes through the platform TEE wallet
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
-  pieverse          Pieverse campaigns and testnet staking
+  pieverse          Pieverse campaigns and PIEVERSE staking
   pns               Pie Name Service and identity lookup helpers
   .pie              Resolve .pie identities and transfer to their wallets
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap)
@@ -611,10 +611,10 @@ Examples:
   purr pieverse purrfect-yap fund --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse purrfect-yap result --purchase-id 00000000-0000-0000-0000-000000000000 --wait
   purr pieverse staking contracts
-  purr pieverse staking positions --chain-id 11155111
-  purr pieverse staking stake --amount-wei 1000000000000000000 --duration 5m --chain-id 11155111 --execute
-  purr pieverse staking withdraw --stake-id 0 --chain-id 11155111 --execute
-  purr pieverse staking withdraw-batch --stake-ids 0,1 --chain-id 97 --execute
+  purr pieverse staking positions --chain-id 1
+  purr pieverse staking stake --amount-wei 1000000000000000000 --duration 90d --chain-id 1 --execute
+  purr pieverse staking withdraw --stake-id 0 --chain-id 1 --execute
+  purr pieverse staking withdraw-batch --stake-ids 0,1 --chain-id 56 --execute
   purr pns resolve alice
   purr pns by-account --channel telegram --account @alice
   purr pns accounts alice.pie
@@ -695,6 +695,7 @@ Examples:
   const args = parseArgs(rest)
   const executeFlag = args.execute === 'true'
   let output: StepOutput
+  let stakingDisplayChainId: number | undefined
 
   switch (group) {
     case 'instance': {
@@ -1588,18 +1589,18 @@ Examples:
             console.log(`Usage: purr pieverse staking <command> [options]
 
 Commands:
-  contracts       List configured testnet BURR and staking contracts
-  positions       Read the configured agent wallet's BURR balance and open stakes
-  stake           Approve BURR when needed, then create a fixed-term stake
+  contracts       List configured PIEVERSE token and staking contracts
+  positions       Read the configured agent wallet's PIEVERSE balance and open stakes
+  stake           Approve PIEVERSE when needed, then create a fixed-term stake
   withdraw        Withdraw one matured stake
   withdraw-batch  Atomically withdraw multiple matured stakes
 
 Supported chains:
-  11155111  Ethereum Sepolia
-  97        BSC Testnet
+  1   Ethereum
+  56  BNB Chain
 
-Testnet durations:
-  5m | 10m | 15m  (equivalent to 300 | 600 | 900 seconds)
+Staking durations:
+  90d | 180d | 365d
 
 Execution:
   Omit --execute to print portable steps JSON.
@@ -1628,9 +1629,9 @@ Execution:
             const deployments = stakingArgs['chain-id']
               ? [getPieverseStakingDeployment(parseChainId(stakingArgs['chain-id']))]
               : listPieverseStakingDeployments()
-            const result = deployments.map(({ chainId, burr, staking, durations }) => ({
+            const result = deployments.map(({ chainId, pieverse, staking, durations }) => ({
               chainId,
-              burr,
+              pieverse,
               staking,
               durations,
             }))
@@ -1639,10 +1640,11 @@ Execution:
           }
 
           const chainId = parseChainId(requireArg(stakingArgs, 'chain-id'))
+          const deployment = getPieverseStakingDeployment(chainId)
           if (stakingCommand === 'positions') {
             const agentWallet = await getWalletAddress({
               'chain-type': 'ethereum',
-              'chain-id': String(chainId),
+              'chain-id': String(deployment.executionChainId),
             })
             const result = await readPieverseStakingPositions({
               wallet: agentWallet.address,
@@ -1654,6 +1656,7 @@ Execution:
 
           switch (stakingCommand) {
             case 'stake':
+              stakingDisplayChainId = chainId
               output = buildPieverseStakeSteps({
                 amountWei: requireArg(stakingArgs, 'amount-wei'),
                 duration: requireArg(stakingArgs, 'duration'),
@@ -1661,12 +1664,14 @@ Execution:
               })
               break
             case 'withdraw':
+              stakingDisplayChainId = chainId
               output = buildPieverseWithdrawSteps({
                 stakeId: requireArg(stakingArgs, 'stake-id'),
                 chainId,
               })
               break
             case 'withdraw-batch':
+              stakingDisplayChainId = chainId
               output = buildPieverseWithdrawBatchSteps({
                 stakeIds: requireArg(stakingArgs, 'stake-ids'),
                 chainId,
@@ -2130,7 +2135,11 @@ Execution:
     }
     const json = JSON.stringify(output)
     const result = await executeStepsFromJson(json, args['dedup-key'])
-    console.log(JSON.stringify(result, null, 2))
+    const displayedResult =
+      stakingDisplayChainId === undefined
+        ? result
+        : { ...result, chainId: stakingDisplayChainId }
+    console.log(JSON.stringify(displayedResult, null, 2))
   } else {
     console.log(JSON.stringify(output))
   }

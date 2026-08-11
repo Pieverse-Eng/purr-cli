@@ -68,7 +68,7 @@ describe('Pieverse CLI routing', () => {
 
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('')
-    expect(result.stdout).toContain('pieverse          Pieverse campaigns and testnet staking')
+    expect(result.stdout).toContain('pieverse          Pieverse campaigns and PIEVERSE staking')
     expect(result.stdout).toContain(
       'pns               Pie Name Service and identity lookup helpers',
     )
@@ -127,14 +127,15 @@ describe('Pieverse CLI routing', () => {
     )
   })
 
-  it('lists both configured Pieverse staking testnets', async () => {
+  it('lists both configured Pieverse staking networks', async () => {
     const result = await runPurr(['pieverse', 'staking', 'contracts'])
 
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('')
     const contracts = JSON.parse(result.stdout) as Array<Record<string, unknown>>
-    expect(contracts.map((deployment) => deployment.chainId)).toEqual([11155111, 97])
-    expect(Object.keys(contracts[0])).toEqual(['chainId', 'burr', 'staking', 'durations'])
+    expect(contracts.map((deployment) => deployment.chainId)).toEqual([1, 56])
+    expect(Object.keys(contracts[0])).toEqual(['chainId', 'pieverse', 'staking', 'durations'])
+    expect(contracts[0]?.durations).toEqual(['90d', '180d', '365d'])
   })
 
   it('builds Pieverse staking steps from the nested command', async () => {
@@ -145,9 +146,9 @@ describe('Pieverse CLI routing', () => {
       '--amount-wei',
       '1000000000000000000',
       '--duration',
-      '5m',
+      '90d',
       '--chain-id',
-      '11155111',
+      '1',
     ])
 
     expect(result.code).toBe(0)
@@ -192,7 +193,7 @@ describe('Pieverse CLI routing', () => {
     const port = await listen(server)
 
     try {
-      const result = await runPurr(['pieverse', 'staking', 'positions', '--chain-id', '97'], {
+      const result = await runPurr(['pieverse', 'staking', 'positions', '--chain-id', '56'], {
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: 'test-token',
         INSTANCE_ID: 'inst-pieverse-staking-test',
@@ -202,9 +203,9 @@ describe('Pieverse CLI routing', () => {
       expect(result.code).toBe(0)
       expect(result.stderr).toBe('')
       expect(JSON.parse(result.stdout)).toMatchObject({
-        chainId: 97,
+        chainId: 56,
         wallet: agentWallet,
-        burrBalanceWei: '0',
+        pieverseBalanceWei: '0',
         paused: false,
         stakes: [],
       })
@@ -237,7 +238,7 @@ describe('Pieverse CLI routing', () => {
       '--stake-id',
       '0',
       '--chain-id',
-      '97',
+      '56',
       '--dedup-key',
       'user-supplied-key',
     ])
@@ -267,13 +268,13 @@ describe('Pieverse CLI routing', () => {
             results: [
               {
                 stepIndex: 0,
-                label: 'Approve BURR for Pieverse staking',
+                label: 'Approve PIEVERSE for Pieverse staking',
                 hash: '',
                 status: 'skipped',
               },
               {
                 stepIndex: 1,
-                label: 'Stake BURR for 600 seconds',
+                label: 'Stake PIEVERSE for 180 days',
                 hash: `0x${'1'.repeat(64)}`,
                 status: 'success',
               },
@@ -296,9 +297,9 @@ describe('Pieverse CLI routing', () => {
           '--amount-wei',
           '2500000000000000000',
           '--duration',
-          '10m',
+          '180d',
           '--chain-id',
-          '97',
+          '56',
           '--execute',
         ],
         {
@@ -311,7 +312,7 @@ describe('Pieverse CLI routing', () => {
       expect(result.code).toBe(0)
       expect(result.stderr).toBe('')
       const output = JSON.parse(result.stdout) as Record<string, unknown>
-      expect(output).toMatchObject({ chainId: 97, chainType: 'ethereum' })
+      expect(output).toMatchObject({ chainId: 56, chainType: 'ethereum' })
       expect(output).not.toHaveProperty('ok')
       expect(output).not.toHaveProperty('data')
       expect(executePath).toBe('/v1/instances/inst-pieverse-staking-test/wallet/execute')

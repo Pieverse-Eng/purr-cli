@@ -12,7 +12,9 @@ import {
   type ContractReadClient,
 } from '@pieverseio/purr-plugin-vendors/pieverse-staking'
 
-const BURR_ABI = parseAbi(['function approve(address spender, uint256 amount) returns (bool)'])
+const PIEVERSE_TOKEN_ABI = parseAbi([
+  'function approve(address spender, uint256 amount) returns (bool)',
+])
 
 const STAKING_ABI = parseAbi([
   'function stake(uint256 amount, uint256 duration) returns (uint256 stakeId)',
@@ -22,30 +24,30 @@ const STAKING_ABI = parseAbi([
 
 const WALLET = '0x1111111111111111111111111111111111111111'
 
-describe('Pieverse testnet staking', () => {
-  it('returns the configured Sepolia and BSC Testnet deployments', () => {
-    expect(listPieverseStakingDeployments().map((deployment) => deployment.chainId)).toEqual([
-      11155111, 97,
-    ])
-    expect(getPieverseStakingDeployment(11155111)).toMatchObject({
-      burr: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
+describe('Pieverse staking', () => {
+  it('returns the Ethereum and BNB Chain deployments with staging execution networks', () => {
+    expect(listPieverseStakingDeployments().map((deployment) => deployment.chainId)).toEqual([1, 56])
+    expect(getPieverseStakingDeployment(1)).toMatchObject({
+      executionChainId: 11155111,
+      pieverse: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
       staking: '0x198658Ba2e01132fc16C05809704BA8873d0056a',
     })
-    expect(getPieverseStakingDeployment(97)).toMatchObject({
-      burr: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
+    expect(getPieverseStakingDeployment(56)).toMatchObject({
+      executionChainId: 97,
+      pieverse: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
       staking: '0x366b3edF40456439aF125949Fa35dE337C506168',
     })
   })
 
   it('rejects unconfigured chains', () => {
-    expect(() => getPieverseStakingDeployment(1)).toThrow('not configured for chain ID 1')
+    expect(() => getPieverseStakingDeployment(97)).toThrow('not configured for chain ID 97')
   })
 
   it('builds a conditional approval followed by stake', () => {
     const output = buildPieverseStakeSteps({
-      chainId: 97,
+      chainId: 56,
       amountWei: '2500000000000000000',
-      duration: '10m',
+      duration: '180d',
     })
     expect(output.steps).toHaveLength(2)
     expect(output.steps[0]).toMatchObject({
@@ -59,7 +61,10 @@ describe('Pieverse testnet staking', () => {
       },
     })
     expect(
-      decodeFunctionData({ abi: BURR_ABI, data: output.steps[0].data as `0x${string}` })
+      decodeFunctionData({
+        abi: PIEVERSE_TOKEN_ABI,
+        data: output.steps[0].data as `0x${string}`,
+      })
         .functionName,
     ).toBe('approve')
     expect(output.steps[1]).toMatchObject({
@@ -75,25 +80,25 @@ describe('Pieverse testnet staking', () => {
     })
   })
 
-  it('accepts only the shortened testnet durations', () => {
-    expect(parsePieverseStakingDuration('5m', 11155111)).toBe(300)
-    expect(parsePieverseStakingDuration('600', 97)).toBe(600)
-    expect(() => parsePieverseStakingDuration('90d', 11155111)).toThrow(
-      'Supported testnet durations',
-    )
+  it('maps public staking durations to the temporary contract durations', () => {
+    expect(parsePieverseStakingDuration('90d', 1)).toBe(300)
+    expect(parsePieverseStakingDuration('180d', 56)).toBe(600)
+    expect(parsePieverseStakingDuration('365d', 1)).toBe(900)
+    expect(parsePieverseStakingDuration('15552000', 56)).toBe(600)
+    expect(() => parsePieverseStakingDuration('5m', 1)).toThrow('Supported durations')
   })
 
   it('builds single and batch withdrawals and rejects duplicate IDs', () => {
-    const single = buildPieverseWithdrawSteps({ chainId: 11155111, stakeId: '0' })
+    const single = buildPieverseWithdrawSteps({ chainId: 1, stakeId: '0' })
     expect(
       decodeFunctionData({ abi: STAKING_ABI, data: single.steps[0].data as `0x${string}` }),
     ).toEqual({ functionName: 'withdraw', args: [0n] })
 
-    const batch = buildPieverseWithdrawBatchSteps({ chainId: 97, stakeIds: '0, 2,5' })
+    const batch = buildPieverseWithdrawBatchSteps({ chainId: 56, stakeIds: '0, 2,5' })
     expect(
       decodeFunctionData({ abi: STAKING_ABI, data: batch.steps[0].data as `0x${string}` }),
     ).toEqual({ functionName: 'withdrawBatch', args: [[0n, 2n, 5n]] })
-    expect(() => buildPieverseWithdrawBatchSteps({ chainId: 97, stakeIds: '1,1' })).toThrow(
+    expect(() => buildPieverseWithdrawBatchSteps({ chainId: 56, stakeIds: '1,1' })).toThrow(
       'must not contain duplicate',
     )
   })
@@ -119,12 +124,12 @@ describe('Pieverse testnet staking', () => {
     })
     const client: ContractReadClient = { readContract }
 
-    const result = await readPieverseStakingPositions({ chainId: 11155111, wallet: WALLET }, client)
+    const result = await readPieverseStakingPositions({ chainId: 1, wallet: WALLET }, client)
 
     expect(result).toEqual({
-      chainId: 11155111,
+      chainId: 1,
       wallet: WALLET,
-      burrBalanceWei: '900',
+      pieverseBalanceWei: '900',
       paused: false,
       stakes: [
         {

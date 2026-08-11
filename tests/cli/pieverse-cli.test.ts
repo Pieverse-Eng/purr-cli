@@ -132,8 +132,9 @@ describe('Pieverse CLI routing', () => {
 
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('')
-    const contracts = JSON.parse(result.stdout) as Array<{ chainId: number }>
+    const contracts = JSON.parse(result.stdout) as Array<Record<string, unknown>>
     expect(contracts.map((deployment) => deployment.chainId)).toEqual([11155111, 97])
+    expect(Object.keys(contracts[0])).toEqual(['chainId', 'burr', 'staking', 'durations'])
   })
 
   it('builds Pieverse staking steps from the nested command', async () => {
@@ -203,7 +204,8 @@ describe('Pieverse CLI routing', () => {
       expect(JSON.parse(result.stdout)).toMatchObject({
         chainId: 97,
         wallet: agentWallet,
-        stakeCount: '0',
+        burrBalanceWei: '0',
+        paused: false,
         stakes: [],
       })
       expect(requests[0]).toEqual({

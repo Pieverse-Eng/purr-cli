@@ -105,12 +105,8 @@ describe('Pieverse testnet staking', () => {
       switch (functionName) {
         case 'balanceOf':
           return 900n
-        case 'allowance':
-          return 500n
         case 'paused':
           return false
-        case 'openPrincipal':
-          return 1200n
         case 'stakeCount':
           return 2n
         case 'stakes':
@@ -125,34 +121,19 @@ describe('Pieverse testnet staking', () => {
 
     const result = await readPieverseStakingPositions({ chainId: 11155111, wallet: WALLET }, client)
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       chainId: 11155111,
       wallet: WALLET,
       burrBalanceWei: '900',
-      allowanceWei: '500',
       paused: false,
-      openPrincipalWei: '1200',
-      stakeCount: '2',
+      stakes: [
+        {
+          stakeId: '0',
+          amountWei: '500',
+          unlockAt: '1970-01-01T00:21:40.000Z',
+          status: 'matured',
+        },
+      ],
     })
-    expect(result.stakes).toEqual([
-      {
-        stakeId: '0',
-        amountWei: '500',
-        startedAt: '1000',
-        startedAtIso: '1970-01-01T00:16:40.000Z',
-        unlockAt: '1300',
-        unlockAtIso: '1970-01-01T00:21:40.000Z',
-        status: 'matured',
-      },
-      {
-        stakeId: '1',
-        amountWei: '0',
-        startedAt: '2000',
-        startedAtIso: '1970-01-01T00:33:20.000Z',
-        unlockAt: '2600',
-        unlockAtIso: '1970-01-01T00:43:20.000Z',
-        status: 'closed',
-      },
-    ])
   })
 })

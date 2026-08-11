@@ -1589,7 +1589,7 @@ Examples:
 
 Commands:
   contracts       List configured testnet BURR and staking contracts
-  positions       Read the configured agent wallet's BURR balance, allowance, and stakes
+  positions       Read the configured agent wallet's BURR balance and open stakes
   stake           Approve BURR when needed, then create a fixed-term stake
   withdraw        Withdraw one matured stake
   withdraw-batch  Atomically withdraw multiple matured stakes
@@ -1625,10 +1625,16 @@ Execution:
           }
 
           if (stakingCommand === 'contracts') {
-            const result = stakingArgs['chain-id']
+            const deployments = stakingArgs['chain-id']
               ? [getPieverseStakingDeployment(parseChainId(stakingArgs['chain-id']))]
               : listPieverseStakingDeployments()
-            console.log(JSON.stringify(result, null, 2))
+            const result = deployments.map(({ chainId, burr, staking, durations }) => ({
+              chainId,
+              burr,
+              staking,
+              durations,
+            }))
+            console.log(JSON.stringify(result))
             return
           }
 
@@ -1642,7 +1648,7 @@ Execution:
               wallet: agentWallet.address,
               chainId,
             })
-            console.log(JSON.stringify(result, null, 2))
+            console.log(JSON.stringify(result))
             return
           }
 

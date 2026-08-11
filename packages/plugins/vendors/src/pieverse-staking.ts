@@ -3,17 +3,13 @@ import { createPublicClient, encodeFunctionData, http, parseAbi } from 'viem'
 import { buildApprovalStep, parseBigInt, requireAddress } from '@pieverseio/purr-core/shared'
 import type { StepOutput } from '@pieverseio/purr-core/types'
 
-const BURR_ABI = parseAbi([
-  'function balanceOf(address account) view returns (uint256)',
-  'function allowance(address owner, address spender) view returns (uint256)',
-])
+const BURR_ABI = parseAbi(['function balanceOf(address account) view returns (uint256)'])
 
 const STAKING_ABI = parseAbi([
   'function stake(uint256 amount, uint256 duration) returns (uint256 stakeId)',
   'function withdraw(uint256 stakeId)',
   'function withdrawBatch(uint256[] stakeIds)',
   'function paused() view returns (bool)',
-  'function openPrincipal() view returns (uint256)',
   'function stakeCount(address account) view returns (uint256)',
   'function stakes(address account, uint256 stakeId) view returns (uint256 amount, uint64 startedAt, uint64 unlockAt)',
   'function stakeStatus(address account, uint256 stakeId) view returns (uint8)',
@@ -61,24 +57,15 @@ export interface ContractReadClient {
 export interface PieverseStakePosition {
   stakeId: string
   amountWei: string
-  startedAt: string
-  startedAtIso: string
   unlockAt: string
-  unlockAtIso: string
-  status: (typeof STATUS_NAMES)[number]
+  status: Exclude<(typeof STATUS_NAMES)[number], 'closed'>
 }
 
 export interface PieverseStakingPositions {
   chainId: number
-  chain: string
   wallet: string
-  burr: string
-  staking: string
   burrBalanceWei: string
-  allowanceWei: string
   paused: boolean
-  openPrincipalWei: string
-  stakeCount: string
   stakes: PieverseStakePosition[]
 }
 
@@ -202,7 +189,7 @@ export async function readPieverseStakingPositions(
   const deployment = getPieverseStakingDeployment(args.chainId)
   const wallet = requireAddress(args.wallet, 'wallet')
   const rpc = client ?? createStakingReadClient(deployment)
-  const [burrBalance, allowance, paused, openPrincipal, stakeCount] = await Promise.all([
+  const [burrBalance, paused, stakeCount] = await Promise.all([
     rpc.readContract({
       address: deployment.burr,
       abi: BURR_ABI,
@@ -210,20 +197,9 @@ export async function readPieverseStakingPositions(
       args: [wallet],
     }),
     rpc.readContract({
-      address: deployment.burr,
-      abi: BURR_ABI,
-      functionName: 'allowance',
-      args: [wallet, deployment.staking],
-    }),
-    rpc.readContract({
       address: deployment.staking,
       abi: STAKING_ABI,
       functionName: 'paused',
-    }),
-    rpc.readContract({
-      address: deployment.staking,
-      abi: STAKING_ABI,
-      functionName: 'openPrincipal',
     }),
     rpc.readContract({
       address: deployment.staking,
@@ -257,19 +233,16 @@ export async function readPieverseStakingPositions(
         throw new Error(`Invalid stakes result for stake ID ${stakeId}`)
       }
       const amount = requireBigIntResult(stake[0], 'stake amount')
-      const startedAt = requireBigIntResult(stake[1], 'stake startedAt')
       const unlockAt = requireBigIntResult(stake[2], 'stake unlockAt')
       const statusIndex = requireIntegerResult(status, 'stake status')
       const statusName = STATUS_NAMES[statusIndex]
       if (!statusName)
         throw new Error(`Unknown stake status ${statusIndex} for stake ID ${stakeId}`)
+      if (statusName === 'closed') return undefined
       return {
         stakeId: stakeId.toString(),
         amountWei: amount.toString(),
-        startedAt: startedAt.toString(),
-        startedAtIso: toIsoTimestamp(startedAt),
-        unlockAt: unlockAt.toString(),
-        unlockAtIso: toIsoTimestamp(unlockAt),
+        unlockAt: toIsoTimestamp(unlockAt),
         status: statusName,
       }
     }),
@@ -277,16 +250,10 @@ export async function readPieverseStakingPositions(
 
   return {
     chainId: deployment.chainId,
-    chain: deployment.chain,
     wallet,
-    burr: deployment.burr,
-    staking: deployment.staking,
     burrBalanceWei: requireBigIntResult(burrBalance, 'BURR balance').toString(),
-    allowanceWei: requireBigIntResult(allowance, 'BURR allowance').toString(),
     paused: requireBooleanResult(paused, 'paused'),
-    openPrincipalWei: requireBigIntResult(openPrincipal, 'openPrincipal').toString(),
-    stakeCount: count.toString(),
-    stakes: positions,
+    stakes: positions.filter((position) => position !== undefined),
   }
 }
 

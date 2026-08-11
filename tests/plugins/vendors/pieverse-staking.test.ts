@@ -12,9 +12,7 @@ import {
   type ContractReadClient,
 } from '@pieverseio/purr-plugin-vendors/pieverse-staking'
 
-const BURR_ABI = parseAbi([
-  'function approve(address spender, uint256 amount) returns (bool)',
-])
+const BURR_ABI = parseAbi(['function approve(address spender, uint256 amount) returns (bool)'])
 
 const STAKING_ABI = parseAbi([
   'function stake(uint256 amount, uint256 duration) returns (uint256 stakeId)',
@@ -27,8 +25,7 @@ const WALLET = '0x1111111111111111111111111111111111111111'
 describe('Pieverse testnet staking', () => {
   it('returns the configured Sepolia and BSC Testnet deployments', () => {
     expect(listPieverseStakingDeployments().map((deployment) => deployment.chainId)).toEqual([
-      11155111,
-      97,
+      11155111, 97,
     ])
     expect(getPieverseStakingDeployment(11155111)).toMatchObject({
       burr: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
@@ -96,9 +93,9 @@ describe('Pieverse testnet staking', () => {
     expect(
       decodeFunctionData({ abi: STAKING_ABI, data: batch.steps[0].data as `0x${string}` }),
     ).toEqual({ functionName: 'withdrawBatch', args: [[0n, 2n, 5n]] })
-    expect(() =>
-      buildPieverseWithdrawBatchSteps({ chainId: 97, stakeIds: '1,1' }),
-    ).toThrow('must not contain duplicate')
+    expect(() => buildPieverseWithdrawBatchSteps({ chainId: 97, stakeIds: '1,1' })).toThrow(
+      'must not contain duplicate',
+    )
   })
 
   it('reads and normalizes wallet positions from the chain', async () => {
@@ -126,10 +123,7 @@ describe('Pieverse testnet staking', () => {
     })
     const client: ContractReadClient = { readContract }
 
-    const result = await readPieverseStakingPositions(
-      { chainId: 11155111, wallet: WALLET },
-      client,
-    )
+    const result = await readPieverseStakingPositions({ chainId: 11155111, wallet: WALLET }, client)
 
     expect(result).toMatchObject({
       chainId: 11155111,

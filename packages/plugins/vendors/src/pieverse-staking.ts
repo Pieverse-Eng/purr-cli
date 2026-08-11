@@ -1,10 +1,6 @@
 import { createPublicClient, encodeFunctionData, http, parseAbi } from 'viem'
 
-import {
-  buildApprovalStep,
-  parseBigInt,
-  requireAddress,
-} from '@pieverseio/purr-core/shared'
+import { buildApprovalStep, parseBigInt, requireAddress } from '@pieverseio/purr-core/shared'
 import type { StepOutput } from '@pieverseio/purr-core/types'
 
 const BURR_ABI = parseAbi([
@@ -148,10 +144,7 @@ export function buildPieverseStakeSteps(args: {
   }
 }
 
-export function buildPieverseWithdrawSteps(args: {
-  chainId: number
-  stakeId: string
-}): StepOutput {
+export function buildPieverseWithdrawSteps(args: { chainId: number; stakeId: string }): StepOutput {
   const deployment = getPieverseStakingDeployment(args.chainId)
   const stakeId = parseStakeId(args.stakeId)
   return {
@@ -241,7 +234,8 @@ export async function readPieverseStakingPositions(
   ])
 
   const count = requireBigIntResult(stakeCount, 'stakeCount')
-  if (count > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('stakeCount is too large to enumerate')
+  if (count > BigInt(Number.MAX_SAFE_INTEGER))
+    throw new Error('stakeCount is too large to enumerate')
   const positions = await Promise.all(
     Array.from({ length: Number(count) }, async (_, index) => {
       const stakeId = BigInt(index)
@@ -267,7 +261,8 @@ export async function readPieverseStakingPositions(
       const unlockAt = requireBigIntResult(stake[2], 'stake unlockAt')
       const statusIndex = requireIntegerResult(status, 'stake status')
       const statusName = STATUS_NAMES[statusIndex]
-      if (!statusName) throw new Error(`Unknown stake status ${statusIndex} for stake ID ${stakeId}`)
+      if (!statusName)
+        throw new Error(`Unknown stake status ${statusIndex} for stake ID ${stakeId}`)
       return {
         stakeId: stakeId.toString(),
         amountWei: amount.toString(),

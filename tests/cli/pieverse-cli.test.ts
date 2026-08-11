@@ -191,15 +191,12 @@ describe('Pieverse CLI routing', () => {
     const port = await listen(server)
 
     try {
-      const result = await runPurr(
-        ['pieverse', 'staking', 'positions', '--chain-id', '97'],
-        {
-          WALLET_API_URL: `http://127.0.0.1:${port}`,
-          WALLET_API_TOKEN: 'test-token',
-          INSTANCE_ID: 'inst-pieverse-staking-test',
-          EVM_RPC_97: `http://127.0.0.1:${port}/rpc`,
-        },
-      )
+      const result = await runPurr(['pieverse', 'staking', 'positions', '--chain-id', '97'], {
+        WALLET_API_URL: `http://127.0.0.1:${port}`,
+        WALLET_API_TOKEN: 'test-token',
+        INSTANCE_ID: 'inst-pieverse-staking-test',
+        EVM_RPC_97: `http://127.0.0.1:${port}/rpc`,
+      })
 
       expect(result.code).toBe(0)
       expect(result.stderr).toBe('')

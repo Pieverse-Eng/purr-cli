@@ -13,9 +13,7 @@ interface WalletAddressResponse {
   error?: string
 }
 
-export async function getWalletAddress(
-  args: Record<string, string>,
-): Promise<WalletAddressData> {
+export async function getWalletAddress(args: Record<string, string>): Promise<WalletAddressData> {
   const { instanceId } = resolveCredentials()
   const body: Record<string, unknown> = {}
 

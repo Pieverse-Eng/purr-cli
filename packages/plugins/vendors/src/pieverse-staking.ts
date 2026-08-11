@@ -101,9 +101,7 @@ export function parsePieverseStakingDuration(value: string, chainId: number): nu
     ({ days, publicSeconds }) => normalized === `${days}d` || normalized === String(publicSeconds),
   )
   if (!mapping || !deployment.durations.includes(`${mapping.days}d`)) {
-    throw new Error(
-      `Invalid staking duration: "${value}". Supported durations: 90d, 180d, 365d`,
-    )
+    throw new Error(`Invalid staking duration: "${value}". Supported durations: 90d, 180d, 365d`)
   }
   return mapping.executionSeconds
 }

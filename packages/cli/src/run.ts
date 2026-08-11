@@ -2136,9 +2136,7 @@ Execution:
     const json = JSON.stringify(output)
     const result = await executeStepsFromJson(json, args['dedup-key'])
     const displayedResult =
-      stakingDisplayChainId === undefined
-        ? result
-        : { ...result, chainId: stakingDisplayChainId }
+      stakingDisplayChainId === undefined ? result : { ...result, chainId: stakingDisplayChainId }
     console.log(JSON.stringify(displayedResult, null, 2))
   } else {
     console.log(JSON.stringify(output))

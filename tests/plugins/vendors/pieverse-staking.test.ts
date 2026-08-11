@@ -26,7 +26,9 @@ const WALLET = '0x1111111111111111111111111111111111111111'
 
 describe('Pieverse staking', () => {
   it('returns the Ethereum and BNB Chain deployments with staging execution networks', () => {
-    expect(listPieverseStakingDeployments().map((deployment) => deployment.chainId)).toEqual([1, 56])
+    expect(listPieverseStakingDeployments().map((deployment) => deployment.chainId)).toEqual([
+      1, 56,
+    ])
     expect(getPieverseStakingDeployment(1)).toMatchObject({
       executionChainId: 11155111,
       pieverse: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
@@ -64,8 +66,7 @@ describe('Pieverse staking', () => {
       decodeFunctionData({
         abi: PIEVERSE_TOKEN_ABI,
         data: output.steps[0].data as `0x${string}`,
-      })
-        .functionName,
+      }).functionName,
     ).toBe('approve')
     expect(output.steps[1]).toMatchObject({
       to: '0x366b3edF40456439aF125949Fa35dE337C506168',

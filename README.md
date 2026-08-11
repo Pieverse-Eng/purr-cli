@@ -48,6 +48,7 @@ purr <group> <command> [options]
 | `osero` | Osero USDS/sUSDS balances, yield reads, previews, plans, and execution |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
+| `pieverse` | Pieverse campaign flows and Sepolia/BSC Testnet BURR staking |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
@@ -99,6 +100,10 @@ purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-s
 purr binance-onchain-pay pre-order --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --network <network> --address <wallet-address> --pay-method-code <pay-method-code>
 purr opensea buy --wallet <wallet-address> --fulfillment-file <path-to-fulfillment-json>
 purr lista list-vaults --zone <zone>
+purr pieverse staking contracts
+purr pieverse staking positions --chain-id 11155111
+purr pieverse staking stake --amount-wei <amount> --duration 5m --chain-id 11155111 --execute
+purr pieverse staking withdraw --stake-id 0 --chain-id 11155111 --execute
 purr osero balances --chain base
 purr osero apy --chain base
 purr osero preview --action mint-susds --chain base --amount 1000000
@@ -132,6 +137,11 @@ purr store install <slug>
 purr store install <source>:<slug>
 purr store remove <slug>
 ```
+
+Pieverse staking commands print portable transaction steps by default. Add `--execute` to
+submit them through the configured agent wallet. Testnet durations are `5m`, `10m`, and `15m`;
+supported chain IDs are Sepolia `11155111` and BSC Testnet `97`. The `positions` command
+automatically reads the configured agent wallet.
 
 ## Development
 

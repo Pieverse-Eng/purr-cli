@@ -1,17 +1,21 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 
+export interface WalletAddressData {
+  address: string
+  chainId: number
+  chainType: string
+  createdNow: boolean
+}
+
 interface WalletAddressResponse {
   ok: boolean
-  data: {
-    address: string
-    chainId: number
-    chainType: string
-    createdNow: boolean
-  }
+  data: WalletAddressData
   error?: string
 }
 
-export async function walletAddress(args: Record<string, string>): Promise<void> {
+export async function getWalletAddress(
+  args: Record<string, string>,
+): Promise<WalletAddressData> {
   const { instanceId } = resolveCredentials()
   const body: Record<string, unknown> = {}
 
@@ -31,5 +35,9 @@ export async function walletAddress(args: Record<string, string>): Promise<void>
     throw new Error(res.error ?? 'Failed to get wallet address')
   }
 
-  console.log(JSON.stringify(res.data))
+  return res.data
+}
+
+export async function walletAddress(args: Record<string, string>): Promise<void> {
+  console.log(JSON.stringify(await getWalletAddress(args)))
 }

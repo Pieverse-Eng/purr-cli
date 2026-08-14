@@ -81,6 +81,33 @@ describe('Pieverse staking', () => {
     })
   })
 
+  it('accepts at most two decimal places for staking amounts', () => {
+    expect(() =>
+      buildPieverseStakeSteps({
+        chainId: 1,
+        amountWei: '10000000000000000',
+        duration: '90d',
+      }),
+    ).not.toThrow()
+    expect(() =>
+      buildPieverseStakeSteps({
+        chainId: 1,
+        amountWei: '1230000000000000000',
+        duration: '90d',
+      }),
+    ).not.toThrow()
+    expect(() =>
+      buildPieverseStakeSteps({
+        chainId: 1,
+        amountWei: '1234000000000000000',
+        duration: '90d',
+      }),
+    ).toThrow('supports at most 2 decimal places')
+    expect(() => buildPieverseStakeSteps({ chainId: 1, amountWei: '1', duration: '90d' })).toThrow(
+      'minimum increment: 0.01 PIEVERSE',
+    )
+  })
+
   it('maps public staking durations to the temporary contract durations', () => {
     expect(parsePieverseStakingDuration('90d', 1)).toBe(300)
     expect(parsePieverseStakingDuration('180d', 56)).toBe(600)

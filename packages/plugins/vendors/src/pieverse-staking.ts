@@ -60,6 +60,7 @@ const DURATION_MAPPINGS = [
 ] as const
 
 const STATUS_NAMES = ['active', 'matured', 'closed'] as const
+const PIEVERSE_STAKING_AMOUNT_INCREMENT_WEI = 10n ** 16n
 
 export interface ContractReadClient {
   readContract(args: Record<string, unknown>): Promise<unknown>
@@ -113,6 +114,11 @@ export function buildPieverseStakeSteps(args: {
 }): StepOutput {
   const deployment = getPieverseStakingDeployment(args.chainId)
   const amount = parseBigInt(args.amountWei, 'amount-wei')
+  if (amount % PIEVERSE_STAKING_AMOUNT_INCREMENT_WEI !== 0n) {
+    throw new Error(
+      'PIEVERSE staking amount supports at most 2 decimal places (minimum increment: 0.01 PIEVERSE)',
+    )
+  }
   const duration = parsePieverseStakingDuration(args.duration, args.chainId)
   const durationDays = DURATION_MAPPINGS.find(
     ({ executionSeconds }) => executionSeconds === duration,

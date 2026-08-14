@@ -157,6 +157,24 @@ describe('Pieverse CLI routing', () => {
     expect(output.steps).toHaveLength(2)
   })
 
+  it('rejects Pieverse staking amounts with more than two decimal places', async () => {
+    const result = await runPurr([
+      'pieverse',
+      'staking',
+      'stake',
+      '--amount-wei',
+      '1234000000000000000',
+      '--duration',
+      '90d',
+      '--chain-id',
+      '1',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('supports at most 2 decimal places')
+  })
+
   it('reads Pieverse staking positions for the configured agent wallet', async () => {
     const agentWallet = '0x1111111111111111111111111111111111111111'
     const requests: Array<{ path: string | undefined; body: Record<string, unknown> }> = []

@@ -1602,6 +1602,10 @@ Supported chains:
 Staking durations:
   90d | 180d | 365d
 
+Stake amounts:
+  At most 2 decimal places; minimum increment 0.01 PIEVERSE.
+  Pass the exact 18-decimal value with --amount-wei.
+
 Execution:
   Omit --execute to print portable steps JSON.
   Add --execute to submit the steps through the configured agent wallet.`)

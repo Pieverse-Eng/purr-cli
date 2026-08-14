@@ -141,7 +141,9 @@ purr store remove <slug>
 Pieverse staking commands print portable transaction steps by default. Add `--execute` to
 submit them through the configured agent wallet. Supported durations are `90d`, `180d`, and
 `365d`; supported chain IDs are Ethereum `1` and BNB Chain `56`. The `positions` command
-automatically reads the configured agent wallet.
+automatically reads the configured agent wallet. Stake amounts support at most two decimal
+places and use increments of `0.01 PIEVERSE`; pass the exact 18-decimal wei value through
+`--amount-wei`.
 
 ## Development
 

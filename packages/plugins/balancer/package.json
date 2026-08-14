@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-balancer",
-  "version": "0.2.36",
+  "version": "0.2.37",
   "type": "module",
   "private": true,
   "exports": {

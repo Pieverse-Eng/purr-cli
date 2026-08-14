@@ -61,6 +61,7 @@ async function runPurr(port: number, args: string[]): Promise<CommandResult> {
       'ALL_PROXY',
       'all_proxy',
       'DFLOW_API_KEY',
+      'DFLOW_TRADE_API_BASE_URL',
     ]) {
       delete cleanEnv[name]
     }
@@ -74,8 +75,6 @@ async function runPurr(port: number, args: string[]): Promise<CommandResult> {
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: API_TOKEN,
         INSTANCE_ID,
-        DFLOW_API_KEY: 'test-dflow-key',
-        DFLOW_TRADE_API_BASE_URL: `http://127.0.0.1:${port}`,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -125,19 +124,23 @@ describe('DFlow CLI output', () => {
           return
         }
 
-        if (req.method === 'GET' && req.url?.startsWith('/order?')) {
-          const parsed = new URL(req.url, 'http://127.0.0.1')
-          assert.equal(parsed.searchParams.get('userPublicKey'), SOLANA_ADDRESS)
-          assert.equal(parsed.searchParams.get('inputMint'), 'input-mint')
-          assert.equal(parsed.searchParams.get('outputMint'), 'output-mint')
-          assert.equal(parsed.searchParams.get('amount'), '1000000')
-          assert.equal(parsed.searchParams.get('dynamicComputeUnitLimit'), 'true')
+        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/dflow/order`) {
+          assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
+          assert.equal(req.headers['x-api-key'], undefined)
+          assert.deepEqual(await readJsonBody(req), {
+            inputMint: 'input-mint',
+            outputMint: 'output-mint',
+            amount: '1000000',
+          })
           writeJson(res, 200, {
-            inAmount: '1000000',
-            outAmount: '24000000',
-            transaction: SERIALIZED_TRANSACTION,
-            lastValidBlockHeight: 12345,
-            orderAddress: 'order-address-1',
+            ok: true,
+            data: {
+              inAmount: '1000000',
+              outAmount: '24000000',
+              transaction: SERIALIZED_TRANSACTION,
+              lastValidBlockHeight: 12345,
+              orderAddress: 'order-address-1',
+            },
           })
           return
         }
@@ -165,6 +168,8 @@ describe('DFlow CLI output', () => {
         expect(normalOutput).toMatchObject({
           type: 'dflow-order',
           userPublicKey: SOLANA_ADDRESS,
+          transport: 'platform',
+          platformApiBaseUrl: `http://127.0.0.1:${port}`,
           summary: {
             inAmount: '1000000',
             outAmount: '24000000',
@@ -183,18 +188,53 @@ describe('DFlow CLI output', () => {
     )
   })
 
-  it('queries DFlow order status by transaction signature', async () => {
+  it('queries DFlow prediction order status by transaction signature', async () => {
     await withDflowServer(
       async (req, res) => {
-        if (req.method === 'GET' && req.url?.startsWith('/order-status?')) {
+        if (
+          req.method === 'GET' &&
+          req.url?.startsWith(`/v1/instances/${INSTANCE_ID}/dflow/order-status?`)
+        ) {
           const parsed = new URL(req.url, 'http://127.0.0.1')
           assert.equal(parsed.searchParams.get('signature'), 'transaction-signature-1')
-          assert.equal(req.headers['x-api-key'], 'test-dflow-key')
-          writeJson(res, 200, { status: 'closed', signature: 'transaction-signature-1' })
+          assert.equal(parsed.searchParams.get('lastValidBlockHeight'), '12345')
+          assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
+          assert.equal(req.headers['x-api-key'], undefined)
+          writeJson(res, 200, {
+            ok: true,
+            data: { status: 'closed', signature: 'transaction-signature-1' },
+          })
           return
         }
 
         writeJson(res, 404, { ok: false, error: 'not found' })
+      },
+      async (port) => {
+        const result = await runPurr(port, [
+          'dflow',
+          'prediction-order-status',
+          '--signature',
+          'transaction-signature-1',
+          '--last-valid-block-height',
+          '12345',
+        ])
+
+        expect(result.code).toBe(0)
+        expect(result.stderr).toBe('')
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          type: 'dflow-prediction-order-status',
+          signature: 'transaction-signature-1',
+          terminal: true,
+          status: { status: 'closed' },
+        })
+      },
+    )
+  })
+
+  it('rejects the ambiguous legacy DFlow status command', async () => {
+    await withDflowServer(
+      (_req, res) => {
+        writeJson(res, 500, { ok: false, error: 'unexpected request' })
       },
       async (port) => {
         const result = await runPurr(port, [
@@ -204,15 +244,115 @@ describe('DFlow CLI output', () => {
           'transaction-signature-1',
         ])
 
-        expect(result.code).toBe(0)
-        expect(result.stderr).toBe('')
-        expect(JSON.parse(result.stdout)).toMatchObject({
-          type: 'dflow-status',
-          signature: 'transaction-signature-1',
-          terminal: true,
-          status: { status: 'closed' },
-        })
+        expect(result.code).toBe(1)
+        expect(result.stdout).toBe('')
+        expect(result.stderr).toContain('Unknown dflow command: status')
+        expect(result.stderr).toContain('prediction-order-status')
       },
+    )
+  })
+
+  it('exposes platform-backed positions, Metadata API, and live streams', async () => {
+    await withDflowServer(
+      async (req, res) => {
+        assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
+        assert.equal(req.headers['x-api-key'], undefined)
+        if (req.method === 'GET' && req.url === `/v1/instances/${INSTANCE_ID}/dflow/positions`) {
+          writeJson(res, 200, { ok: true, data: { wallet: SOLANA_ADDRESS, tokens: [] } })
+          return
+        }
+        if (
+          req.method === 'GET' &&
+          req.url === `/v1/instances/${INSTANCE_ID}/dflow/metadata/markets?status=active`
+        ) {
+          writeJson(res, 200, { ok: true, data: { markets: [{ ticker: 'KXTEST' }] } })
+          return
+        }
+        if (
+          req.method === 'GET' &&
+          req.url === `/v1/instances/${INSTANCE_ID}/dflow/stream?channel=prices&tickers=KXTEST`
+        ) {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+          res.end(
+            'event: connected\ndata: {"channel":"prices"}\n\n' +
+              'event: message\ndata: {"ticker":"KXTEST","yes_bid":"0.4000"}\n\n',
+          )
+          return
+        }
+        writeJson(res, 404, { ok: false, error: 'not found' })
+      },
+      async (port) => {
+        const positions = await runPurr(port, ['dflow', 'positions'])
+        expect(positions.code).toBe(0)
+        expect(JSON.parse(positions.stdout)).toMatchObject({
+          type: 'dflow-positions',
+          transport: 'platform',
+          positions: { wallet: SOLANA_ADDRESS },
+        })
+
+        const metadata = await runPurr(port, [
+          'dflow',
+          'metadata',
+          '--path',
+          '/api/v1/markets',
+          '--query-json',
+          '{"status":"active"}',
+        ])
+        expect(metadata.code).toBe(0)
+        expect(JSON.parse(metadata.stdout)).toMatchObject({
+          type: 'dflow-metadata',
+          transport: 'platform',
+          data: { markets: [{ ticker: 'KXTEST' }] },
+        })
+
+        const stream = await runPurr(port, [
+          'dflow',
+          'stream',
+          '--channel',
+          'prices',
+          '--tickers',
+          'KXTEST',
+          '--max-events',
+          '1',
+        ])
+        expect(stream.code).toBe(0)
+        const lines = stream.stdout.split('\n').map((line) => JSON.parse(line))
+        expect(lines).toEqual([
+          {
+            type: 'dflow-stream-event',
+            data: { ticker: 'KXTEST', yes_bid: '0.4000' },
+          },
+          expect.objectContaining({ type: 'dflow-stream', transport: 'platform', eventCount: 1 }),
+        ])
+      },
+    )
+  })
+
+  it('rejects legacy DFlow authentication flags', async () => {
+    const apiKeyResult = await runPurr(1, [
+      'dflow',
+      'status',
+      '--signature',
+      'transaction-signature-1',
+      '--api-key',
+      'legacy-key',
+    ])
+    expect(apiKeyResult.code).toBe(1)
+    expect(apiKeyResult.stderr).toContain(
+      '--api-key is no longer supported; DFlow authentication is managed by the platform',
+    )
+
+    const baseUrlResult = await runPurr(1, [
+      'dflow',
+      'status',
+      '--signature',
+      'transaction-signature-1',
+      '--base-url',
+      'https://quote-api.dflow.net',
+    ])
+    expect(baseUrlResult.code).toBe(1)
+    expect(baseUrlResult.stderr).toContain(
+      '--base-url is no longer supported; DFlow requests are routed through the platform',
     )
   })
 })

@@ -59,7 +59,16 @@ import {
   bitgetX402SignEip3009,
   type BitgetWalletSigner,
 } from '@pieverseio/purr-plugin-vendors/bitget'
-import { dflowExecuteOrder, dflowOrder, dflowStatus } from '@pieverseio/purr-plugin-vendors/dflow'
+import {
+  dflowExecuteOrder,
+  dflowMetadata,
+  dflowOrder,
+  dflowPositions,
+  dflowPriorityFees,
+  dflowQuote,
+  dflowStatus,
+  dflowStream,
+} from '@pieverseio/purr-plugin-vendors/dflow'
 import {
   buildListaDepositSteps,
   buildListaRedeemSteps,
@@ -491,7 +500,7 @@ Groups:
   balancer          Balancer pool discovery, swaps, and V2/V3 liquidity operations
   bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing
   binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
-  dflow           DFlow Solana orders through platform access and purr signing
+  dflow           DFlow trading, positions, and market data through platform access
   ows-wallet        OWS-backed wallet ops and OWS-scoped Bitget execution
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
   fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
@@ -532,8 +541,14 @@ Examples:
   purr ows-wallet bitget-transfer-execute --ows-wallet treasury --chain base --contract 0x... --from-address 0x... --to-address 0x... --amount 10
   purr ows-wallet bitget-x402-pay --ows-wallet treasury --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
   purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --params-json '{"slippageBps":"auto"}'
+  purr dflow quote --input-mint <mint> --output-mint <mint> --amount <atomic>
   purr dflow execute-order --order-file /tmp/dflow-order.json
   purr dflow status --signature <transaction-signature> --poll true
+  purr dflow positions
+  purr dflow metadata --path markets --query-json '{"status":"active","limit":10}'
+  purr dflow priority-fees
+  purr dflow stream --channel prices --tickers KXTEST --max-events 10
+  purr dflow stream --channel priority-fees --max-events 3
   purr opensea buy --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
   purr opensea buy --wallet 0x... --fulfillment-file ./fulfillment.json
   purr opensea sell --wallet 0x... --fulfillment-json '{"fulfillment_data":{"transaction":{...}}}'
@@ -973,6 +988,22 @@ Examples:
     case 'dflow': {
       rejectLegacyDflowAuthArgs(args)
       switch (command) {
+        case 'quote': {
+          const paramsJson =
+            args['params-json'] !== undefined || args['params-file'] !== undefined
+              ? requireArgOrFile(args, 'params-json', 'params-file')
+              : undefined
+          const raw = parseBooleanFlag(args.raw) === true
+          const result = await dflowQuote({
+            inputMint: args['input-mint'],
+            outputMint: args['output-mint'],
+            amount: args.amount,
+            paramsJson,
+            raw,
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
         case 'order': {
           const paramsJson =
             args['params-json'] !== undefined || args['params-file'] !== undefined
@@ -1027,8 +1058,45 @@ Examples:
           console.log(JSON.stringify(result, null, 2))
           return
         }
+        case 'positions': {
+          console.log(JSON.stringify(await dflowPositions(), null, 2))
+          return
+        }
+        case 'priority-fees': {
+          console.log(JSON.stringify(await dflowPriorityFees(), null, 2))
+          return
+        }
+        case 'metadata': {
+          const queryJson =
+            args['query-json'] !== undefined || args['query-file'] !== undefined
+              ? requireArgOrFile(args, 'query-json', 'query-file')
+              : undefined
+          const bodyJson =
+            args['body-json'] !== undefined || args['body-file'] !== undefined
+              ? requireArgOrFile(args, 'body-json', 'body-file')
+              : undefined
+          const result = await dflowMetadata({ path: args.path, queryJson, bodyJson })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'stream': {
+          const result = await dflowStream({
+            channel: args.channel,
+            tickers: args.tickers,
+            all: parseBooleanFlag(args.all),
+            maxEvents: parseIntegerArg(args['max-events'], 'max-events'),
+            timeoutMs: parseIntegerArg(args['timeout-ms'], 'timeout-ms'),
+            onMessage: (message) => {
+              console.log(JSON.stringify({ type: 'dflow-stream-event', data: message }))
+            },
+          })
+          console.log(JSON.stringify(result))
+          return
+        }
         default:
-          throw new Error(`Unknown dflow command: ${command}. Use: order, execute-order, status`)
+          throw new Error(
+            `Unknown dflow command: ${command}. Use: quote, order, execute-order, status, positions, priority-fees, metadata, stream`,
+          )
       }
     }
 

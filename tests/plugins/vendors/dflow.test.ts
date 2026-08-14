@@ -6,7 +6,16 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from '@solana/web3.js'
-import { dflowExecuteOrder, dflowOrder, dflowStatus } from '@pieverseio/purr-plugin-vendors/dflow'
+import {
+  dflowExecuteOrder,
+  dflowMetadata,
+  dflowOrder,
+  dflowPositions,
+  dflowPriorityFees,
+  dflowQuote,
+  dflowStatus,
+  dflowStream,
+} from '@pieverseio/purr-plugin-vendors/dflow'
 
 const originalFetch = globalThis.fetch
 const SOLANA_ADDRESS = 'DZttmKxhq1H7v5fFVPbejCkqHiTDjq9J6Q1muQT2ouWD'
@@ -72,6 +81,94 @@ describe('dflow execution helpers', () => {
     process.env.WALLET_API_TOKEN = 'test-token'
     process.env.INSTANCE_ID = 'test-instance'
     delete process.env.SOLANA_RPC_URL
+  })
+
+  it('routes quote, positions, priority fees, and Metadata API through the platform', async () => {
+    const calls: Array<{ url: URL; init?: RequestInit; body?: unknown }> = []
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(typeof input === 'string' ? input : input.toString())
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined
+        calls.push({ url, init, body })
+        if (url.pathname.endsWith('/dflow/quote')) {
+          return jsonResponse({ ok: true, data: { inAmount: '1', outAmount: '2' } })
+        }
+        if (url.pathname.endsWith('/dflow/positions')) {
+          return jsonResponse({ ok: true, data: { wallet: SOLANA_ADDRESS, tokens: [] } })
+        }
+        if (url.pathname.endsWith('/dflow/priority-fees')) {
+          return jsonResponse({ ok: true, data: { high: 1000 } })
+        }
+        if (url.pathname.endsWith('/dflow/metadata/markets')) {
+          return jsonResponse({ ok: true, data: { markets: [] } })
+        }
+        if (url.pathname.endsWith('/dflow/metadata/filter_outcome_mints')) {
+          return jsonResponse({ ok: true, data: { outcomeMints: [] } })
+        }
+        throw new Error(`unexpected fetch ${url}`)
+      }),
+      configurable: true,
+      writable: true,
+    })
+
+    await dflowQuote({ inputMint: 'input', outputMint: 'output', amount: '1' })
+    await dflowPositions()
+    await dflowPriorityFees()
+    await dflowMetadata({ path: '/api/v1/markets', queryJson: '{"status":"active"}' })
+    await dflowMetadata({
+      path: 'filter_outcome_mints',
+      bodyJson: `{"addresses":["${SOLANA_ADDRESS}"]}`,
+    })
+
+    expect(calls).toHaveLength(5)
+    expect(calls[0].body).toEqual({ inputMint: 'input', outputMint: 'output', amount: '1' })
+    expect(calls[3].url.searchParams.get('status')).toBe('active')
+    expect(calls[4].body).toEqual({ addresses: [SOLANA_ADDRESS] })
+    for (const call of calls) {
+      expect(call.url.origin).toBe('https://platform.example.com')
+      expect(call.init?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
+      expect(call.init?.headers).not.toHaveProperty('x-api-key')
+    }
+  })
+
+  it('reads DFlow market events from the platform SSE proxy', async () => {
+    const encoder = new TextEncoder()
+    const responseBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            'event: connected\ndata: {"channel":"prices"}\n\n' +
+              'event: message\ndata: {"ticker":"KXTEST","yes_bid":"0.4000"}\n\n',
+          ),
+        )
+        controller.close()
+      },
+    })
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(responseBody, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+    )
+    Object.defineProperty(globalThis, 'fetch', {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    })
+
+    await expect(
+      dflowStream({ channel: 'prices', tickers: 'KXTEST', maxEvents: 1 }),
+    ).resolves.toMatchObject({
+      type: 'dflow-stream',
+      transport: 'platform',
+      eventCount: 1,
+      events: [{ ticker: 'KXTEST', yes_bid: '0.4000' }],
+    })
+    const [input, init] = fetchMock.mock.calls[0]
+    expect(String(input)).toContain('/dflow/stream?channel=prices&tickers=KXTEST')
+    expect(init?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
+    expect(init?.headers).not.toHaveProperty('x-api-key')
   })
 
   afterEach(() => {

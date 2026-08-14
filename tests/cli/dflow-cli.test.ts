@@ -231,6 +231,82 @@ describe('DFlow CLI output', () => {
     )
   })
 
+  it('exposes platform-backed positions, Metadata API, and live streams', async () => {
+    await withDflowServer(
+      async (req, res) => {
+        assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
+        assert.equal(req.headers['x-api-key'], undefined)
+        if (req.method === 'GET' && req.url === `/v1/instances/${INSTANCE_ID}/dflow/positions`) {
+          writeJson(res, 200, { ok: true, data: { wallet: SOLANA_ADDRESS, tokens: [] } })
+          return
+        }
+        if (
+          req.method === 'GET' &&
+          req.url === `/v1/instances/${INSTANCE_ID}/dflow/metadata/markets?status=active`
+        ) {
+          writeJson(res, 200, { ok: true, data: { markets: [{ ticker: 'KXTEST' }] } })
+          return
+        }
+        if (
+          req.method === 'GET' &&
+          req.url === `/v1/instances/${INSTANCE_ID}/dflow/stream?channel=prices&tickers=KXTEST`
+        ) {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+          res.end(
+            'event: connected\ndata: {"channel":"prices"}\n\n' +
+              'event: message\ndata: {"ticker":"KXTEST","yes_bid":"0.4000"}\n\n',
+          )
+          return
+        }
+        writeJson(res, 404, { ok: false, error: 'not found' })
+      },
+      async (port) => {
+        const positions = await runPurr(port, ['dflow', 'positions'])
+        expect(positions.code).toBe(0)
+        expect(JSON.parse(positions.stdout)).toMatchObject({
+          type: 'dflow-positions',
+          transport: 'platform',
+          positions: { wallet: SOLANA_ADDRESS },
+        })
+
+        const metadata = await runPurr(port, [
+          'dflow',
+          'metadata',
+          '--path',
+          '/api/v1/markets',
+          '--query-json',
+          '{"status":"active"}',
+        ])
+        expect(metadata.code).toBe(0)
+        expect(JSON.parse(metadata.stdout)).toMatchObject({
+          type: 'dflow-metadata',
+          transport: 'platform',
+          data: { markets: [{ ticker: 'KXTEST' }] },
+        })
+
+        const stream = await runPurr(port, [
+          'dflow',
+          'stream',
+          '--channel',
+          'prices',
+          '--tickers',
+          'KXTEST',
+          '--max-events',
+          '1',
+        ])
+        expect(stream.code).toBe(0)
+        const lines = stream.stdout.split('\n').map((line) => JSON.parse(line))
+        expect(lines).toEqual([
+          {
+            type: 'dflow-stream-event',
+            data: { ticker: 'KXTEST', yes_bid: '0.4000' },
+          },
+          expect.objectContaining({ type: 'dflow-stream', transport: 'platform', eventCount: 1 }),
+        ])
+      },
+    )
+  })
+
   it('rejects legacy DFlow authentication flags', async () => {
     const apiKeyResult = await runPurr(1, [
       'dflow',

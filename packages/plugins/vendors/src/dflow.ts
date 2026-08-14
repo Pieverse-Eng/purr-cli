@@ -401,6 +401,30 @@ function getOrderAddress(order: JsonObject): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
 }
 
+function getExecutionMode(order: JsonObject): 'sync' | 'async' | undefined {
+  const value = order.executionMode
+  if (value === undefined) return undefined
+  if (value === 'sync' || value === 'async') return value
+  throw new Error(`DFlow order response contains unsupported executionMode: ${String(value)}`)
+}
+
+function statusErrorDetails(error: unknown): JsonObject {
+  const normalized = toDflowCliError(error)
+  if (!(normalized instanceof DflowCliError)) {
+    return { message: normalized.message }
+  }
+  return {
+    message: normalized.message,
+    ...(normalized.code ? { code: normalized.code } : {}),
+    ...(normalized.providerCode ? { providerCode: normalized.providerCode } : {}),
+    ...(normalized.status !== undefined ? { status: normalized.status } : {}),
+    ...(normalized.retryable !== undefined ? { retryable: normalized.retryable } : {}),
+    ...(normalized.retryAfterSeconds !== undefined
+      ? { retryAfterSeconds: normalized.retryAfterSeconds }
+      : {}),
+  }
+}
+
 function responseDataObject(resp: JsonObject): JsonObject {
   const data = resp.data
   if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
@@ -714,6 +738,12 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
     parseJsonObject(requireString(args.orderJson, 'order-json'), '--order-json'),
   )
   const { transaction, lastValidBlockHeight } = requireOrderTransaction(order)
+  const executionMode = getExecutionMode(order)
+  if (args.poll && executionMode === undefined) {
+    throw new Error(
+      'Cannot poll DFlow order because executionMode is missing; rebuild the order before execution',
+    )
+  }
   const orderAddress = getOrderAddress(order)
   const tx = parseDflowTransaction(transaction)
   const recentBlockhash = tx.message.recentBlockhash
@@ -741,20 +771,28 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
     )
   }
 
-  const status =
-    args.poll && orderAddress
-      ? await dflowPredictionOrderStatus({
-          signature,
-          lastValidBlockHeight: String(lastValidBlockHeight),
-          poll: true,
-          timeoutMs: args.pollTimeoutMs,
-          intervalMs: args.pollIntervalMs,
-          raw: args.raw,
-        })
-      : undefined
+  let status: JsonObject | undefined
+  let statusError: JsonObject | undefined
+  if (args.poll && executionMode === 'async') {
+    try {
+      status = await dflowPredictionOrderStatus({
+        signature,
+        lastValidBlockHeight: String(lastValidBlockHeight),
+        poll: true,
+        timeoutMs: args.pollTimeoutMs,
+        intervalMs: args.pollIntervalMs,
+        raw: args.raw,
+      })
+    } catch (error) {
+      // The transaction has already been broadcast and confirmed. Preserve its
+      // signature so callers retry only the status lookup, never the order.
+      statusError = statusErrorDetails(error)
+    }
+  }
 
   return {
     type: 'dflow-execute-order',
+    executionMode,
     signerAddress: signed.address,
     signature,
     recentBlockhash,
@@ -762,6 +800,7 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
     orderAddress,
     confirmation: args.raw ? confirmation : { slot: confirmation.context.slot, err: null },
     ...(status ? { status } : {}),
+    ...(statusError ? { statusError } : {}),
     ...(args.raw ? { order, signedTransaction: signed.signedTransaction, rpcUrl } : {}),
   }
 }

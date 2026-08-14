@@ -124,10 +124,7 @@ describe('DFlow CLI output', () => {
           return
         }
 
-        if (
-          req.method === 'POST' &&
-          req.url === `/v1/instances/${INSTANCE_ID}/dflow/order`
-        ) {
+        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/dflow/order`) {
           assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
           assert.equal(req.headers['x-api-key'], undefined)
           assert.deepEqual(await readJsonBody(req), {

@@ -156,14 +156,19 @@ function optionalNonnegativeNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
-function retryAfterSeconds(error: ApiClientError, body: JsonObject | undefined): number | undefined {
+function retryAfterSeconds(
+  error: ApiClientError,
+  body: JsonObject | undefined,
+): number | undefined {
   const bodySeconds = optionalNonnegativeNumber(body?.retryAfterSeconds)
   if (bodySeconds !== undefined) return bodySeconds
   if (!error.retryAfter) return undefined
   const seconds = Number(error.retryAfter)
   if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds)
   const retryAt = Date.parse(error.retryAfter)
-  return Number.isFinite(retryAt) ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000)) : undefined
+  return Number.isFinite(retryAt)
+    ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000))
+    : undefined
 }
 
 function toDflowCliError(error: unknown): Error {

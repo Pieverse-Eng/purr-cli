@@ -359,10 +359,7 @@ function formatOpenSeaError(err: unknown): string {
   )
 }
 
-function dflowOrderOutput<T extends Record<string, unknown>>(
-  value: T,
-  raw: boolean,
-): T {
+function dflowOrderOutput<T extends Record<string, unknown>>(value: T, raw: boolean): T {
   const safeValue: Record<string, unknown> = { ...value }
   if (!raw) delete safeValue.order
   return safeValue as T

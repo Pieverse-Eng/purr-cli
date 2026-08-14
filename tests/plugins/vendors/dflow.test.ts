@@ -13,7 +13,7 @@ import {
   dflowPositions,
   dflowPriorityFees,
   dflowQuote,
-  dflowStatus,
+  dflowPredictionOrderStatus,
   dflowStream,
 } from '@pieverseio/purr-plugin-vendors/dflow'
 
@@ -624,7 +624,7 @@ describe('dflow execution helpers', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('checks DFlow order status by transaction signature', async () => {
+  it('checks DFlow prediction order status by transaction signature', async () => {
     Object.defineProperty(globalThis, 'fetch', {
       value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString()
@@ -645,12 +645,12 @@ describe('dflow execution helpers', () => {
     })
 
     await expect(
-      dflowStatus({
+      dflowPredictionOrderStatus({
         signature: 'transaction-signature-1',
         lastValidBlockHeight: '12345',
       }),
     ).resolves.toMatchObject({
-      type: 'dflow-status',
+      type: 'dflow-prediction-order-status',
       signature: 'transaction-signature-1',
       terminal: true,
       status: { status: 'closed' },
@@ -686,7 +686,7 @@ describe('dflow execution helpers', () => {
       writable: true,
     })
 
-    const statusPromise = dflowStatus({
+    const statusPromise = dflowPredictionOrderStatus({
       signature: 'transaction-signature-1',
       poll: true,
       timeoutMs: 5_000,
@@ -697,7 +697,7 @@ describe('dflow execution helpers', () => {
     await vi.advanceTimersByTimeAsync(1)
 
     await expect(statusPromise).resolves.toMatchObject({
-      type: 'dflow-status',
+      type: 'dflow-prediction-order-status',
       terminal: true,
       status: { status: 'closed' },
     })

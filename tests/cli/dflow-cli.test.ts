@@ -188,7 +188,7 @@ describe('DFlow CLI output', () => {
     )
   })
 
-  it('queries DFlow order status by transaction signature', async () => {
+  it('queries DFlow prediction order status by transaction signature', async () => {
     await withDflowServer(
       async (req, res) => {
         if (
@@ -212,7 +212,7 @@ describe('DFlow CLI output', () => {
       async (port) => {
         const result = await runPurr(port, [
           'dflow',
-          'status',
+          'prediction-order-status',
           '--signature',
           'transaction-signature-1',
           '--last-valid-block-height',
@@ -222,11 +222,32 @@ describe('DFlow CLI output', () => {
         expect(result.code).toBe(0)
         expect(result.stderr).toBe('')
         expect(JSON.parse(result.stdout)).toMatchObject({
-          type: 'dflow-status',
+          type: 'dflow-prediction-order-status',
           signature: 'transaction-signature-1',
           terminal: true,
           status: { status: 'closed' },
         })
+      },
+    )
+  })
+
+  it('rejects the ambiguous legacy DFlow status command', async () => {
+    await withDflowServer(
+      (_req, res) => {
+        writeJson(res, 500, { ok: false, error: 'unexpected request' })
+      },
+      async (port) => {
+        const result = await runPurr(port, [
+          'dflow',
+          'status',
+          '--signature',
+          'transaction-signature-1',
+        ])
+
+        expect(result.code).toBe(1)
+        expect(result.stdout).toBe('')
+        expect(result.stderr).toContain('Unknown dflow command: status')
+        expect(result.stderr).toContain('prediction-order-status')
       },
     )
   })

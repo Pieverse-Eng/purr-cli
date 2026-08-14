@@ -64,9 +64,9 @@ import {
   dflowMetadata,
   dflowOrder,
   dflowPositions,
+  dflowPredictionOrderStatus,
   dflowPriorityFees,
   dflowQuote,
-  dflowStatus,
   dflowStream,
 } from '@pieverseio/purr-plugin-vendors/dflow'
 import {
@@ -543,7 +543,7 @@ Examples:
   purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --params-json '{"slippageBps":"auto"}'
   purr dflow quote --input-mint <mint> --output-mint <mint> --amount <atomic>
   purr dflow execute-order --order-file /tmp/dflow-order.json
-  purr dflow status --signature <transaction-signature> --poll true
+  purr dflow prediction-order-status --signature <transaction-signature> --poll true
   purr dflow positions
   purr dflow metadata --path markets --query-json '{"status":"active","limit":10}'
   purr dflow priority-fees
@@ -1046,8 +1046,8 @@ Examples:
           console.log(JSON.stringify(result, null, 2))
           return
         }
-        case 'status': {
-          const result = await dflowStatus({
+        case 'prediction-order-status': {
+          const result = await dflowPredictionOrderStatus({
             signature: args.signature,
             lastValidBlockHeight: args['last-valid-block-height'],
             poll: parseBooleanFlag(args.poll),
@@ -1095,7 +1095,7 @@ Examples:
         }
         default:
           throw new Error(
-            `Unknown dflow command: ${command}. Use: quote, order, execute-order, status, positions, priority-fees, metadata, stream`,
+            `Unknown dflow command: ${command}. Use: quote, order, execute-order, prediction-order-status, positions, priority-fees, metadata, stream`,
           )
       }
     }

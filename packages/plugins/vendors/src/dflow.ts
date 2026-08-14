@@ -52,7 +52,7 @@ export interface DflowExecuteOrderArgs {
   raw?: boolean
 }
 
-export interface DflowStatusArgs {
+export interface DflowPredictionOrderStatusArgs {
   signature?: string
   lastValidBlockHeight?: string
   poll?: boolean
@@ -238,7 +238,7 @@ async function platformDflowOrder(body: JsonObject): Promise<JsonObject> {
   }
 }
 
-async function platformDflowStatus(
+async function platformDflowPredictionOrderStatus(
   signature: string,
   lastValidBlockHeight?: string,
 ): Promise<JsonObject> {
@@ -637,7 +637,9 @@ export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
   }
 }
 
-export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
+export async function dflowPredictionOrderStatus(
+  args: DflowPredictionOrderStatusArgs,
+): Promise<JsonObject> {
   const signature = requireString(args.signature, 'signature')
   const timeoutMs = args.timeoutMs ?? 120_000
   const intervalMs = args.intervalMs ?? 2_000
@@ -650,7 +652,7 @@ export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
   while (true) {
     let status: JsonObject
     try {
-      status = await platformDflowStatus(signature, args.lastValidBlockHeight)
+      status = await platformDflowPredictionOrderStatus(signature, args.lastValidBlockHeight)
     } catch (error) {
       const retryableRateLimit =
         args.poll &&
@@ -660,7 +662,7 @@ export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
       const delayMs = Math.max(intervalMs, (error.retryAfterSeconds ?? 0) * 1_000)
       if (Date.now() - started + delayMs >= timeoutMs) {
         return {
-          type: 'dflow-status',
+          type: 'dflow-prediction-order-status',
           signature,
           terminal: false,
           timedOut: true,
@@ -677,14 +679,14 @@ export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
     if (!args.poll || isTerminalStatus(status)) {
       return args.raw
         ? {
-            type: 'dflow-status',
+            type: 'dflow-prediction-order-status',
             signature,
             terminal: isTerminalStatus(status),
             status,
             snapshots,
           }
         : {
-            type: 'dflow-status',
+            type: 'dflow-prediction-order-status',
             signature,
             terminal: isTerminalStatus(status),
             status,
@@ -693,7 +695,7 @@ export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
 
     if (Date.now() - started >= timeoutMs) {
       return {
-        type: 'dflow-status',
+        type: 'dflow-prediction-order-status',
         signature,
         terminal: false,
         timedOut: true,
@@ -741,7 +743,7 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
 
   const status =
     args.poll && orderAddress
-      ? await dflowStatus({
+      ? await dflowPredictionOrderStatus({
           signature,
           lastValidBlockHeight: String(lastValidBlockHeight),
           poll: true,

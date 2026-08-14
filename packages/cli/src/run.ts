@@ -359,19 +359,26 @@ function formatOpenSeaError(err: unknown): string {
   )
 }
 
-function omitApiKeyPresence<T extends Record<string, unknown>>(value: T): Omit<T, 'apiKeyPresent'> {
-  const safeValue: Record<string, unknown> = { ...value }
-  delete safeValue.apiKeyPresent
-  return safeValue as Omit<T, 'apiKeyPresent'>
-}
-
 function dflowOrderOutput<T extends Record<string, unknown>>(
   value: T,
   raw: boolean,
-): Omit<T, 'apiKeyPresent'> {
-  const safeValue: Record<string, unknown> = omitApiKeyPresence(value)
+): T {
+  const safeValue: Record<string, unknown> = { ...value }
   if (!raw) delete safeValue.order
-  return safeValue as Omit<T, 'apiKeyPresent'>
+  return safeValue as T
+}
+
+function rejectLegacyDflowAuthArgs(args: Record<string, string>): void {
+  if (args['api-key'] !== undefined) {
+    throw new Error(
+      '--api-key is no longer supported; DFlow authentication is managed by the platform',
+    )
+  }
+  if (args['base-url'] !== undefined) {
+    throw new Error(
+      '--base-url is no longer supported; DFlow requests are routed through the platform',
+    )
+  }
 }
 
 function owsBitgetSigner(
@@ -487,7 +494,7 @@ Groups:
   balancer          Balancer pool discovery, swaps, and V2/V3 liquidity operations
   bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing
   binance-onchain-pay  Binance Onchain Pay fiat on-ramp and order APIs
-  dflow           DFlow Solana order execution through purr signing
+  dflow           DFlow Solana orders through platform access and purr signing
   ows-wallet        OWS-backed wallet ops and OWS-scoped Bitget execution
   ows-execute       OWS-local step execution (drop-in for 'execute'; signs + broadcasts locally)
   fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
@@ -967,6 +974,7 @@ Examples:
     }
 
     case 'dflow': {
+      rejectLegacyDflowAuthArgs(args)
       switch (command) {
         case 'order': {
           const paramsJson =
@@ -978,8 +986,6 @@ Examples:
             inputMint: args['input-mint'],
             outputMint: args['output-mint'],
             amount: args.amount,
-            apiKey: args['api-key'],
-            baseUrl: args['base-url'],
             paramsJson,
             raw,
           })
@@ -988,8 +994,6 @@ Examples:
             const executed = await dflowExecuteOrder({
               orderJson: JSON.stringify(result.order),
               rpcUrl: args['rpc-url'],
-              apiKey: args['api-key'],
-              baseUrl: args['base-url'],
               poll: parseBooleanFlag(args.poll),
               pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
               pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
@@ -1006,8 +1010,6 @@ Examples:
           const result = await dflowExecuteOrder({
             orderJson,
             rpcUrl: args['rpc-url'],
-            apiKey: args['api-key'],
-            baseUrl: args['base-url'],
             poll: parseBooleanFlag(args.poll),
             pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
             pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
@@ -1019,8 +1021,7 @@ Examples:
         case 'status': {
           const result = await dflowStatus({
             signature: args.signature,
-            apiKey: args['api-key'],
-            baseUrl: args['base-url'],
+            lastValidBlockHeight: args['last-valid-block-height'],
             poll: parseBooleanFlag(args.poll),
             timeoutMs: parseIntegerArg(args['timeout-ms'], 'timeout-ms'),
             intervalMs: parseIntegerArg(args['interval-ms'], 'interval-ms'),

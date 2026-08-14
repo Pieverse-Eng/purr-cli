@@ -1,8 +1,13 @@
 import { Connection, VersionedTransaction } from '@solana/web3.js'
-import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import {
+  ApiClientError,
+  apiGet,
+  apiPost,
+  resolveCredentials,
+} from '@pieverseio/purr-core/api-client'
 
-const PROD_TRADE_API_BASE_URL = 'https://quote-api.dflow.net'
 const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com'
+const DFLOW_REQUEST_TIMEOUT_MS = 20_000
 const DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM = 'dynamicComputeUnitLimit'
 
 const UNSUPPORTED_ORDER_PARAMS = new Set(['sponsor', 'sponsorExec', 'predictionMarketInitPayer'])
@@ -34,8 +39,6 @@ export interface DflowOrderArgs {
   inputMint?: string
   outputMint?: string
   amount?: string
-  apiKey?: string
-  baseUrl?: string
   paramsJson?: string
   raw?: boolean
 }
@@ -43,8 +46,6 @@ export interface DflowOrderArgs {
 export interface DflowExecuteOrderArgs {
   orderJson?: string
   rpcUrl?: string
-  apiKey?: string
-  baseUrl?: string
   poll?: boolean
   pollTimeoutMs?: number
   pollIntervalMs?: number
@@ -53,8 +54,7 @@ export interface DflowExecuteOrderArgs {
 
 export interface DflowStatusArgs {
   signature?: string
-  apiKey?: string
-  baseUrl?: string
+  lastValidBlockHeight?: string
   poll?: boolean
   timeoutMs?: number
   intervalMs?: number
@@ -81,7 +81,44 @@ interface PlatformSignSolanaTransactionResponse {
   error?: string
 }
 
+interface PlatformDflowResponse {
+  ok: boolean
+  data?: JsonObject
+  code?: string
+  providerCode?: string
+  error?: string
+  retryable?: boolean
+  retryAfterSeconds?: number | null
+}
+
 type JsonObject = Record<string, unknown>
+
+class DflowCliError extends Error {
+  readonly code?: string
+  readonly providerCode?: string
+  readonly status?: number
+  readonly retryable?: boolean
+  readonly retryAfterSeconds?: number
+
+  constructor(
+    message: string,
+    options: {
+      code?: string
+      providerCode?: string
+      status?: number
+      retryable?: boolean
+      retryAfterSeconds?: number
+    } = {},
+  ) {
+    super(message)
+    this.name = 'DflowCliError'
+    this.code = options.code
+    this.providerCode = options.providerCode
+    this.status = options.status
+    this.retryable = options.retryable
+    this.retryAfterSeconds = options.retryAfterSeconds
+  }
+}
 
 function requireString(value: string | undefined, name: string): string {
   if (value === undefined || value.trim() === '') {
@@ -103,60 +140,93 @@ function parseJsonObject(raw: string, label: string): JsonObject {
   return parsed as JsonObject
 }
 
-function getDflowApiKey(explicit?: string): string | undefined {
-  const key = explicit ?? process.env.DFLOW_API_KEY
-  return key && key.trim() !== '' ? key : undefined
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function requireDflowApiKey(explicit?: string): string {
-  const key = getDflowApiKey(explicit)
-  if (!key) {
-    throw new Error('Missing required DFlow API key: set DFLOW_API_KEY or pass --api-key')
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
+}
+
+function optionalNonnegativeNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+function retryAfterSeconds(error: ApiClientError, body: JsonObject | undefined): number | undefined {
+  const bodySeconds = optionalNonnegativeNumber(body?.retryAfterSeconds)
+  if (bodySeconds !== undefined) return bodySeconds
+  if (!error.retryAfter) return undefined
+  const seconds = Number(error.retryAfter)
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds)
+  const retryAt = Date.parse(error.retryAfter)
+  return Number.isFinite(retryAt) ? Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000)) : undefined
+}
+
+function toDflowCliError(error: unknown): Error {
+  if (error instanceof DflowCliError) return error
+  if (!(error instanceof ApiClientError)) {
+    return error instanceof Error ? error : new Error(String(error))
   }
-  return key
+  const body = isJsonObject(error.body) ? error.body : undefined
+  return new DflowCliError(
+    optionalString(body?.error) ?? optionalString(body?.message) ?? 'DFlow platform request failed',
+    {
+      code: optionalString(body?.code),
+      providerCode: optionalString(body?.providerCode),
+      status: error.status,
+      retryable: optionalBoolean(body?.retryable),
+      retryAfterSeconds: retryAfterSeconds(error, body),
+    },
+  )
 }
 
-function getDflowBaseUrl(args: { baseUrl?: string }): string {
-  if (args.baseUrl && args.baseUrl.trim() !== '') return args.baseUrl.replace(/\/$/, '')
-  if (process.env.DFLOW_TRADE_API_BASE_URL) {
-    return process.env.DFLOW_TRADE_API_BASE_URL.replace(/\/$/, '')
+function unwrapPlatformDflowResponse(response: PlatformDflowResponse): JsonObject {
+  if (!response.ok || !response.data) {
+    throw new DflowCliError(response.error ?? 'DFlow platform request failed', {
+      code: response.code,
+      providerCode: response.providerCode,
+      retryable: response.retryable,
+      retryAfterSeconds: response.retryAfterSeconds ?? undefined,
+    })
   }
-  return PROD_TRADE_API_BASE_URL
+  return response.data
 }
 
-function dflowHeaders(apiKey?: string): HeadersInit {
-  return {
-    Accept: 'application/json',
-    ...(apiKey ? { 'x-api-key': apiKey } : {}),
-  }
+function instanceDflowPath(suffix: '/order' | '/order-status'): string {
+  const { instanceId } = resolveCredentials()
+  return `/v1/instances/${encodeURIComponent(instanceId)}/dflow${suffix}`
 }
 
-async function dflowGet(
-  path: string,
-  params: URLSearchParams,
-  args: { apiKey?: string; baseUrl?: string },
-): Promise<JsonObject> {
-  const apiKey = requireDflowApiKey(args.apiKey)
-  const baseUrl = getDflowBaseUrl(args)
-  const query = params.toString()
-  const res = await fetch(`${baseUrl}${path}${query ? `?${query}` : ''}`, {
-    method: 'GET',
-    headers: dflowHeaders(apiKey),
-  })
-  const text = await res.text()
-  let parsed: unknown
+async function platformDflowOrder(body: JsonObject): Promise<JsonObject> {
   try {
-    parsed = text ? JSON.parse(text) : {}
-  } catch {
-    parsed = { raw: text }
+    const response = await apiPost<PlatformDflowResponse>(instanceDflowPath('/order'), body, {
+      timeoutMs: DFLOW_REQUEST_TIMEOUT_MS,
+    })
+    return unwrapPlatformDflowResponse(response)
+  } catch (error) {
+    throw toDflowCliError(error)
   }
-  if (!res.ok) {
-    throw new Error(`DFlow API error ${res.status} GET ${path}: ${text.slice(0, 500)}`)
+}
+
+async function platformDflowStatus(
+  signature: string,
+  lastValidBlockHeight?: string,
+): Promise<JsonObject> {
+  const params = new URLSearchParams({ signature })
+  if (lastValidBlockHeight) params.set('lastValidBlockHeight', lastValidBlockHeight)
+  try {
+    const response = await apiGet<PlatformDflowResponse>(
+      `${instanceDflowPath('/order-status')}?${params.toString()}`,
+      { timeoutMs: DFLOW_REQUEST_TIMEOUT_MS },
+    )
+    return unwrapPlatformDflowResponse(response)
+  } catch (error) {
+    throw toDflowCliError(error)
   }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error(`DFlow API returned non-object response for ${path}`)
-  }
-  return parsed as JsonObject
 }
 
 async function resolvePlatformSolanaAddress(): Promise<string> {
@@ -205,14 +275,6 @@ function assertNoUnsupportedOrderParams(params: JsonObject): void {
       )
     }
   }
-}
-
-function addParam(params: URLSearchParams, key: string, value: unknown): void {
-  if (value === undefined || value === null) return
-  if (typeof value === 'object') {
-    throw new Error(`DFlow order parameter ${key} must be a scalar value`)
-  }
-  params.set(key, String(value))
 }
 
 function orderSummary(order: JsonObject): JsonObject {
@@ -319,34 +381,28 @@ function sleep(ms: number): Promise<void> {
 export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
   const extraParams = args.paramsJson ? parseJsonObject(args.paramsJson, '--params-json') : {}
   assertNoUnsupportedOrderParams(extraParams)
-  requireDflowApiKey(args.apiKey)
   const userPublicKey = await resolvePlatformSolanaAddress()
-
-  const params = new URLSearchParams()
-  params.set('userPublicKey', userPublicKey)
-  params.set('inputMint', requireString(args.inputMint, 'input-mint'))
-  params.set('outputMint', requireString(args.outputMint, 'output-mint'))
-  params.set('amount', requireString(args.amount, 'amount'))
-  params.set(DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM, 'true')
-  for (const [key, value] of Object.entries(extraParams)) {
-    addParam(params, key, value)
-  }
-
-  const order = await dflowGet('/order', params, args)
+  const { apiUrl } = resolveCredentials()
+  const order = await platformDflowOrder({
+    inputMint: requireString(args.inputMint, 'input-mint'),
+    outputMint: requireString(args.outputMint, 'output-mint'),
+    amount: requireString(args.amount, 'amount'),
+    ...(Object.keys(extraParams).length > 0 ? { options: extraParams } : {}),
+  })
   if (args.raw) {
     return {
       type: 'dflow-order',
       userPublicKey,
-      apiBaseUrl: getDflowBaseUrl(args),
-      apiKeyPresent: Boolean(getDflowApiKey(args.apiKey)),
+      transport: 'platform',
+      platformApiBaseUrl: apiUrl.replace(/\/$/, ''),
       order,
     }
   }
   return {
     type: 'dflow-order',
     userPublicKey,
-    apiBaseUrl: getDflowBaseUrl(args),
-    apiKeyPresent: Boolean(getDflowApiKey(args.apiKey)),
+    transport: 'platform',
+    platformApiBaseUrl: apiUrl.replace(/\/$/, ''),
     summary: orderSummary(order),
     order,
   }
@@ -354,19 +410,40 @@ export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
 
 export async function dflowStatus(args: DflowStatusArgs): Promise<JsonObject> {
   const signature = requireString(args.signature, 'signature')
-  requireDflowApiKey(args.apiKey)
   const timeoutMs = args.timeoutMs ?? 120_000
   const intervalMs = args.intervalMs ?? 2_000
   validatePositiveInteger(timeoutMs, 'timeout-ms')
   validatePositiveInteger(intervalMs, 'interval-ms')
   const started = Date.now()
   const snapshots: JsonObject[] = []
+  let lastStatus: JsonObject | undefined
 
   while (true) {
-    const params = new URLSearchParams()
-    params.set('signature', signature)
-    const status = await dflowGet('/order-status', params, args)
+    let status: JsonObject
+    try {
+      status = await platformDflowStatus(signature, args.lastValidBlockHeight)
+    } catch (error) {
+      const retryableRateLimit =
+        args.poll &&
+        error instanceof DflowCliError &&
+        (error.status === 429 || error.code === 'dflow_rate_limited')
+      if (!retryableRateLimit) throw error
+      const delayMs = Math.max(intervalMs, (error.retryAfterSeconds ?? 0) * 1_000)
+      if (Date.now() - started + delayMs >= timeoutMs) {
+        return {
+          type: 'dflow-status',
+          signature,
+          terminal: false,
+          timedOut: true,
+          ...(lastStatus ? { status: lastStatus } : {}),
+          ...(args.raw ? { snapshots } : {}),
+        }
+      }
+      await sleep(delayMs)
+      continue
+    }
     snapshots.push(status)
+    lastStatus = status
 
     if (!args.poll || isTerminalStatus(status)) {
       return args.raw
@@ -407,7 +484,6 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
   )
   const { transaction, lastValidBlockHeight } = requireOrderTransaction(order)
   const orderAddress = getOrderAddress(order)
-  if (args.poll && orderAddress) requireDflowApiKey(args.apiKey)
   const tx = parseDflowTransaction(transaction)
   const recentBlockhash = tx.message.recentBlockhash
   const rpcUrl = resolveSolanaRpcUrl(args.rpcUrl)
@@ -438,8 +514,7 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
     args.poll && orderAddress
       ? await dflowStatus({
           signature,
-          apiKey: args.apiKey,
-          baseUrl: args.baseUrl,
+          lastValidBlockHeight: String(lastValidBlockHeight),
           poll: true,
           timeoutMs: args.pollTimeoutMs,
           intervalMs: args.pollIntervalMs,

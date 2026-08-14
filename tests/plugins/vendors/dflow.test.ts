@@ -24,6 +24,21 @@ function jsonResponse(body: unknown): Response {
   } as unknown as Response
 }
 
+function jsonErrorResponse(
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Response {
+  const text = JSON.stringify(body)
+  return {
+    ok: false,
+    status,
+    headers: new Headers(headers),
+    json: async () => body,
+    text: async () => text,
+  } as unknown as Response
+}
+
 function dflowTransactionBase64(options: { payer?: string; extraSigner?: string } = {}): string {
   const payer = new PublicKey(options.payer ?? SOLANA_ADDRESS)
   const extraSigner = options.extraSigner ? new PublicKey(options.extraSigner) : undefined
@@ -56,8 +71,6 @@ describe('dflow execution helpers', () => {
     process.env.WALLET_API_URL = 'https://platform.example.com'
     process.env.WALLET_API_TOKEN = 'test-token'
     process.env.INSTANCE_ID = 'test-instance'
-    process.env.DFLOW_API_KEY = 'test-dflow-key'
-    delete process.env.DFLOW_TRADE_API_BASE_URL
     delete process.env.SOLANA_RPC_URL
   })
 
@@ -65,9 +78,8 @@ describe('dflow execution helpers', () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
-    delete process.env.DFLOW_API_KEY
-    delete process.env.DFLOW_TRADE_API_BASE_URL
     delete process.env.SOLANA_RPC_URL
+    vi.useRealTimers()
     vi.restoreAllMocks()
     Object.defineProperty(globalThis, 'fetch', {
       value: originalFetch,
@@ -91,24 +103,27 @@ describe('dflow execution helpers', () => {
             data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
           })
         }
-        if (url.startsWith('https://quote-api.dflow.net/order?')) {
-          const parsed = new URL(url)
-          expect(parsed.searchParams.get('userPublicKey')).toBe(SOLANA_ADDRESS)
-          expect(parsed.searchParams.get('inputMint')).toBe(
-            'So11111111111111111111111111111111111111112',
-          )
-          expect(parsed.searchParams.get('outputMint')).toBe(
-            'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-          )
-          expect(parsed.searchParams.get('amount')).toBe('1000000')
-          expect(parsed.searchParams.get('slippageBps')).toBe('auto')
-          expect(parsed.searchParams.get('dynamicComputeUnitLimit')).toBe('true')
+        if (url.endsWith('/v1/instances/test-instance/dflow/order')) {
+          expect(init?.method).toBe('POST')
+          expect(init?.headers).toMatchObject({
+            Authorization: 'Bearer test-token',
+          })
+          expect(init?.headers).not.toHaveProperty('x-api-key')
+          expect(body).toEqual({
+            inputMint: 'So11111111111111111111111111111111111111112',
+            outputMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+            amount: '1000000',
+            options: { slippageBps: 'auto' },
+          })
           return jsonResponse({
-            inAmount: '1000000',
-            outAmount: '24000000',
-            slippageBps: 'auto',
-            transaction: dflowTransactionBase64(),
-            lastValidBlockHeight: 12345,
+            ok: true,
+            data: {
+              inAmount: '1000000',
+              outAmount: '24000000',
+              slippageBps: 'auto',
+              transaction: dflowTransactionBase64(),
+              lastValidBlockHeight: 12345,
+            },
           })
         }
         throw new Error(`unexpected fetch ${url}`)
@@ -127,8 +142,8 @@ describe('dflow execution helpers', () => {
     expect(result).toMatchObject({
       type: 'dflow-order',
       userPublicKey: SOLANA_ADDRESS,
-      apiBaseUrl: 'https://quote-api.dflow.net',
-      apiKeyPresent: true,
+      transport: 'platform',
+      platformApiBaseUrl: 'https://platform.example.com',
       summary: {
         inAmount: '1000000',
         outAmount: '24000000',
@@ -155,21 +170,6 @@ describe('dflow execution helpers', () => {
         paramsJson: JSON.stringify({ dynamicComputeUnitLimit: false }),
       }),
     ).rejects.toThrow(/dynamicComputeUnitLimit is not supported in --params-json/)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('requires a DFlow API key before resolving the wallet', async () => {
-    delete process.env.DFLOW_API_KEY
-    const fetchMock = vi.fn()
-    Object.defineProperty(globalThis, 'fetch', {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    })
-
-    await expect(
-      dflowOrder({ inputMint: 'input', outputMint: 'output', amount: '1' }),
-    ).rejects.toThrow(/Missing required DFlow API key/)
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -262,11 +262,16 @@ describe('dflow execution helpers', () => {
             data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
           })
         }
-        if (url.startsWith('https://quote-api.dflow.net/order-status?')) {
+        if (url.includes('/v1/instances/test-instance/dflow/order-status?')) {
           const parsed = new URL(url)
           expect(parsed.searchParams.get('signature')).toBe('5sig')
-          expect(init?.headers).toMatchObject({ 'x-api-key': 'test-dflow-key' })
-          return jsonResponse({ status: 'closed', signature: '5sig' })
+          expect(parsed.searchParams.get('lastValidBlockHeight')).toBe('999')
+          expect(init?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
+          expect(init?.headers).not.toHaveProperty('x-api-key')
+          return jsonResponse({
+            ok: true,
+            data: { status: 'closed', signature: '5sig' },
+          })
         }
         throw new Error(`unexpected fetch ${url}`)
       }),
@@ -522,44 +527,32 @@ describe('dflow execution helpers', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('requires a DFlow API key before signing an async order that will be polled', async () => {
-    delete process.env.DFLOW_API_KEY
-    const fetchMock = vi.fn()
+  it('checks DFlow order status by transaction signature', async () => {
     Object.defineProperty(globalThis, 'fetch', {
-      value: fetchMock,
+      value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const parsed = new URL(url)
+        expect(parsed.origin).toBe('https://platform.example.com')
+        expect(parsed.pathname).toBe('/v1/instances/test-instance/dflow/order-status')
+        expect(parsed.searchParams.get('signature')).toBe('transaction-signature-1')
+        expect(parsed.searchParams.get('lastValidBlockHeight')).toBe('12345')
+        expect(init?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
+        expect(init?.headers).not.toHaveProperty('x-api-key')
+        return jsonResponse({
+          ok: true,
+          data: { status: 'closed', signature: 'transaction-signature-1' },
+        })
+      }),
       configurable: true,
       writable: true,
     })
 
     await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({
-          transaction: dflowTransactionBase64(),
-          lastValidBlockHeight: 999,
-          orderAddress: 'order-address-1',
-        }),
-        rpcUrl: 'https://rpc.example.com',
-        poll: true,
+      dflowStatus({
+        signature: 'transaction-signature-1',
+        lastValidBlockHeight: '12345',
       }),
-    ).rejects.toThrow(/Missing required DFlow API key/)
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
-  it('checks DFlow order status by transaction signature', async () => {
-    Object.defineProperty(globalThis, 'fetch', {
-      value: vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString()
-        const parsed = new URL(url)
-        expect(parsed.origin).toBe('https://quote-api.dflow.net')
-        expect(parsed.pathname).toBe('/order-status')
-        expect(parsed.searchParams.get('signature')).toBe('transaction-signature-1')
-        return jsonResponse({ status: 'closed', signature: 'transaction-signature-1' })
-      }),
-      configurable: true,
-      writable: true,
-    })
-
-    await expect(dflowStatus({ signature: 'transaction-signature-1' })).resolves.toMatchObject({
+    ).resolves.toMatchObject({
       type: 'dflow-status',
       signature: 'transaction-signature-1',
       terminal: true,
@@ -567,18 +560,50 @@ describe('dflow execution helpers', () => {
     })
   })
 
-  it('requires a DFlow API key before checking order status', async () => {
-    delete process.env.DFLOW_API_KEY
-    const fetchMock = vi.fn()
+  it('honors the platform Retry-After header while polling order status', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonErrorResponse(
+          429,
+          {
+            ok: false,
+            code: 'dflow_rate_limited',
+            error: 'DFlow rate limit exceeded.',
+            retryable: true,
+            retryAfterSeconds: 1,
+          },
+          { 'Retry-After': '1' },
+        ),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ok: true,
+          data: { status: 'closed', signature: 'transaction-signature-1' },
+        }),
+      )
     Object.defineProperty(globalThis, 'fetch', {
       value: fetchMock,
       configurable: true,
       writable: true,
     })
 
-    await expect(dflowStatus({ signature: 'transaction-signature-1' })).rejects.toThrow(
-      /Missing required DFlow API key/,
-    )
-    expect(fetchMock).not.toHaveBeenCalled()
+    const statusPromise = dflowStatus({
+      signature: 'transaction-signature-1',
+      poll: true,
+      timeoutMs: 5_000,
+      intervalMs: 50,
+    })
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    await expect(statusPromise).resolves.toMatchObject({
+      type: 'dflow-status',
+      terminal: true,
+      status: { status: 'closed' },
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

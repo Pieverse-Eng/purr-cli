@@ -365,14 +365,12 @@ describe('Predict CLI e2e', () => {
       args: Record<string, string>
       url: string
       body: unknown
-      idempotencyKey?: string
     }> = [
       {
         command: 'set-referral',
-        args: { code: 'ABCDE', 'idempotency-key': 'agent.referral.1' },
+        args: { code: 'ABCDE' },
         url: `${BASE_PATH}/account/referral`,
         body: { code: 'ABCDE' },
-        idempotencyKey: 'agent.referral.1',
       },
       {
         command: 'order-preview',
@@ -544,7 +542,7 @@ describe('Predict CLI e2e', () => {
         url: testCase.url,
         body: testCase.body,
       })
-      expect(request?.idempotencyKey).toBe(testCase.idempotencyKey)
+      expect(request?.idempotencyKey).toBeUndefined()
       expect(output).toMatchObject({ method: 'POST', url: testCase.url, body: testCase.body })
     }
     expect(requests).toHaveLength(cases.length)
@@ -610,6 +608,12 @@ describe('Predict CLI e2e', () => {
         outcome: 'YES',
       }),
     ).rejects.toThrow('Unsupported argument for predict-fun position-preview: --outcome')
+    await expect(
+      predictCommand('set-referral', {
+        code: 'ABCDE',
+        'idempotency-key': 'legacy-referral-key',
+      }),
+    ).rejects.toThrow('Unsupported argument for predict-fun set-referral: --idempotency-key')
 
     const positional = await runPurr(port, tmpHome, ['predict-fun', 'account', 'unexpected'])
     expect(positional.code).toBe(1)

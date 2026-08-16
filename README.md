@@ -112,8 +112,7 @@ purr predict-fun approval-preview --operation TRADE --market-id <market-id> --si
 purr predict-fun position-preview --action SPLIT --market-id <market-id> --amount 1
 purr predict-fun stream --topics orderbook:<market-id>,wallet --max-events 10
 
-# Predict preview/execution idempotency is platform-managed. Only the permanent
-# referral setting requires an explicit --idempotency-key.
+# Predict idempotency is platform-managed; callers do not provide idempotency keys.
 purr evm approve --token <token-address> --spender <spender-address> --amount <amount> --chain-id <chain-id>
 purr evm abi-call --to <contract-address> --signature <function-signature> --args <json-args> --chain-id <chain-id>
 purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>

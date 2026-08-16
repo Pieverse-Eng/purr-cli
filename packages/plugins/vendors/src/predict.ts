@@ -27,7 +27,6 @@ const HASH_PATTERN = /^0x[0-9a-fA-F]{64}$/
 const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const POSITIVE_DECIMAL_PATTERN = /^(?:0|[1-9]\d*)(?:\.\d{1,18})?$/
-const IDEMPOTENCY_PATTERN = /^[A-Za-z0-9._:-]+$/
 
 const COMMAND_ARGS: Readonly<Record<string, readonly string[]>> = {
   account: [],
@@ -63,7 +62,7 @@ const COMMAND_ARGS: Readonly<Record<string, readonly string[]>> = {
   matches: ['first', 'after', 'market-id', 'minimum-value'],
   referral: [],
   approvals: ['market-id', 'operation', 'side'],
-  'set-referral': ['code', 'idempotency-key'],
+  'set-referral': ['code'],
   'order-preview': [
     'market-id',
     'outcome',
@@ -179,12 +178,12 @@ Approvals and positions:
   position-execute --preview-id <uuid>
 
 Referral and streaming:
-  set-referral --code <5-char-code> --idempotency-key <key>
+  set-referral --code <5-char-code>
   stream --topics <topic,topic,...> [--max-events <count>] [--timeout-ms <milliseconds>]
 
 Stream topics: orderbook:<marketId>, trading-status:<marketId>, market-status:<marketId>, market-changed:<marketId>, category-changed:<categoryId>, wallet.
 
-Predict.fun is BNB Chain mainnet-only. Credentials, the Predict API key, and preview/execution idempotency are managed by the platform. Only set-referral requires a caller-provided idempotency key.`
+Predict.fun is BNB Chain mainnet-only. Credentials, the Predict API key, and idempotency are managed by the platform.`
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -302,13 +301,9 @@ async function getPredictPage<T = unknown>(
   }
 }
 
-async function postPredict<T = unknown>(
-  path: string,
-  body: JsonRecord,
-  headers?: Record<string, string>,
-): Promise<T> {
+async function postPredict<T = unknown>(path: string, body: JsonRecord): Promise<T> {
   try {
-    const response = await apiPost<ApiEnvelope<T>>(`${predictBasePath()}${path}`, body, { headers })
+    const response = await apiPost<ApiEnvelope<T>>(`${predictBasePath()}${path}`, body)
     return unwrap(response)
   } catch (error) {
     throw toPredictError(error)
@@ -857,15 +852,7 @@ export async function predictCommand(
     case 'set-referral': {
       const code = requireArg(args, 'code')
       if (code.length !== 5) throw new Error('--code must contain exactly 5 characters')
-      const idempotencyKey = requireArg(args, 'idempotency-key')
-      if (idempotencyKey.length > 128 || !IDEMPOTENCY_PATTERN.test(idempotencyKey)) {
-        throw new Error(
-          '--idempotency-key must be 1-128 letters, numbers, dots, underscores, colons, or hyphens',
-        )
-      }
-      printJson(
-        await postPredict('/account/referral', { code }, { 'Idempotency-Key': idempotencyKey }),
-      )
+      printJson(await postPredict('/account/referral', { code }))
       return
     }
     case 'order-preview':

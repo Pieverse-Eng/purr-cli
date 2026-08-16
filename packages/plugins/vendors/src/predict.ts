@@ -88,14 +88,7 @@ const COMMAND_ARGS: Readonly<Record<string, readonly string[]>> = {
   'remove-from-book-preview': ['order-hashes'],
   'remove-from-book-execute': ['preview-id', 'acknowledge-risk'],
   'approval-preview': ['operation', 'market-id', 'side', 'amount', 'unlimited', 'step-ids'],
-  'approval-revoke-preview': [
-    'operation',
-    'market-id',
-    'side',
-    'amount',
-    'unlimited',
-    'step-ids',
-  ],
+  'approval-revoke-preview': ['operation', 'market-id', 'side', 'amount', 'unlimited', 'step-ids'],
   'approval-execute': ['preview-id'],
   'approval-revoke-execute': ['preview-id'],
   'position-preview': ['action', 'market-id', 'amount', 'outcome', 'category-slug', 'market-ids'],
@@ -389,7 +382,9 @@ function optionalEnum<const T extends readonly string[]>(
 
 function positiveDecimal(value: string, name: string): string {
   if (!POSITIVE_DECIMAL_PATTERN.test(value) || /^0(?:\.0+)?$/.test(value)) {
-    throw new Error(`Invalid --${name}: "${value}". Expected a positive decimal with up to 18 places`)
+    throw new Error(
+      `Invalid --${name}: "${value}". Expected a positive decimal with up to 18 places`,
+    )
   }
   return value
 }
@@ -427,7 +422,8 @@ function orderHashes(args: CliArgs): string[] {
 
 function requireOrderHash(args: CliArgs): string {
   const hash = requireArg(args, 'order-hash')
-  if (!HASH_PATTERN.test(hash)) throw new Error('Invalid --order-hash: expected a 0x-prefixed 32-byte hash')
+  if (!HASH_PATTERN.test(hash))
+    throw new Error('Invalid --order-hash: expected a 0x-prefixed 32-byte hash')
   return hash
 }
 
@@ -460,11 +456,7 @@ function orderPreviewBody(args: CliArgs): JsonRecord {
   const isMinAmountOut = optionalBooleanArg(args, 'is-min-amount-out')
   const fillOrKill = optionalBooleanArg(args, 'fill-or-kill')
   const postOnly = optionalBooleanArg(args, 'post-only')
-  const selfTradePrevention = optionalEnum(
-    args,
-    'self-trade-prevention',
-    SELF_TRADE_PREVENTIONS,
-  )
+  const selfTradePrevention = optionalEnum(args, 'self-trade-prevention', SELF_TRADE_PREVENTIONS)
   const reservedBalancePolicy = args['reserved-balance-policy']
   const hasOptions =
     fillOrKill !== undefined ||
@@ -506,9 +498,7 @@ function approvalBody(args: CliArgs): JsonRecord {
   const amount = optionalPositiveDecimal(args, 'amount')
   const unlimited = optionalBooleanArg(args, 'unlimited')
   const stepIds =
-    args['step-ids'] === undefined
-      ? undefined
-      : splitList(args['step-ids'], 'step-ids', 20)
+    args['step-ids'] === undefined ? undefined : splitList(args['step-ids'], 'step-ids', 20)
   return {
     operation: requireEnum(args, 'operation', APPROVAL_OPERATIONS),
     ...(marketId === undefined ? {} : { marketId }),
@@ -568,10 +558,9 @@ async function predictStream(args: CliArgs): Promise<void> {
   const maxEvents = optionalInteger(args, 'max-events', 1, 10_000) ?? 100
   const timeoutMs = optionalInteger(args, 'timeout-ms', 1, 15 * 60_000) ?? 60_000
   const { apiUrl, apiToken, instanceId } = resolveCredentials()
-  const path = appendQuery(
-    `/v1/instances/${encodeURIComponent(instanceId)}/predict/stream`,
-    { topics },
-  )
+  const path = appendQuery(`/v1/instances/${encodeURIComponent(instanceId)}/predict/stream`, {
+    topics,
+  })
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   let eventCount = 0
@@ -681,7 +670,8 @@ function rejectMalformedRawArgs(command: string, rawArgs: readonly string[]): vo
     const raw = token.slice(2)
     const equalsIndex = raw.indexOf('=')
     const name = equalsIndex >= 0 ? raw.slice(0, equalsIndex) : raw
-    if (name.length === 0) throw new Error(`Invalid argument for predict-fun ${command}: "${token}"`)
+    if (name.length === 0)
+      throw new Error(`Invalid argument for predict-fun ${command}: "${token}"`)
     if (seen.has(name)) {
       throw new Error(`Duplicate argument for predict-fun ${command}: --${name}`)
     }
@@ -700,11 +690,7 @@ function rejectMalformedRawArgs(command: string, rawArgs: readonly string[]): vo
   }
 }
 
-function rejectUnknownArgs(
-  command: string,
-  args: CliArgs,
-  rawArgs: readonly string[],
-): void {
+function rejectUnknownArgs(command: string, args: CliArgs, rawArgs: readonly string[]): void {
   const configuredArgs = COMMAND_ARGS[command]
   if (configuredArgs === undefined) return
 
@@ -844,9 +830,7 @@ export async function predictCommand(
       if (!ADDRESS_PATTERN.test(address)) {
         throw new Error('Invalid --address: expected a 0x-prefixed 20-byte EVM address')
       }
-      printJson(
-        await getPredictPage(`/addresses/${address}/positions`, positionsQuery(args)),
-      )
+      printJson(await getPredictPage(`/addresses/${address}/positions`, positionsQuery(args)))
       return
     }
     case 'activity':
@@ -875,7 +859,9 @@ export async function predictCommand(
       if (code.length !== 5) throw new Error('--code must contain exactly 5 characters')
       const idempotencyKey = requireArg(args, 'idempotency-key')
       if (idempotencyKey.length > 128 || !IDEMPOTENCY_PATTERN.test(idempotencyKey)) {
-        throw new Error('--idempotency-key must be 1-128 letters, numbers, dots, underscores, colons, or hyphens')
+        throw new Error(
+          '--idempotency-key must be 1-128 letters, numbers, dots, underscores, colons, or hyphens',
+        )
       }
       printJson(
         await postPredict('/account/referral', { code }, { 'Idempotency-Key': idempotencyKey }),

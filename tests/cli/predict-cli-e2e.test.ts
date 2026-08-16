@@ -4,10 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  PredictCliError,
-  predictCommand,
-} from '@pieverseio/purr-plugin-vendors/predict'
+import { type PredictCliError, predictCommand } from '@pieverseio/purr-plugin-vendors/predict'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const API_TOKEN = 'predict-test-token'
@@ -149,9 +146,7 @@ describe('Predict CLI e2e', () => {
         })
         res.write('event: connected\ndata: {"topics":["wallet"]}\n\n')
         res.write('event: message\ndata: {"topic":"wallet","data":{"kind":"order"}}\n\n')
-        res.end(
-          'event: message\ndata: {"topic":"orderbook:7","data":{"bestBid":0.4}}\n\n',
-        )
+        res.end('event: message\ndata: {"topic":"orderbook:7","data":{"bestBid":0.4}}\n\n')
         return
       }
 
@@ -168,7 +163,9 @@ describe('Predict CLI e2e', () => {
       if (req.url === `${BASE_PATH}/markets/888888`) {
         writeJson(res, 400, {
           error: {
-            issues: [{ path: ['acknowledgeRisk'], message: 'Invalid literal value, expected true' }],
+            issues: [
+              { path: ['acknowledgeRisk'], message: 'Invalid literal value, expected true' },
+            ],
           },
         })
         return
@@ -330,7 +327,12 @@ describe('Predict CLI e2e', () => {
         url: `${BASE_PATH}/addresses/${ADDRESS}/positions?first=5`,
         paged: true,
       },
-      { command: 'activity', args: { first: '3' }, url: `${BASE_PATH}/activity?first=3`, paged: true },
+      {
+        command: 'activity',
+        args: { first: '3' },
+        url: `${BASE_PATH}/activity?first=3`,
+        paged: true,
+      },
       {
         command: 'matches',
         args: { 'market-id': '7', 'minimum-value': '0.9' },
@@ -624,9 +626,7 @@ describe('Predict CLI e2e', () => {
       '8',
     ])
     expect(duplicate.code).toBe(1)
-    expect(duplicate.stderr).toContain(
-      'Duplicate argument for predict-fun market: --market-id',
-    )
+    expect(duplicate.stderr).toContain('Duplicate argument for predict-fun market: --market-id')
     expect(requests).toHaveLength(0)
   })
 
@@ -658,17 +658,10 @@ describe('Predict CLI e2e', () => {
     expect(success.stderr).toBe('')
     expect(JSON.parse(success.stdout)).toMatchObject({ url: `${BASE_PATH}/markets/7/quote` })
 
-    const failure = await runPurr(port, tmpHome, [
-      'predict-fun',
-      'market',
-      '--market-id',
-      '999999',
-    ])
+    const failure = await runPurr(port, tmpHome, ['predict-fun', 'market', '--market-id', '999999'])
     expect(failure.code).toBe(1)
     expect(failure.stdout).toBe('')
-    expect(failure.stderr).toContain(
-      'error [PREDICT_MARKET_UNAVAILABLE]: Market is unavailable',
-    )
+    expect(failure.stderr).toContain('error [PREDICT_MARKET_UNAVAILABLE]: Market is unavailable')
     expect(failure.stderr).toContain('"marketId": 999999')
 
     const legacyGroup = await runPurr(port, tmpHome, ['predict', 'help'])

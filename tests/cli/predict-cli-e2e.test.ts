@@ -189,7 +189,8 @@ describe('Predict CLI e2e', () => {
         ...(paged ? { cursor: 'next-page' } : {}),
       })
     } catch (error) {
-      writeJson(res, 500, { ok: false, error: String(error) })
+      void error
+      writeJson(res, 500, { ok: false, error: 'Internal server error' })
     }
   })
 

@@ -3,6 +3,7 @@ declare const PURR_VERSION: string
 import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
+import { handleDepsCommand } from './deps.js'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
 import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
 import { NATIVE_EVM, parseChainId } from '@pieverseio/purr-core/shared'
@@ -497,10 +498,16 @@ export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
     }
   }
 
+  if (group === 'deps') {
+    await handleDepsCommand(command, rest)
+    return
+  }
+
   if (!group || group === '--help' || group === '-h') {
     console.log(`Usage: purr <group> <command> [options]
 
 Groups:
+  deps              Install pinned skill CLIs for remote agents (install, list)
   aster             Aster DEX registration + on-chain deposits (ETH, BSC, Arbitrum)
   balancer          Balancer pool discovery, swaps, and V2/V3 liquidity operations
   bitget           Bitget Wallet order, transfer, and EVM x402 execution through platform wallet signing

@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-vendors",
-  "version": "0.2.37",
+  "version": "0.2.38",
   "type": "module",
   "private": true,
   "exports": {
@@ -15,7 +15,8 @@
     "./opensea": "./src/opensea.ts",
     "./opensea-api": "./src/opensea-api.ts",
     "./opensea-input": "./src/opensea-input.ts",
-    "./pancake": "./src/pancake.ts"
+    "./pancake": "./src/pancake.ts",
+    "./predict": "./src/predict.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",

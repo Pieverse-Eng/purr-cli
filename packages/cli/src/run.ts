@@ -83,6 +83,11 @@ import {
 import { LighterCliError, lighterCommand, lighterHelp } from '@pieverseio/purr-plugin-lighter/index'
 import { OseroCliError, oseroCommand, oseroHelp } from '@pieverseio/purr-plugin-vendors/osero'
 import {
+  PredictCliError,
+  predictCommand,
+  predictHelp,
+} from '@pieverseio/purr-plugin-vendors/predict'
+import {
   buildPancakeAddLiquiditySteps,
   buildPancakeFarmSteps,
   buildPancakeRemoveLiquiditySteps,
@@ -506,6 +511,7 @@ Groups:
   fourmeme          four.meme BSC flows (login, raised tokens, buy/sell, tax, agent, create-token)
   opensea           OpenSea execution helpers for official OpenSea workflows
   osero             Osero USDS/sUSDS routes through the platform TEE wallet
+  predict-fun       Predict.fun market data and trading through the platform TEE wallet
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaign card flow
@@ -578,6 +584,11 @@ Examples:
   purr osero apy --chain base
   purr osero preview --action mint-susds --chain base --amount 1000000
   purr osero execute --action mint-susds --chain base --amount 1000000
+  purr predict-fun markets --status OPEN --first 20
+  purr predict-fun market-quote --market-id 12345
+  purr predict-fun order-preview --market-id 12345 --outcome YES --side BUY --strategy MARKET --spend 1
+  purr predict-fun order-execute --preview-id 00000000-0000-4000-8000-000000000000
+  purr predict-fun stream --topics orderbook:12345,wallet --max-events 10
   purr pieverse card purchase --partner okx --channel telegram
   purr pieverse card create-job --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse card fund --purchase-id 00000000-0000-0000-0000-000000000000
@@ -697,6 +708,15 @@ Examples:
         return
       }
       await oseroCommand(command, args)
+      return
+    }
+
+    case 'predict-fun': {
+      if (!command || command === 'help' || command === '--help' || command === '-h') {
+        console.log(predictHelp())
+        return
+      }
+      await predictCommand(command, args, rest)
       return
     }
 
@@ -2021,7 +2041,7 @@ Examples:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, execute, config, version, store`,
+        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, execute, config, version, store`,
       )
   }
 
@@ -2070,6 +2090,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
     process.exit(err.exitCode)
   }
   if (err instanceof OseroCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
+  }
+  if (err instanceof PredictCliError) {
     const prefix = err.code ? `error [${err.code}]` : 'error'
     console.error(`${prefix}: ${err.message}`)
     if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))

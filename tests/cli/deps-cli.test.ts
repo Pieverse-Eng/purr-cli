@@ -31,6 +31,13 @@ describe('purr deps catalog', () => {
   it('rejects unknown --only ids', () => {
     expect(() => selectDeps(parseOnlyList('surf,nope'))).toThrow(/Unknown skill CLI id: nope/)
   })
+
+  it('uses the pinned gate-dex download instead of latest', () => {
+    const gateDex = SKILL_CLI_DEPS.find((dep) => dep.id === 'gate-dex')
+    expect(gateDex?.resolve?.({ os: 'linux', arch: 'amd64' })?.url).toBe(
+      'https://gate-dex-cli.gateweb3.cc/v1.0.6/gate-dex-linux-x64',
+    )
+  })
 })
 
 describe('purr deps install', () => {
@@ -111,6 +118,10 @@ describe('purr deps install', () => {
         return { status: 1, stdout: '', stderr: 'unused' }
       },
     })
-    expect(outcome.results[0]).toMatchObject({ id: 'surf', status: 'skipped', detail: 'already installed' })
+    expect(outcome.results[0]).toMatchObject({
+      id: 'surf',
+      status: 'skipped',
+      detail: 'already installed',
+    })
   })
 })

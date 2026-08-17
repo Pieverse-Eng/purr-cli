@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -41,7 +49,11 @@ export type DepsIo = {
   env?: NodeJS.ProcessEnv
   destDir?: string
   fetch?: typeof fetch
-  run?: (file: string, args: string[], opts?: { cwd?: string }) => { status: number; stdout: string; stderr: string }
+  run?: (
+    file: string,
+    args: string[],
+    opts?: { cwd?: string },
+  ) => { status: number; stdout: string; stderr: string }
   now?: () => HostInfo
 }
 
@@ -107,7 +119,8 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
       const file = `onchainos-${target}`
       return {
         url: `https://github.com/okx/onchainos-skills/releases/download/v4.0.0/${file}`,
-        checksumUrl: 'https://github.com/okx/onchainos-skills/releases/download/v4.0.0/checksums.txt',
+        checksumUrl:
+          'https://github.com/okx/onchainos-skills/releases/download/v4.0.0/checksums.txt',
       }
     },
   },
@@ -185,7 +198,7 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
     resolve: (host) => {
       if (host.os !== 'linux' || host.arch !== 'amd64') return null
       return {
-        url: 'https://gate-dex-cli.gateweb3.cc/latest/gate-dex-linux-x64',
+        url: 'https://gate-dex-cli.gateweb3.cc/v1.0.6/gate-dex-linux-x64',
       }
     },
   },
@@ -274,16 +287,18 @@ function parseChecksum(listing: string, filename: string): string | undefined {
   return only ? only[1].toLowerCase() : undefined
 }
 
-async function download(
-  url: string,
-  fetchImpl: typeof fetch,
-): Promise<Buffer> {
+async function download(url: string, fetchImpl: typeof fetch): Promise<Buffer> {
   const res = await fetchImpl(url, { signal: AbortSignal.timeout(180_000) })
   if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`)
   return Buffer.from(await res.arrayBuffer())
 }
 
-function extractMember(archive: Buffer, member: string | undefined, destFile: string, run: NonNullable<DepsIo['run']>): void {
+function extractMember(
+  archive: Buffer,
+  member: string | undefined,
+  destFile: string,
+  run: NonNullable<DepsIo['run']>,
+): void {
   const dir = mkdtempSync(join(tmpdir(), 'purr-deps-'))
   try {
     const tarPath = join(dir, 'pkg.tar.gz')
@@ -292,7 +307,18 @@ function extractMember(archive: Buffer, member: string | undefined, destFile: st
     if (unpacked.status !== 0) {
       throw new Error(unpacked.stderr.trim() || 'tar extract failed')
     }
-    const find = run('find', [dir, '-type', 'f', '(', '-name', member ?? '*', '-o', '-name', `${member ?? '*'}*`, ')'])
+    const find = run('find', [
+      dir,
+      '-type',
+      'f',
+      '(',
+      '-name',
+      member ?? '*',
+      '-o',
+      '-name',
+      `${member ?? '*'}*`,
+      ')',
+    ])
     const candidates = find.stdout
       .split(/\r?\n/)
       .map((line) => line.trim())
@@ -317,13 +343,11 @@ function versionLooksInstalled(output: string, version: string): boolean {
   return output.includes(version) || output.includes(needle)
 }
 
-function localVersion(
-  binPath: string,
-  run: NonNullable<DepsIo['run']>,
-): string {
+function localVersion(binPath: string, run: NonNullable<DepsIo['run']>): string {
   for (const args of [['--version'], ['version'], ['-v']]) {
     const result = run(binPath, args)
-    if (result.status === 0 && result.stdout.trim()) return `${result.stdout}\n${result.stderr}`.trim()
+    if (result.status === 0 && result.stdout.trim())
+      return `${result.stdout}\n${result.stderr}`.trim()
   }
   return ''
 }
@@ -367,7 +391,9 @@ export async function installSkillCliDeps(
         const spec = `${dep.npmPackage}@${dep.version}`
         const installed = run('npm', ['install', '-g', '--prefix', npmPrefix, spec])
         if (installed.status !== 0) {
-          throw new Error(installed.stderr.trim() || installed.stdout.trim() || `npm install ${spec} failed`)
+          throw new Error(
+            installed.stderr.trim() || installed.stdout.trim() || `npm install ${spec} failed`,
+          )
         }
         results.push({
           id: dep.id,
@@ -438,7 +464,10 @@ Hosted images already contain these binaries. Remote onboard should run install 
 `
 }
 
-export async function handleDepsCommand(command: string | undefined, rest: string[]): Promise<void> {
+export async function handleDepsCommand(
+  command: string | undefined,
+  rest: string[],
+): Promise<void> {
   if (!command || command === 'help' || command === '--help' || command === '-h') {
     console.log(depsHelp())
     return

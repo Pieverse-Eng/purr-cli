@@ -126,5 +126,4 @@ describe('Pieverse staking', () => {
       'must not contain duplicate',
     )
   })
-
 })

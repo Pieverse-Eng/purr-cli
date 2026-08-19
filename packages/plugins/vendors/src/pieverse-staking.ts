@@ -193,9 +193,9 @@ export function buildPieverseWithdrawBatchSteps(args: {
   }
 }
 
-export async function readPieverseStakingPositions(
-  args: { chainId: number },
-): Promise<PieverseStakingPositions> {
+export async function readPieverseStakingPositions(args: {
+  chainId: number
+}): Promise<PieverseStakingPositions> {
   const deployment = getPieverseStakingDeployment(args.chainId)
   const { instanceId } = resolveCredentials()
   const response = await apiGet<PieverseStakingPositionsResponse>(

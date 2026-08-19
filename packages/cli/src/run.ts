@@ -142,7 +142,7 @@ import {
 } from '@pieverseio/purr-plugin-store/resolve'
 import { removeFromAgents } from '@pieverseio/purr-plugin-store/skill-dirs'
 import { walletAbiCall } from '@pieverseio/purr-plugin-wallet/abi-call'
-import { getWalletAddress, walletAddress } from '@pieverseio/purr-plugin-wallet/address'
+import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
 import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
 import {
   redpacketClaim,

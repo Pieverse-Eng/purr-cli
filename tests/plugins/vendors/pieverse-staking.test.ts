@@ -25,19 +25,19 @@ const STAKING_ABI = parseAbi([
 const WALLET = '0x1111111111111111111111111111111111111111'
 
 describe('Pieverse staking', () => {
-  it('returns the Ethereum and BNB Chain deployments with staging execution networks', () => {
+  it('returns the Ethereum and BNB Chain mainnet deployments', () => {
     expect(listPieverseStakingDeployments().map((deployment) => deployment.chainId)).toEqual([
       1, 56,
     ])
     expect(getPieverseStakingDeployment(1)).toMatchObject({
-      executionChainId: 11155111,
-      pieverse: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
-      staking: '0x198658Ba2e01132fc16C05809704BA8873d0056a',
+      executionChainId: 1,
+      pieverse: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+      staking: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
     })
     expect(getPieverseStakingDeployment(56)).toMatchObject({
-      executionChainId: 97,
-      pieverse: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
-      staking: '0x366b3edF40456439aF125949Fa35dE337C506168',
+      executionChainId: 56,
+      pieverse: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+      staking: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
     })
   })
 
@@ -53,12 +53,12 @@ describe('Pieverse staking', () => {
     })
     expect(output.steps).toHaveLength(2)
     expect(output.steps[0]).toMatchObject({
-      to: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
-      chainId: 97,
+      to: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+      chainId: 56,
       conditional: {
         type: 'allowance_lt',
-        token: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
-        spender: '0x366b3edF40456439aF125949Fa35dE337C506168',
+        token: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+        spender: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
         amount: '2500000000000000000',
       },
     })
@@ -69,15 +69,15 @@ describe('Pieverse staking', () => {
       }).functionName,
     ).toBe('approve')
     expect(output.steps[1]).toMatchObject({
-      to: '0x366b3edF40456439aF125949Fa35dE337C506168',
-      chainId: 97,
+      to: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
+      chainId: 56,
       value: '0x0',
     })
     expect(
       decodeFunctionData({ abi: STAKING_ABI, data: output.steps[1].data as `0x${string}` }),
     ).toEqual({
       functionName: 'stake',
-      args: [2500000000000000000n, 600n],
+      args: [2500000000000000000n, 15552000n],
     })
   })
 
@@ -108,11 +108,11 @@ describe('Pieverse staking', () => {
     )
   })
 
-  it('maps public staking durations to the temporary contract durations', () => {
-    expect(parsePieverseStakingDuration('90d', 1)).toBe(300)
-    expect(parsePieverseStakingDuration('180d', 56)).toBe(600)
-    expect(parsePieverseStakingDuration('365d', 1)).toBe(900)
-    expect(parsePieverseStakingDuration('15552000', 56)).toBe(600)
+  it('maps public staking durations to the mainnet contract durations', () => {
+    expect(parsePieverseStakingDuration('90d', 1)).toBe(7_776_000)
+    expect(parsePieverseStakingDuration('180d', 56)).toBe(15_552_000)
+    expect(parsePieverseStakingDuration('365d', 1)).toBe(31_536_000)
+    expect(parsePieverseStakingDuration('15552000', 56)).toBe(15_552_000)
     expect(() => parsePieverseStakingDuration('5m', 1)).toThrow('Supported durations')
   })
 

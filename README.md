@@ -155,6 +155,11 @@ automatically reads the configured agent wallet. Stake amounts support at most t
 places and use increments of `0.01 PIEVERSE`; pass the exact 18-decimal wei value through
 `--amount-wei`.
 
+| Mainnet | PIEVERSE token | Staking proxy |
+| --- | --- | --- |
+| Ethereum | `0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9` | `0xaE4c8Ca1dC8127C380099657774CB09ca8197e78` |
+| BNB Chain | `0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9` | `0xaE4c8Ca1dC8127C380099657774CB09ca8197e78` |
+
 ## Development
 
 ```bash

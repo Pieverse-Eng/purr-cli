@@ -19,7 +19,7 @@ export interface PieverseStakingDeployment {
   /** Public network ID accepted and returned by the CLI. */
   chainId: number
   chain: string
-  /** Temporary network used to execute the current staging deployment. */
+  /** Network used to execute the deployed staking contract. */
   executionChainId: number
   pieverse: `0x${string}`
   staking: `0x${string}`
@@ -32,21 +32,21 @@ const DEPLOYMENTS: Record<number, PieverseStakingDeployment> = {
   1: {
     chainId: 1,
     chain: 'ethereum',
-    executionChainId: 11155111,
-    pieverse: '0xa7420420a6C0D1D2b70198358C32d32cCC2EC968',
-    staking: '0x198658Ba2e01132fc16C05809704BA8873d0056a',
-    rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
-    explorerUrl: 'https://sepolia.etherscan.io',
+    executionChainId: 1,
+    pieverse: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+    staking: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
+    rpcUrl: 'https://ethereum-rpc.publicnode.com',
+    explorerUrl: 'https://etherscan.io',
     durations: ['90d', '180d', '365d'],
   },
   56: {
     chainId: 56,
     chain: 'bnb-chain',
-    executionChainId: 97,
-    pieverse: '0xd88F9A289a2b32B09B8C0C5C8F200d034a94bED7',
-    staking: '0x366b3edF40456439aF125949Fa35dE337C506168',
-    rpcUrl: 'https://bsc-testnet-rpc.publicnode.com',
-    explorerUrl: 'https://testnet.bscscan.com',
+    executionChainId: 56,
+    pieverse: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+    staking: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
+    rpcUrl: 'https://bsc-rpc.publicnode.com',
+    explorerUrl: 'https://bscscan.com',
     durations: ['90d', '180d', '365d'],
   },
 }
@@ -54,9 +54,9 @@ const DEPLOYMENTS: Record<number, PieverseStakingDeployment> = {
 const SUPPORTED_CHAIN_IDS = [1, 56] as const
 
 const DURATION_MAPPINGS = [
-  { days: 90, publicSeconds: 7_776_000, executionSeconds: 300 },
-  { days: 180, publicSeconds: 15_552_000, executionSeconds: 600 },
-  { days: 365, publicSeconds: 31_536_000, executionSeconds: 900 },
+  { days: 90, publicSeconds: 7_776_000, executionSeconds: 7_776_000 },
+  { days: 180, publicSeconds: 15_552_000, executionSeconds: 15_552_000 },
+  { days: 365, publicSeconds: 31_536_000, executionSeconds: 31_536_000 },
 ] as const
 
 const STATUS_NAMES = ['active', 'matured', 'closed'] as const
@@ -277,8 +277,8 @@ export async function readPieverseStakingPositions(
 function createStakingReadClient(deployment: PieverseStakingDeployment): ContractReadClient {
   const rpcUrl =
     process.env[`EVM_RPC_${deployment.executionChainId}`] ||
-    (deployment.executionChainId === 11155111 ? process.env.SEPOLIA_RPC_URL : undefined) ||
-    (deployment.executionChainId === 97 ? process.env.BSC_TESTNET_RPC_URL : undefined) ||
+    (deployment.executionChainId === 1 ? process.env.ETHEREUM_RPC_URL : undefined) ||
+    (deployment.executionChainId === 56 ? process.env.BNB_RPC_URL : undefined) ||
     deployment.rpcUrl
   const publicClient = createPublicClient({ transport: http(rpcUrl) })
   return {

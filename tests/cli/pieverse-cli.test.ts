@@ -135,6 +135,14 @@ describe('Pieverse CLI routing', () => {
     const contracts = JSON.parse(result.stdout) as Array<Record<string, unknown>>
     expect(contracts.map((deployment) => deployment.chainId)).toEqual([1, 56])
     expect(Object.keys(contracts[0])).toEqual(['chainId', 'pieverse', 'staking', 'durations'])
+    expect(contracts[0]).toMatchObject({
+      pieverse: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+      staking: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
+    })
+    expect(contracts[1]).toMatchObject({
+      pieverse: '0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9',
+      staking: '0xaE4c8Ca1dC8127C380099657774CB09ca8197e78',
+    })
     expect(contracts[0]?.durations).toEqual(['90d', '180d', '365d'])
   })
 
@@ -191,7 +199,7 @@ describe('Pieverse CLI routing', () => {
             ok: true,
             data: {
               address: agentWallet,
-              chainId: 97,
+              chainId: 56,
               chainType: 'ethereum',
               createdNow: false,
             },
@@ -215,7 +223,7 @@ describe('Pieverse CLI routing', () => {
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: 'test-token',
         INSTANCE_ID: 'inst-pieverse-staking-test',
-        EVM_RPC_97: `http://127.0.0.1:${port}/rpc`,
+        EVM_RPC_56: `http://127.0.0.1:${port}/rpc`,
       })
 
       expect(result.code).toBe(0)
@@ -229,7 +237,7 @@ describe('Pieverse CLI routing', () => {
       })
       expect(requests[0]).toEqual({
         path: '/v1/instances/inst-pieverse-staking-test/wallet/ensure',
-        body: { chainType: 'ethereum', chainId: 97 },
+        body: { chainType: 'ethereum', chainId: 56 },
       })
     } finally {
       await close(server)
@@ -298,7 +306,7 @@ describe('Pieverse CLI routing', () => {
               },
             ],
             from: '0x1111111111111111111111111111111111111111',
-            chainId: 97,
+            chainId: 56,
             chainType: 'ethereum',
           },
         }),
@@ -338,7 +346,7 @@ describe('Pieverse CLI routing', () => {
       expect(executeBody).not.toHaveProperty('dedupKey')
       const steps = executeBody?.steps as Array<Record<string, unknown>>
       expect(steps).toHaveLength(2)
-      expect(steps.map((step) => step.chainId)).toEqual([97, 97])
+      expect(steps.map((step) => step.chainId)).toEqual([56, 56])
       expect(steps[0]?.conditional).toMatchObject({
         type: 'allowance_lt',
         amount: '2500000000000000000',

@@ -23,6 +23,7 @@ const MASTER_CHEF_V2_ABI = parseAbi([
 ])
 
 const MASTER_CHEF_V2 = '0xa5f8C5Dbd5F286960b9d90548680aE5ebFf07652'
+const BSC_CHAIN_ID = 56
 const BSC_WBNB = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c'
 
 // --- V3 Farm ---
@@ -93,6 +94,10 @@ export interface PancakeSwapArgs {
 const DEFAULT_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E'
 
 export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
+  if (args.chainId !== BSC_CHAIN_ID) {
+    throw new Error(`PancakeSwap V2 swaps are only supported on BNB Chain (chain ID 56)`)
+  }
+
   if (args.path.length < 2) {
     throw new Error('Swap path must have at least 2 tokens')
   }
@@ -100,7 +105,7 @@ export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
   const router = requireAddress(args.router ?? DEFAULT_ROUTER, 'router')
   const amountIn = parseBigInt(args.amountInWei, 'amount-in-wei')
   const amountOutMin = parseBigInt(args.amountOutMinWei, 'amount-out-min-wei')
-  const path = args.path.map((t) => {
+  const inputPath = args.path.map((t) => {
     const trimmed = t.trim()
     if (!isNative(trimmed)) requireAddress(trimmed, 'path token')
     return trimmed
@@ -108,10 +113,14 @@ export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
   const wallet = requireAddress(args.wallet, 'wallet')
   const deadline = resolveDeadline(args.deadline)
 
-  const fromToken = path[0]
-  const toToken = path[path.length - 1]
+  const fromToken = inputPath[0]
+  const toToken = inputPath[inputPath.length - 1]
   const fromIsNative = isNativeOrWbnb(fromToken)
   const toIsNative = isNativeOrWbnb(toToken)
+  // PancakeSwap V2 router paths always use the wrapped native token. Keep the
+  // original endpoints above for selecting the payable/native-output method,
+  // but never ABI-encode our zero-address native sentinel into a path.
+  const path = inputPath.map((token) => (isNative(token) ? BSC_WBNB : token)) as `0x${string}`[]
 
   const steps: TxStep[] = []
 

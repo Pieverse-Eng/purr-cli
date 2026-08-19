@@ -53,6 +53,12 @@ const OPENSEA_CONDUIT = '0x1E0049783F008A0085193E00003D00cd54003c71'
 const OPENSEA_CONDUIT_KEY = '0x0000007b02230091a7ed01230072f7006a004d60a8d4e71d599b8104250f0000'
 const ZERO_BYTES32 = `0x${'0'.repeat(64)}`
 
+const PANCAKE_SWAP_TEST_ABI = parseAbi([
+  'function swapExactETHForTokens(uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)',
+  'function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)',
+  'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) returns (uint256[] memory amounts)',
+])
+
 const FOUR_MEME_V1_TEST_ABI = parseAbi([
   'function purchaseToken(uint256 origin, address token, address to, uint256 amount, uint256 maxFunds) payable',
   'function purchaseTokenAMAP(uint256 origin, address token, address to, uint256 funds, uint256 minAmount) payable',
@@ -428,7 +434,7 @@ describe('buildOpenSeaSellSteps', () => {
 })
 
 describe('buildPancakeSwapSteps', () => {
-  it('encodes swapExactETHForTokens for native→token', () => {
+  it('encodes native BNB input as swapExactETHForTokens with WBNB in the router path', () => {
     const result = buildPancakeSwapSteps({
       path: [NATIVE, USDT],
       amountInWei: '1000000000000000000',
@@ -439,11 +445,19 @@ describe('buildPancakeSwapSteps', () => {
     })
     // No approval needed for native
     expect(result.steps).toHaveLength(1)
-    expect(result.steps[0].value).not.toBe('0x0')
+    expect(result.steps[0].value).toBe('0xde0b6b3a7640000')
     expect(result.steps[0].label).toContain('PancakeSwap')
+
+    const swap = decodeFunctionData({
+      abi: PANCAKE_SWAP_TEST_ABI,
+      data: result.steps[0].data as `0x${string}`,
+    })
+    expect(swap.functionName).toBe('swapExactETHForTokens')
+    expect(swap.args?.[1]).toEqual([WBNB, USDT])
+    expect(swap.args?.[1]).not.toContain(NATIVE)
   })
 
-  it('encodes swapExactTokensForETH for token→native with approval', () => {
+  it('encodes native BNB output as swapExactTokensForETH with WBNB in the router path', () => {
     const result = buildPancakeSwapSteps({
       path: [USDT, NATIVE],
       amountInWei: '1000000',
@@ -455,9 +469,17 @@ describe('buildPancakeSwapSteps', () => {
     expect(result.steps).toHaveLength(2)
     expect(result.steps[0].conditional?.type).toBe('allowance_lt')
     expect(result.steps[1].value).toBe('0x0')
+
+    const swap = decodeFunctionData({
+      abi: PANCAKE_SWAP_TEST_ABI,
+      data: result.steps[1].data as `0x${string}`,
+    })
+    expect(swap.functionName).toBe('swapExactTokensForETH')
+    expect(swap.args?.[2]).toEqual([USDT, WBNB])
+    expect(swap.args?.[2]).not.toContain(NATIVE)
   })
 
-  it('encodes swapExactTokensForTokens for token→token with approval', () => {
+  it('preserves explicit WBNB output behavior', () => {
     const result = buildPancakeSwapSteps({
       path: [USDT, WBNB],
       amountInWei: '1000000',
@@ -468,6 +490,13 @@ describe('buildPancakeSwapSteps', () => {
     })
     expect(result.steps).toHaveLength(2)
     expect(result.steps[0].conditional?.type).toBe('allowance_lt')
+
+    const swap = decodeFunctionData({
+      abi: PANCAKE_SWAP_TEST_ABI,
+      data: result.steps[1].data as `0x${string}`,
+    })
+    expect(swap.functionName).toBe('swapExactTokensForETH')
+    expect(swap.args?.[2]).toEqual([USDT, WBNB])
   })
 
   it('throws on path with fewer than 2 tokens', () => {
@@ -494,6 +523,33 @@ describe('buildPancakeSwapSteps', () => {
     })
     // Native→token: should be 1 step (no approval for native)
     expect(result.steps).toHaveLength(1)
+  })
+
+  it('rejects unsupported chains before building calldata', () => {
+    expect(() =>
+      buildPancakeSwapSteps({
+        path: [NATIVE, USDT],
+        amountInWei: '1000000000000000000',
+        amountOutMinWei: '500000',
+        wallet: WALLET,
+        deadline: 1710000000,
+        chainId: 1,
+      }),
+    ).toThrow('only supported on BNB Chain')
+  })
+
+  it('rejects an invalid router before building calldata', () => {
+    expect(() =>
+      buildPancakeSwapSteps({
+        router: 'not-an-address',
+        path: [NATIVE, USDT],
+        amountInWei: '1000000000000000000',
+        amountOutMinWei: '500000',
+        wallet: WALLET,
+        deadline: 1710000000,
+        chainId: 56,
+      }),
+    ).toThrow('Invalid router')
   })
 })
 

@@ -1,5 +1,5 @@
 import { decodeFunctionData, parseAbi } from 'viem'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   buildPieverseStakeSteps,
@@ -8,8 +8,6 @@ import {
   getPieverseStakingDeployment,
   listPieverseStakingDeployments,
   parsePieverseStakingDuration,
-  readPieverseStakingPositions,
-  type ContractReadClient,
 } from '@pieverseio/purr-plugin-vendors/pieverse-staking'
 
 const PIEVERSE_TOKEN_ABI = parseAbi([
@@ -21,8 +19,6 @@ const STAKING_ABI = parseAbi([
   'function withdraw(uint256 stakeId)',
   'function withdrawBatch(uint256[] stakeIds)',
 ])
-
-const WALLET = '0x1111111111111111111111111111111111111111'
 
 describe('Pieverse staking', () => {
   it('returns the Ethereum and BNB Chain mainnet deployments', () => {
@@ -131,42 +127,4 @@ describe('Pieverse staking', () => {
     )
   })
 
-  it('reads and normalizes wallet positions from the chain', async () => {
-    const readContract = vi.fn(async (request: Record<string, unknown>) => {
-      const functionName = request.functionName
-      const args = request.args as readonly unknown[] | undefined
-      switch (functionName) {
-        case 'balanceOf':
-          return 900n
-        case 'paused':
-          return false
-        case 'stakeCount':
-          return 2n
-        case 'stakes':
-          return args?.[1] === 0n ? [500n, 1000n, 1300n] : [0n, 2000n, 2600n]
-        case 'stakeStatus':
-          return args?.[1] === 0n ? 1 : 2n
-        default:
-          throw new Error(`Unexpected function ${String(functionName)}`)
-      }
-    })
-    const client: ContractReadClient = { readContract }
-
-    const result = await readPieverseStakingPositions({ chainId: 1, wallet: WALLET }, client)
-
-    expect(result).toEqual({
-      chainId: 1,
-      wallet: WALLET,
-      pieverseBalanceWei: '900',
-      paused: false,
-      stakes: [
-        {
-          stakeId: '0',
-          amountWei: '500',
-          unlockAt: '1970-01-01T00:21:40.000Z',
-          status: 'matured',
-        },
-      ],
-    })
-  })
 })

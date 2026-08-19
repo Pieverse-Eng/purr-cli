@@ -185,34 +185,23 @@ describe('Pieverse CLI routing', () => {
 
   it('reads Pieverse staking positions for the configured agent wallet', async () => {
     const agentWallet = '0x1111111111111111111111111111111111111111'
-    const requests: Array<{ path: string | undefined; body: Record<string, unknown> }> = []
+    const requests: Array<{ method: string | undefined; path: string | undefined }> = []
+    let authorization: string | undefined
     const server = createServer(async (request, response) => {
-      const chunks: Buffer[] = []
-      for await (const chunk of request) chunks.push(Buffer.from(chunk))
-      const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
-      requests.push({ path: request.url, body })
+      requests.push({ method: request.method, path: request.url })
+      authorization = request.headers.authorization
 
       response.writeHead(200, { 'content-type': 'application/json' })
-      if (request.url === '/v1/instances/inst-pieverse-staking-test/wallet/ensure') {
-        response.end(
-          JSON.stringify({
-            ok: true,
-            data: {
-              address: agentWallet,
-              chainId: 56,
-              chainType: 'ethereum',
-              createdNow: false,
-            },
-          }),
-        )
-        return
-      }
-
       response.end(
         JSON.stringify({
-          jsonrpc: '2.0',
-          id: body.id,
-          result: `0x${'0'.repeat(64)}`,
+          ok: true,
+          data: {
+            chainId: 56,
+            wallet: agentWallet,
+            pieverseBalanceWei: '0',
+            paused: false,
+            stakes: [],
+          },
         }),
       )
     })
@@ -223,7 +212,6 @@ describe('Pieverse CLI routing', () => {
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: 'test-token',
         INSTANCE_ID: 'inst-pieverse-staking-test',
-        EVM_RPC_56: `http://127.0.0.1:${port}/rpc`,
       })
 
       expect(result.code).toBe(0)
@@ -236,9 +224,11 @@ describe('Pieverse CLI routing', () => {
         stakes: [],
       })
       expect(requests[0]).toEqual({
-        path: '/v1/instances/inst-pieverse-staking-test/wallet/ensure',
-        body: { chainType: 'ethereum', chainId: 56 },
+        method: 'GET',
+        path: '/v1/instances/inst-pieverse-staking-test/wallet/staking/positions?chain_id=56',
       })
+      expect(authorization).toBe('Bearer test-token')
+      expect(requests).toHaveLength(1)
     } finally {
       await close(server)
     }

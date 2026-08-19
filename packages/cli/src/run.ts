@@ -1739,14 +1739,7 @@ Execution:
           const chainId = parseChainId(requireArg(stakingArgs, 'chain-id'))
           const deployment = getPieverseStakingDeployment(chainId)
           if (stakingCommand === 'positions') {
-            const agentWallet = await getWalletAddress({
-              'chain-type': 'ethereum',
-              'chain-id': String(deployment.executionChainId),
-            })
-            const result = await readPieverseStakingPositions({
-              wallet: agentWallet.address,
-              chainId,
-            })
+            const result = await readPieverseStakingPositions({ chainId: deployment.chainId })
             console.log(JSON.stringify(result))
             return
           }

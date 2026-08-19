@@ -17,7 +17,7 @@
     },
     "packages/cli": {
       "name": "@pieverseio/purr-cli-internal",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "@pieverseio/purr-plugin-balancer": "workspace:*",
@@ -34,21 +34,21 @@
     },
     "packages/core": {
       "name": "@pieverseio/purr-core",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "viem": "^2.46.0",
       },
     },
     "packages/plugins/balancer": {
       "name": "@pieverseio/purr-plugin-balancer",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
     },
     "packages/plugins/evm": {
       "name": "@pieverseio/purr-plugin-evm",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -56,21 +56,21 @@
     },
     "packages/plugins/hyperliquid": {
       "name": "@pieverseio/purr-plugin-hyperliquid",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
     },
     "packages/plugins/lighter": {
       "name": "@pieverseio/purr-plugin-lighter",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
     },
     "packages/plugins/ows": {
       "name": "@pieverseio/purr-plugin-ows",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@open-wallet-standard/core": "1.4.2",
         "@pieverseio/purr-core": "workspace:*",
@@ -81,7 +81,7 @@
     },
     "packages/plugins/pieverse-card": {
       "name": "@pieverseio/purr-plugin-pieverse-card",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "viem": "^2.46.0",
@@ -89,18 +89,18 @@
     },
     "packages/plugins/pns": {
       "name": "@pieverseio/purr-plugin-pns",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
     },
     "packages/plugins/store": {
       "name": "@pieverseio/purr-plugin-store",
-      "version": "0.2.36",
+      "version": "0.2.39",
     },
     "packages/plugins/vendors": {
       "name": "@pieverseio/purr-plugin-vendors",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
         "@solana/web3.js": "^1.95.0",
@@ -109,7 +109,7 @@
     },
     "packages/plugins/wallet": {
       "name": "@pieverseio/purr-plugin-wallet",
-      "version": "0.2.36",
+      "version": "0.2.39",
       "dependencies": {
         "@okxweb3/x402-core": "^0.1.0",
         "@okxweb3/x402-evm": "^0.1.0",

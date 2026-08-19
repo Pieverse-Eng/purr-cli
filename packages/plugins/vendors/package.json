@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-vendors",
-  "version": "0.2.36",
+  "version": "0.2.39",
   "type": "module",
   "private": true,
   "exports": {
@@ -16,7 +16,8 @@
     "./opensea-api": "./src/opensea-api.ts",
     "./opensea-input": "./src/opensea-input.ts",
     "./pancake": "./src/pancake.ts",
-    "./pieverse-staking": "./src/pieverse-staking.ts"
+    "./pieverse-staking": "./src/pieverse-staking.ts",
+    "./predict": "./src/predict.ts"
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",

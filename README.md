@@ -132,8 +132,8 @@ purr hyperliquid take-profit --asset 0 --position-side long --size 0.01 --trigge
 purr hyperliquid protect-position --asset 0 --position-side long --size 0.01 --take-profit-price 3300 --take-profit-worst-price 3260 --stop-loss-price 2900 --stop-loss-worst-price 2850 --execution market
 purr hyperliquid orders --kind frontend
 purr hyperliquid modify-limit-order --oid 123 --asset 0 --side buy --size 0.01 --price 3050 --tif Gtc --reduce-only false
-purr hyperliquid modify-take-profit --oid 124 --asset 0 --position-side long --size 0.01 --trigger-price 3350 --worst-price 3310 --execution market
-purr hyperliquid modify-stop-loss --oid 125 --asset 0 --position-side long --size 0.01 --trigger-price 2950 --worst-price 2900 --execution market
+purr hyperliquid modify-take-profit --oid 124 --asset 0 --position-side long --size 0.01 --trigger-price 3350 --worst-price 3310 --execution market --always-place true
+purr hyperliquid modify-stop-loss --oid 125 --asset 0 --position-side long --size 0.01 --trigger-price 2950 --worst-price 2900 --execution market --always-place true
 purr hyperliquid cancel --asset 0 --oid 123
 purr hyperliquid cancel-by-cloid --asset 0 --cloid 0x1234567890abcdef1234567890abcdef
 purr hyperliquid deposit --amount 5
@@ -170,6 +170,11 @@ Modify the entry price with `modify-limit-order`; modify each attached TP/SL chi
 `modify-take-profit` or `modify-stop-loss` using that child order's oid. Use
 `orders --kind frontend` to find the entry and child order ids. If a position does not have
 protection orders yet, use `protect-position` to add TP and SL orders.
+
+Hyperliquid trigger modifications require `--always-place true`. The same flag is required when
+`modify-limit-order` uses `Ioc`, `FrontendMarket`, or an executable `Gtc`; it means the replacement
+is placed even if the target cancel does not succeed, so callers must verify the target and accept
+that risk. The CLI cannot determine locally whether a `Gtc` price is executable.
 
 ## Development
 

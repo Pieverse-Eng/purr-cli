@@ -70,9 +70,9 @@ Write commands:
   stop-loss --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
   take-profit --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
   protect-position --asset <id> --position-side long|short --size <amount> --take-profit-price <price> --stop-loss-price <price> --execution market --take-profit-worst-price <price> --stop-loss-worst-price <price>
-  modify-limit-order --oid <oid-or-cloid> --asset <id> --side buy|sell --size <amount> --price <price> --tif Gtc|Ioc|Alo|FrontendMarket --reduce-only true|false [--cloid <cloid>]
-  modify-stop-loss --oid <oid-or-cloid> --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
-  modify-take-profit --oid <oid-or-cloid> --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
+  modify-limit-order --oid <oid-or-cloid> --asset <id> --side buy|sell --size <amount> --price <price> --tif Gtc|Ioc|Alo|FrontendMarket --reduce-only true|false [--always-place true] [--cloid <cloid>]
+  modify-stop-loss --oid <oid-or-cloid> --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit --always-place true [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
+  modify-take-profit --oid <oid-or-cloid> --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit --always-place true [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
   cancel --asset <id> --oid <oid>
   cancel-by-cloid --asset <id> --cloid <cloid>
   update-leverage --asset <asset-id> --is-cross true|false --leverage <1-50>
@@ -206,7 +206,17 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
     'take-profit-worst-price',
     'stop-loss-worst-price',
   ],
-  'modify-limit-order': ['oid', 'asset', 'side', 'size', 'price', 'tif', 'reduce-only', 'cloid'],
+  'modify-limit-order': [
+    'oid',
+    'asset',
+    'side',
+    'size',
+    'price',
+    'tif',
+    'reduce-only',
+    'always-place',
+    'cloid',
+  ],
   'modify-stop-loss': [
     'oid',
     'asset',
@@ -216,6 +226,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
     'execution',
     'worst-price',
     'limit-price',
+    'always-place',
     'cloid',
   ],
   'modify-take-profit': [
@@ -227,6 +238,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
     'execution',
     'worst-price',
     'limit-price',
+    'always-place',
     'cloid',
   ],
   cancel: ['asset', 'oid'],
@@ -426,6 +438,15 @@ function requireBoolean(args: Record<string, string>, name: string, ...aliases: 
   return parseBoolean(requireArg(args, name, ...aliases), name) as boolean
 }
 
+function optionalAlwaysPlace(args: Record<string, string>): true | undefined {
+  const value = args['always-place']
+  if (value === undefined) return undefined
+  if (parseBoolean(value, 'always-place') !== true) {
+    throw new Error('Invalid --always-place: expected true; false is not supported')
+  }
+  return true
+}
+
 function assertKnownOptions(command: string, args: Record<string, string>): void {
   const allowed = COMMAND_OPTIONS[command]
   if (!allowed) return
@@ -608,6 +629,33 @@ function buildTriggerOrder(args: Record<string, string>, tpsl: 'tp' | 'sl'): Jso
     },
     optionalCloid(args),
   )
+}
+
+function buildModifyLimitBody(args: Record<string, string>): JsonRecord {
+  const tif = requireChoice(args, 'tif', LIMIT_TIFS)
+  const order = buildLimitOrder(args)
+  const alwaysPlace = optionalAlwaysPlace(args)
+  if ((tif === 'Ioc' || tif === 'FrontendMarket') && alwaysPlace !== true) {
+    throw new Error(`--always-place true is required when modifying an order with --tif ${tif}`)
+  }
+  return {
+    oid: requireOrderRef(args),
+    order,
+    ...(alwaysPlace === true ? { a: true } : {}),
+  }
+}
+
+function buildModifyTriggerBody(args: Record<string, string>, tpsl: 'tp' | 'sl'): JsonRecord {
+  const order = buildTriggerOrder(args, tpsl)
+  const alwaysPlace = optionalAlwaysPlace(args)
+  if (alwaysPlace !== true) {
+    throw new Error('--always-place true is required when modifying a trigger order')
+  }
+  return {
+    oid: requireOrderRef(args),
+    order,
+    a: true,
+  }
 }
 
 function buildBracketBody(args: Record<string, string>): JsonRecord {
@@ -845,11 +893,11 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
     case 'protect-position':
       return buildProtectionBody(args)
     case 'modify-limit-order':
-      return { oid: requireOrderRef(args), order: buildLimitOrder(args) }
+      return buildModifyLimitBody(args)
     case 'modify-stop-loss':
-      return { oid: requireOrderRef(args), order: buildTriggerOrder(args, 'sl') }
+      return buildModifyTriggerBody(args, 'sl')
     case 'modify-take-profit':
-      return { oid: requireOrderRef(args), order: buildTriggerOrder(args, 'tp') }
+      return buildModifyTriggerBody(args, 'tp')
     case 'cancel':
       return {
         cancels: [{ a: requireInteger(args, 'asset'), o: requireInteger(args, 'oid') }],

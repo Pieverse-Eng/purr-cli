@@ -450,6 +450,7 @@ describe('hyperliquid plugin', () => {
         'trigger-price': '69',
         execution: 'market',
         'worst-price': '62',
+        'always-place': 'true',
       },
       expectedPath: '/modify',
       expectedBody: {
@@ -462,6 +463,7 @@ describe('hyperliquid plugin', () => {
           r: true,
           t: { trigger: { isMarket: true, triggerPx: '69', tpsl: 'sl' } },
         },
+        a: true,
       },
     },
     {
@@ -474,6 +476,7 @@ describe('hyperliquid plugin', () => {
         'trigger-price': '100',
         execution: 'limit',
         'limit-price': '99.5',
+        'always-place': 'true',
       },
       expectedPath: '/modify',
       expectedBody: {
@@ -486,6 +489,59 @@ describe('hyperliquid plugin', () => {
           r: true,
           t: { trigger: { isMarket: false, triggerPx: '100', tpsl: 'tp' } },
         },
+        a: true,
+      },
+    },
+    {
+      command: 'modify-limit-order',
+      args: {
+        oid: '511423165559',
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        price: '72',
+        tif: 'FrontendMarket',
+        'reduce-only': 'false',
+        'always-place': 'true',
+      },
+      expectedPath: '/modify',
+      expectedBody: {
+        oid: 511423165559,
+        order: {
+          a: 159,
+          b: true,
+          p: '72',
+          s: '0.45',
+          r: false,
+          t: { limit: { tif: 'FrontendMarket' } },
+        },
+        a: true,
+      },
+    },
+    {
+      command: 'modify-limit-order',
+      args: {
+        oid: '511423165560',
+        asset: '159',
+        side: 'sell',
+        size: '0.45',
+        price: '71',
+        tif: 'Gtc',
+        'reduce-only': 'false',
+        'always-place': 'true',
+      },
+      expectedPath: '/modify',
+      expectedBody: {
+        oid: 511423165560,
+        order: {
+          a: 159,
+          b: false,
+          p: '71',
+          s: '0.45',
+          r: false,
+          t: { limit: { tif: 'Gtc' } },
+        },
+        a: true,
       },
     },
   ])(
@@ -506,6 +562,50 @@ describe('hyperliquid plugin', () => {
   )
 
   it.each([
+    {
+      name: 'trigger modification without always-place',
+      command: 'modify-stop-loss',
+      args: {
+        oid: '511423165558',
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '62',
+      },
+      error: '--always-place true is required when modifying a trigger order',
+    },
+    {
+      name: 'false always-place',
+      command: 'modify-stop-loss',
+      args: {
+        oid: '511423165558',
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '62',
+        'always-place': 'false',
+      },
+      error: 'Invalid --always-place: expected true; false is not supported',
+    },
+    {
+      name: 'FrontendMarket modification without always-place',
+      command: 'modify-limit-order',
+      args: {
+        oid: '511423165559',
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        price: '72',
+        tif: 'FrontendMarket',
+        'reduce-only': 'false',
+      },
+      error:
+        '--always-place true is required when modifying an order with --tif FrontendMarket',
+    },
     {
       name: 'missing required size',
       command: 'stop-loss',

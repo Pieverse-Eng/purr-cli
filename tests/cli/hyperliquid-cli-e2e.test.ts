@@ -283,6 +283,17 @@ describe('Hyperliquid CLI e2e', () => {
         return
       }
 
+      if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/modify`) {
+        assert.equal(req.method, 'POST')
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            status: 'ok',
+          },
+        })
+        return
+      }
+
       if (
         req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/cancel` ||
         req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/cancel-by-cloid`
@@ -680,6 +691,27 @@ describe('Hyperliquid CLI e2e', () => {
       option: 'to-perp',
       args: ['--amount', '5', '--to-perp'],
     },
+    {
+      command: 'modify-stop-loss',
+      option: 'always-place',
+      args: [
+        '--oid',
+        '511423165558',
+        '--asset',
+        '159',
+        '--position-side',
+        'long',
+        '--size',
+        '0.45',
+        '--trigger-price',
+        '69',
+        '--worst-price',
+        '62',
+        '--execution',
+        'market',
+        '--always-place',
+      ],
+    },
   ])(
     'rejects a missing value for --$option without making an HTTP request',
     async ({ command, option, args }) => {
@@ -804,6 +836,76 @@ describe('Hyperliquid CLI e2e', () => {
         grouping: 'positionTpsl',
       }),
     })
+  })
+
+  it('modifies a trigger order with explicit always-place semantics', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'modify-stop-loss',
+      '--oid',
+      '511423165558',
+      '--asset',
+      '159',
+      '--position-side',
+      'long',
+      '--size',
+      '0.45',
+      '--trigger-price',
+      '69',
+      '--worst-price',
+      '62',
+      '--execution',
+      'market',
+      '--always-place',
+      'true',
+    ])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'POST',
+      url: `/v1/instances/${INSTANCE_ID}/hyperliquid/modify`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({
+        oid: 511423165558,
+        order: {
+          a: 159,
+          b: false,
+          p: '62',
+          s: '0.45',
+          r: true,
+          t: { trigger: { isMarket: true, triggerPx: '69', tpsl: 'sl' } },
+        },
+        a: true,
+      }),
+    })
+  })
+
+  it('rejects trigger modification without always-place before making an HTTP request', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'modify-stop-loss',
+      '--oid',
+      '511423165558',
+      '--asset',
+      '159',
+      '--position-side',
+      'long',
+      '--size',
+      '0.45',
+      '--trigger-price',
+      '69',
+      '--worst-price',
+      '62',
+      '--execution',
+      'market',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe('--always-place true is required when modifying a trigger order')
+    expect(requestCount).toBe(0)
   })
 
   it('rejects malformed stop-loss parameters without making an HTTP request', async () => {

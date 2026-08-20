@@ -287,6 +287,9 @@ function parseStrictNamedArgs(argv: string[], commandLabel: string): Record<stri
     }
 
     const raw = token.slice(2)
+    if (raw.length === 0 || raw.startsWith('=')) {
+      throw new Error(`Invalid empty option for ${commandLabel}`)
+    }
     const eqIdx = raw.indexOf('=')
     if (eqIdx > 0) {
       setOption(raw.slice(0, eqIdx), raw.slice(eqIdx + 1))
@@ -298,7 +301,7 @@ function parseStrictNamedArgs(argv: string[], commandLabel: string): Record<stri
       setOption(raw, next)
       i++
     } else {
-      setOption(raw, 'true')
+      throw new Error(`Missing value for option --${raw} in ${commandLabel}`)
     }
   }
   return result

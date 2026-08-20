@@ -652,6 +652,48 @@ describe('Hyperliquid CLI e2e', () => {
     expect(requestCount).toBe(0)
   })
 
+  it.each([
+    {
+      command: 'limit-order',
+      option: 'reduce-only',
+      args: [
+        '--asset',
+        '0',
+        '--side',
+        'buy',
+        '--size',
+        '0.01',
+        '--price',
+        '3000',
+        '--tif',
+        'Gtc',
+        '--reduce-only',
+      ],
+    },
+    {
+      command: 'update-leverage',
+      option: 'is-cross',
+      args: ['--asset', '0', '--is-cross', '--leverage', '3'],
+    },
+    {
+      command: 'usd-class-transfer',
+      option: 'to-perp',
+      args: ['--amount', '5', '--to-perp'],
+    },
+  ])(
+    'rejects a missing value for --$option without making an HTTP request',
+    async ({ command, option, args }) => {
+      const result = await runPurr(port, tmpHome, ['hyperliquid', command, ...args])
+
+      expect(result.code).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toBe(
+        `Missing value for option --${option} in purr hyperliquid ${command}`,
+      )
+      expect(requestCount).toBe(0)
+    },
+  )
+
   it('builds an entry order with attached TP/SL children from bracket parameters', async () => {
     const result = await runPurr(port, tmpHome, [
       'hyperliquid',

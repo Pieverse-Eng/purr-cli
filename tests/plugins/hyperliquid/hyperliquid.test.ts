@@ -603,8 +603,7 @@ describe('hyperliquid plugin', () => {
         tif: 'FrontendMarket',
         'reduce-only': 'false',
       },
-      error:
-        '--always-place true is required when modifying an order with --tif FrontendMarket',
+      error: '--always-place true is required when modifying an order with --tif FrontendMarket',
     },
     {
       name: 'missing required size',

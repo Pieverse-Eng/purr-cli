@@ -283,6 +283,20 @@ describe('Hyperliquid CLI e2e', () => {
         return
       }
 
+      if (
+        req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/cancel` ||
+        req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/cancel-by-cloid`
+      ) {
+        assert.equal(req.method, 'POST')
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            status: 'ok',
+          },
+        })
+        return
+      }
+
       writeJson(res, 404, {
         ok: false,
         error: 'Not found',
@@ -517,9 +531,19 @@ describe('Hyperliquid CLI e2e', () => {
     }
     const result = await runPurr(port, tmpHome, [
       'hyperliquid',
-      'order',
-      '--body-json',
-      JSON.stringify(order),
+      'limit-order',
+      '--asset',
+      '0',
+      '--side',
+      'buy',
+      '--size',
+      '0.01',
+      '--price',
+      '100',
+      '--tif',
+      'Gtc',
+      '--reduce-only',
+      'false',
     ])
 
     expect(result.code).toBe(1)
@@ -534,5 +558,306 @@ describe('Hyperliquid CLI e2e', () => {
       authorization: `Bearer ${API_TOKEN}`,
       body: JSON.stringify(order),
     })
+  })
+
+  it.each([
+    {
+      command: 'order',
+      replacement: 'Use limit-order, bracket-order, stop-loss, take-profit, or protect-position',
+    },
+    {
+      command: 'modify',
+      replacement: 'Use modify-limit-order, modify-stop-loss, or modify-take-profit',
+    },
+  ])(
+    'rejects the removed raw $command command without making an HTTP request',
+    async ({ command, replacement }) => {
+      const result = await runPurr(port, tmpHome, ['hyperliquid', command, '--body-json', '{}'])
+
+      expect(result.code).toBe(1)
+      expect(result.stdout).toBe('')
+      expect(result.stderr).toBe(`purr hyperliquid ${command} was removed. ${replacement}`)
+      expect(requestCount).toBe(0)
+    },
+  )
+
+  it('builds parameterized cancel requests without exposing raw bodies', async () => {
+    const byOid = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'cancel',
+      '--asset',
+      '159',
+      '--oid',
+      '123456',
+    ])
+    const byCloid = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'cancel-by-cloid',
+      '--asset',
+      '159',
+      '--cloid',
+      '0xABCDEFABCDEFABCDEFABCDEFABCDEFAB',
+    ])
+
+    expect(byOid.code).toBe(0)
+    expect(byOid.stderr).toBe('')
+    expect(byCloid.code).toBe(0)
+    expect(byCloid.stderr).toBe('')
+    expect(requests).toEqual([
+      {
+        method: 'POST',
+        url: `/v1/instances/${INSTANCE_ID}/hyperliquid/cancel`,
+        authorization: `Bearer ${API_TOKEN}`,
+        body: JSON.stringify({ cancels: [{ a: 159, o: 123456 }] }),
+      },
+      {
+        method: 'POST',
+        url: `/v1/instances/${INSTANCE_ID}/hyperliquid/cancel-by-cloid`,
+        authorization: `Bearer ${API_TOKEN}`,
+        body: JSON.stringify({
+          cancels: [{ asset: 159, cloid: '0xabcdefabcdefabcdefabcdefabcdefab' }],
+        }),
+      },
+    ])
+  })
+
+  it('rejects malformed or legacy cancel arguments without making an HTTP request', async () => {
+    const missing = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'cancel',
+      '--asset',
+      '159',
+    ])
+    expect(missing.code).toBe(1)
+    expect(missing.stderr).toBe('Missing required argument: --oid')
+
+    const duplicate = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'cancel',
+      '--asset',
+      '159',
+      '--oid',
+      '123',
+      '--oid',
+      '456',
+    ])
+    expect(duplicate.code).toBe(1)
+    expect(duplicate.stderr).toBe('Duplicate option for purr hyperliquid cancel: --oid')
+
+    const legacy = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'cancel-by-cloid',
+      '--body-json',
+      '{}',
+    ])
+    expect(legacy.code).toBe(1)
+    expect(legacy.stderr).toContain(
+      'Unknown option for purr hyperliquid cancel-by-cloid: --body-json',
+    )
+    expect(requestCount).toBe(0)
+  })
+
+  it('builds an entry order with attached TP/SL children from bracket parameters', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'bracket-order',
+      '--asset',
+      '159',
+      '--side',
+      'buy',
+      '--size',
+      '0.45',
+      '--entry-price',
+      '72',
+      '--entry-tif',
+      'Gtc',
+      '--take-profit-price',
+      '100',
+      '--take-profit-worst-price',
+      '90',
+      '--stop-loss-price',
+      '69',
+      '--stop-loss-worst-price',
+      '62',
+      '--execution',
+      'market',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      'error [HYPERLIQUID_BUILDER_FEE_APPROVAL_REQUIRED]: Builder fee approval is required',
+    )
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'POST',
+      url: `/v1/instances/${INSTANCE_ID}/hyperliquid/order`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({
+        orders: [
+          {
+            a: 159,
+            b: true,
+            p: '72',
+            s: '0.45',
+            r: false,
+            t: { limit: { tif: 'Gtc' } },
+          },
+          {
+            a: 159,
+            b: false,
+            p: '90',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: true, triggerPx: '100', tpsl: 'tp' } },
+          },
+          {
+            a: 159,
+            b: false,
+            p: '62',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: true, triggerPx: '69', tpsl: 'sl' } },
+          },
+        ],
+        grouping: 'normalTpsl',
+      }),
+    })
+  })
+
+  it('builds a stop-loss trigger from CLI parameters before posting to the existing route', async () => {
+    const result = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'stop-loss',
+      '--asset',
+      '159',
+      '--position-side',
+      'long',
+      '--size',
+      '0.45',
+      '--trigger-price',
+      '69',
+      '--worst-price',
+      '62',
+      '--execution',
+      'market',
+    ])
+
+    expect(result.code).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      'error [HYPERLIQUID_BUILDER_FEE_APPROVAL_REQUIRED]: Builder fee approval is required',
+    )
+    expect(requestCount).toBe(1)
+    expect(requests[0]).toEqual({
+      method: 'POST',
+      url: `/v1/instances/${INSTANCE_ID}/hyperliquid/order`,
+      authorization: `Bearer ${API_TOKEN}`,
+      body: JSON.stringify({
+        orders: [
+          {
+            a: 159,
+            b: false,
+            p: '62',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: true, triggerPx: '69', tpsl: 'sl' } },
+          },
+        ],
+        grouping: 'positionTpsl',
+      }),
+    })
+  })
+
+  it('rejects malformed stop-loss parameters without making an HTTP request', async () => {
+    const missing = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'stop-loss',
+      '--asset',
+      '159',
+      '--position-side',
+      'long',
+      '--trigger-price',
+      '69',
+      '--execution',
+      'market',
+    ])
+    expect(missing.code).toBe(1)
+    expect(missing.stdout).toBe('')
+    expect(missing.stderr).toBe('Missing required argument: --size')
+
+    const missingWorstPrice = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'stop-loss',
+      '--asset',
+      '159',
+      '--position-side',
+      'long',
+      '--size',
+      '0.45',
+      '--trigger-price',
+      '69',
+      '--execution',
+      'market',
+    ])
+    expect(missingWorstPrice.code).toBe(1)
+    expect(missingWorstPrice.stdout).toBe('')
+    expect(missingWorstPrice.stderr).toBe(
+      '--worst-price is required when --execution is market',
+    )
+
+    const unknown = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'stop-loss',
+      '--asset',
+      '159',
+      '--position-side',
+      'long',
+      '--size',
+      '0.45',
+      '--trigger-price',
+      '69',
+      '--execution',
+      'market',
+      '--tpsl',
+      'sl',
+    ])
+    expect(unknown.code).toBe(1)
+    expect(unknown.stdout).toBe('')
+    expect(unknown.stderr).toContain('Unknown option for purr hyperliquid stop-loss: --tpsl')
+
+    const duplicate = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'stop-loss',
+      '--asset',
+      '159',
+      '--position-side',
+      'long',
+      '--size',
+      '0.45',
+      '--size',
+      '45',
+      '--trigger-price',
+      '69',
+      '--execution',
+      'market',
+    ])
+    expect(duplicate.code).toBe(1)
+    expect(duplicate.stdout).toBe('')
+    expect(duplicate.stderr).toBe('Duplicate option for purr hyperliquid stop-loss: --size')
+
+    const positional = await runPurr(port, tmpHome, [
+      'hyperliquid',
+      'stop-loss',
+      '--asset',
+      '159',
+      'unexpected',
+    ])
+    expect(positional.code).toBe(1)
+    expect(positional.stdout).toBe('')
+    expect(positional.stderr).toBe(
+      'Unexpected positional argument for purr hyperliquid stop-loss: "unexpected". Use named --options only.',
+    )
+    expect(requestCount).toBe(0)
   })
 })

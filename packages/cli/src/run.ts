@@ -264,6 +264,46 @@ function parseArgs(argv: string[]): Record<string, string> {
   return result
 }
 
+function parseStrictNamedArgs(argv: string[], commandLabel: string): Record<string, string> {
+  const result: Record<string, string> = {}
+  const setOption = (name: string, value: string): void => {
+    if (name.length === 0) throw new Error(`Invalid empty option for ${commandLabel}`)
+    if (result[name] !== undefined) {
+      throw new Error(`Duplicate option for ${commandLabel}: --${name}`)
+    }
+    result[name] = value
+  }
+
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]
+    if (token === '-h') {
+      setOption('h', 'true')
+      continue
+    }
+    if (!token.startsWith('--')) {
+      throw new Error(
+        `Unexpected positional argument for ${commandLabel}: "${token}". Use named --options only.`,
+      )
+    }
+
+    const raw = token.slice(2)
+    const eqIdx = raw.indexOf('=')
+    if (eqIdx > 0) {
+      setOption(raw.slice(0, eqIdx), raw.slice(eqIdx + 1))
+      continue
+    }
+
+    const next = argv[i + 1]
+    if (next !== undefined && !next.startsWith('--')) {
+      setOption(raw, next)
+      i++
+    } else {
+      setOption(raw, 'true')
+    }
+  }
+  return result
+}
+
 function requireArg(args: Record<string, string>, name: string): string {
   const val = args[name]
   if (val === undefined) {
@@ -641,7 +681,9 @@ Examples:
   purr hyperliquid enable
   purr hyperliquid snapshot
   purr hyperliquid symbol --coin CXMT
-  purr hyperliquid order --body-file ./hyperliquid-order.json
+  purr hyperliquid bracket-order --asset 0 --side buy --size 0.01 --entry-price 3000 --entry-tif Gtc --take-profit-price 3300 --take-profit-worst-price 3260 --stop-loss-price 2900 --stop-loss-worst-price 2850 --execution market
+  purr hyperliquid stop-loss --asset 0 --position-side long --size 0.01 --trigger-price 2900 --worst-price 2850 --execution market
+  purr hyperliquid protect-position --asset 0 --position-side long --size 0.01 --take-profit-price 3300 --take-profit-worst-price 3260 --stop-loss-price 2900 --stop-loss-worst-price 2850 --execution market
   purr hyperliquid deposit --amount 5
   purr lighter status
   purr lighter account
@@ -696,7 +738,7 @@ Examples:
         console.log(hyperliquidHelp())
         return
       }
-      await hyperliquidCommand(command, args)
+      await hyperliquidCommand(command, parseStrictNamedArgs(rest, `purr hyperliquid ${command}`))
       return
     }
 

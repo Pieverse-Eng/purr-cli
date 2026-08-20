@@ -622,12 +622,7 @@ describe('Hyperliquid CLI e2e', () => {
   })
 
   it('rejects malformed or legacy cancel arguments without making an HTTP request', async () => {
-    const missing = await runPurr(port, tmpHome, [
-      'hyperliquid',
-      'cancel',
-      '--asset',
-      '159',
-    ])
+    const missing = await runPurr(port, tmpHome, ['hyperliquid', 'cancel', '--asset', '159'])
     expect(missing.code).toBe(1)
     expect(missing.stderr).toBe('Missing required argument: --oid')
 
@@ -802,9 +797,7 @@ describe('Hyperliquid CLI e2e', () => {
     ])
     expect(missingWorstPrice.code).toBe(1)
     expect(missingWorstPrice.stdout).toBe('')
-    expect(missingWorstPrice.stderr).toBe(
-      '--worst-price is required when --execution is market',
-    )
+    expect(missingWorstPrice.stderr).toBe('--worst-price is required when --execution is market')
 
     const unknown = await runPurr(port, tmpHome, [
       'hyperliquid',

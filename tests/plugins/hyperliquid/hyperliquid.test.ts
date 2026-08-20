@@ -234,41 +234,613 @@ describe('hyperliquid plugin', () => {
     })
   })
 
-  it('posts raw order JSON bodies for full exchange action fidelity', async () => {
-    const mock = mockFetch({
-      ok: true,
-      data: {
-        actionRequestId: 'request-id',
-        actionType: 'order',
-        status: 'succeeded',
-        replayed: false,
-      },
-    })
-    vi.spyOn(console, 'log').mockImplementation(() => undefined)
-    vi.stubGlobal('fetch', mock)
+  it.each([
+    {
+      command: 'order',
+      replacement: 'Use limit-order, bracket-order, stop-loss, take-profit, or protect-position',
+    },
+    {
+      command: 'modify',
+      replacement: 'Use modify-limit-order, modify-stop-loss, or modify-take-profit',
+    },
+  ])(
+    'rejects removed raw $command commands without an HTTP request',
+    async ({ command, replacement }) => {
+      const mock = mockFetch({ ok: true, data: {} })
+      vi.stubGlobal('fetch', mock)
 
-    await hyperliquidCommand('order', {
-      'body-json': JSON.stringify({
+      await expect(hyperliquidCommand(command, { 'body-json': '{}' })).rejects.toThrow(
+        `purr hyperliquid ${command} was removed. ${replacement}`,
+      )
+      expect(mock).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    {
+      command: 'limit-order',
+      args: {
+        asset: '159',
+        side: 'sell',
+        size: '0.45',
+        price: '100',
+        tif: 'Gtc',
+        'reduce-only': 'true',
+      },
+      expectedPath: '/order',
+      expectedBody: {
         orders: [
           {
-            a: 0,
-            b: true,
+            a: 159,
+            b: false,
             p: '100',
-            s: '0.01',
-            r: false,
+            s: '0.45',
+            r: true,
             t: { limit: { tif: 'Gtc' } },
           },
         ],
         grouping: 'na',
-      }),
-    })
+      },
+    },
+    {
+      command: 'bracket-order',
+      args: {
+        asset: '159',
+        side: 'sell',
+        size: '0.45',
+        'entry-price': '72',
+        'entry-tif': 'Gtc',
+        'take-profit-price': '60',
+        'stop-loss-price': '80',
+        execution: 'limit',
+        'take-profit-limit-price': '60.5',
+        'stop-loss-limit-price': '81',
+        cloid: '0xABCDEFABCDEFABCDEFABCDEFABCDEFAB',
+      },
+      expectedPath: '/order',
+      expectedBody: {
+        orders: [
+          {
+            a: 159,
+            b: false,
+            p: '72',
+            s: '0.45',
+            r: false,
+            t: { limit: { tif: 'Gtc' } },
+            c: '0xabcdefabcdefabcdefabcdefabcdefab',
+          },
+          {
+            a: 159,
+            b: true,
+            p: '60.5',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: false, triggerPx: '60', tpsl: 'tp' } },
+          },
+          {
+            a: 159,
+            b: true,
+            p: '81',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: false, triggerPx: '80', tpsl: 'sl' } },
+          },
+        ],
+        grouping: 'normalTpsl',
+      },
+    },
+    {
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '62',
+      },
+      expectedPath: '/order',
+      expectedBody: {
+        orders: [
+          {
+            a: 159,
+            b: false,
+            p: '62',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: true, triggerPx: '69', tpsl: 'sl' } },
+          },
+        ],
+        grouping: 'positionTpsl',
+      },
+    },
+    {
+      command: 'take-profit',
+      args: {
+        asset: '159',
+        'position-side': 'short',
+        size: '0.45',
+        'trigger-price': '60',
+        execution: 'market',
+        'worst-price': '65',
+        cloid: '0xABCDEFABCDEFABCDEFABCDEFABCDEFAB',
+      },
+      expectedPath: '/order',
+      expectedBody: {
+        orders: [
+          {
+            a: 159,
+            b: true,
+            p: '65',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: true, triggerPx: '60', tpsl: 'tp' } },
+            c: '0xabcdefabcdefabcdefabcdefabcdefab',
+          },
+        ],
+        grouping: 'positionTpsl',
+      },
+    },
+    {
+      command: 'protect-position',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'take-profit-price': '100',
+        'stop-loss-price': '69',
+        execution: 'market',
+        'take-profit-worst-price': '90',
+        'stop-loss-worst-price': '62',
+      },
+      expectedPath: '/order',
+      expectedBody: {
+        orders: [
+          {
+            a: 159,
+            b: false,
+            p: '90',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: true, triggerPx: '100', tpsl: 'tp' } },
+          },
+          {
+            a: 159,
+            b: false,
+            p: '62',
+            s: '0.45',
+            r: true,
+            t: { trigger: { isMarket: true, triggerPx: '69', tpsl: 'sl' } },
+          },
+        ],
+        grouping: 'positionTpsl',
+      },
+    },
+    {
+      command: 'modify-limit-order',
+      args: {
+        oid: '511423165557',
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        price: '71.5',
+        tif: 'Gtc',
+        'reduce-only': 'false',
+      },
+      expectedPath: '/modify',
+      expectedBody: {
+        oid: 511423165557,
+        order: {
+          a: 159,
+          b: true,
+          p: '71.5',
+          s: '0.45',
+          r: false,
+          t: { limit: { tif: 'Gtc' } },
+        },
+      },
+    },
+    {
+      command: 'modify-stop-loss',
+      args: {
+        oid: '511423165558',
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '62',
+        'always-place': 'true',
+      },
+      expectedPath: '/modify',
+      expectedBody: {
+        oid: 511423165558,
+        order: {
+          a: 159,
+          b: false,
+          p: '62',
+          s: '0.45',
+          r: true,
+          t: { trigger: { isMarket: true, triggerPx: '69', tpsl: 'sl' } },
+        },
+        a: true,
+      },
+    },
+    {
+      command: 'modify-take-profit',
+      args: {
+        oid: '0x00000000000000000000000000000002',
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '100',
+        execution: 'limit',
+        'limit-price': '99.5',
+        'always-place': 'true',
+      },
+      expectedPath: '/modify',
+      expectedBody: {
+        oid: '0x00000000000000000000000000000002',
+        order: {
+          a: 159,
+          b: false,
+          p: '99.5',
+          s: '0.45',
+          r: true,
+          t: { trigger: { isMarket: false, triggerPx: '100', tpsl: 'tp' } },
+        },
+        a: true,
+      },
+    },
+    {
+      command: 'modify-limit-order',
+      args: {
+        oid: '511423165559',
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        price: '72',
+        tif: 'FrontendMarket',
+        'reduce-only': 'false',
+        'always-place': 'true',
+      },
+      expectedPath: '/modify',
+      expectedBody: {
+        oid: 511423165559,
+        order: {
+          a: 159,
+          b: true,
+          p: '72',
+          s: '0.45',
+          r: false,
+          t: { limit: { tif: 'FrontendMarket' } },
+        },
+        a: true,
+      },
+    },
+    {
+      command: 'modify-limit-order',
+      args: {
+        oid: '511423165560',
+        asset: '159',
+        side: 'sell',
+        size: '0.45',
+        price: '71',
+        tif: 'Gtc',
+        'reduce-only': 'false',
+        'always-place': 'true',
+      },
+      expectedPath: '/modify',
+      expectedBody: {
+        oid: 511423165560,
+        order: {
+          a: 159,
+          b: false,
+          p: '71',
+          s: '0.45',
+          r: false,
+          t: { limit: { tif: 'Gtc' } },
+        },
+        a: true,
+      },
+    },
+  ])(
+    'builds a typed $command request without raw JSON',
+    async ({ command, args, expectedPath, expectedBody }) => {
+      const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+      vi.spyOn(console, 'log').mockImplementation(() => undefined)
+      vi.stubGlobal('fetch', mock)
 
-    expect(mock.mock.calls[0][0]).toBe('https://api.test/v1/instances/inst-123/hyperliquid/order')
-    expect(mock.mock.calls[0][1]).toMatchObject({ method: 'POST' })
-    expect(JSON.parse(mock.mock.calls[0][1].body)).toMatchObject({
-      orders: [{ a: 0, p: '100', s: '0.01' }],
-      grouping: 'na',
-    })
+      await hyperliquidCommand(command, args)
+
+      expect(mock).toHaveBeenCalledOnce()
+      expect(mock.mock.calls[0][0]).toBe(
+        `https://api.test/v1/instances/inst-123/hyperliquid${expectedPath}`,
+      )
+      expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual(expectedBody)
+    },
+  )
+
+  it.each([
+    {
+      name: 'trigger modification without always-place',
+      command: 'modify-stop-loss',
+      args: {
+        oid: '511423165558',
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '62',
+      },
+      error: '--always-place true is required when modifying a trigger order',
+    },
+    {
+      name: 'false always-place',
+      command: 'modify-stop-loss',
+      args: {
+        oid: '511423165558',
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '62',
+        'always-place': 'false',
+      },
+      error: 'Invalid --always-place: expected true; false is not supported',
+    },
+    {
+      name: 'FrontendMarket modification without always-place',
+      command: 'modify-limit-order',
+      args: {
+        oid: '511423165559',
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        price: '72',
+        tif: 'FrontendMarket',
+        'reduce-only': 'false',
+      },
+      error: '--always-place true is required when modifying an order with --tif FrontendMarket',
+    },
+    {
+      name: 'missing required size',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        'trigger-price': '69',
+        execution: 'market',
+      },
+      error: 'Missing required argument: --size',
+    },
+    {
+      name: 'unknown extra option',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        tpsl: 'sl',
+      },
+      error: 'Unknown option for purr hyperliquid stop-loss: --tpsl',
+    },
+    {
+      name: 'invalid position side',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'sell',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+      },
+      error: 'Invalid --position-side: "sell". Expected one of: long, short',
+    },
+    {
+      name: 'market trigger with a limit price',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'limit-price': '68.5',
+      },
+      error: '--limit-price is not allowed when --execution is market',
+    },
+    {
+      name: 'market trigger without a worst price',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+      },
+      error: '--worst-price is required when --execution is market',
+    },
+    {
+      name: 'market trigger with an equal long worst price',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '69',
+      },
+      error: '--worst-price must be less than --trigger-price when closing a long position',
+    },
+    {
+      name: 'market trigger with a wrong short worst-price direction',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'short',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'market',
+        'worst-price': '68',
+      },
+      error: '--worst-price must be greater than --trigger-price when closing a short position',
+    },
+    {
+      name: 'limit trigger without a limit price',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'limit',
+      },
+      error: '--limit-price is required when --execution is limit',
+    },
+    {
+      name: 'limit trigger with a market worst price',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '69',
+        execution: 'limit',
+        'worst-price': '62',
+        'limit-price': '68.5',
+      },
+      error: '--worst-price is not allowed when --execution is limit',
+    },
+    {
+      name: 'market bracket with trigger limit prices',
+      command: 'bracket-order',
+      args: {
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        'entry-price': '72',
+        'entry-tif': 'Gtc',
+        'take-profit-price': '100',
+        'stop-loss-price': '69',
+        execution: 'market',
+        'take-profit-limit-price': '99.5',
+      },
+      error: '--take-profit-limit-price is not allowed when --execution is market',
+    },
+    {
+      name: 'market bracket without both worst prices',
+      command: 'bracket-order',
+      args: {
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        'entry-price': '72',
+        'entry-tif': 'Gtc',
+        'take-profit-price': '100',
+        'stop-loss-price': '69',
+        execution: 'market',
+        'take-profit-worst-price': '90',
+      },
+      error: '--stop-loss-worst-price is required when --execution is market',
+    },
+    {
+      name: 'limit bracket without both trigger limit prices',
+      command: 'bracket-order',
+      args: {
+        asset: '159',
+        side: 'buy',
+        size: '0.45',
+        'entry-price': '72',
+        'entry-tif': 'Gtc',
+        'take-profit-price': '100',
+        'stop-loss-price': '69',
+        execution: 'limit',
+        'take-profit-limit-price': '99.5',
+      },
+      error: '--stop-loss-limit-price is required when --execution is limit',
+    },
+    {
+      name: 'zero trigger price',
+      command: 'stop-loss',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '0',
+        execution: 'market',
+      },
+      error: 'Invalid --trigger-price: "0". Expected a positive decimal',
+    },
+    {
+      name: 'invalid long protection price relationship',
+      command: 'protect-position',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'take-profit-price': '65',
+        'stop-loss-price': '69',
+        execution: 'market',
+      },
+      error: '--take-profit-price must be greater than --stop-loss-price for a long position',
+    },
+    {
+      name: 'invalid cloid',
+      command: 'take-profit',
+      args: {
+        asset: '159',
+        'position-side': 'long',
+        size: '0.45',
+        'trigger-price': '100',
+        execution: 'market',
+        'worst-price': '90',
+        cloid: 'not-a-cloid',
+      },
+      error: 'Invalid --cloid: "not-a-cloid". Expected 0x followed by 32 hex characters',
+    },
+    {
+      name: 'cancel without an oid',
+      command: 'cancel',
+      args: { asset: '159' },
+      error: 'Missing required argument: --oid',
+    },
+    {
+      name: 'cancel with an invalid oid',
+      command: 'cancel',
+      args: { asset: '159', oid: '-1' },
+      error: 'Invalid --oid: "-1"',
+    },
+    {
+      name: 'cancel-by-cloid without a cloid',
+      command: 'cancel-by-cloid',
+      args: { asset: '159' },
+      error: 'Missing required argument: --cloid',
+    },
+    {
+      name: 'cancel-by-cloid with an invalid cloid',
+      command: 'cancel-by-cloid',
+      args: { asset: '159', cloid: 'not-a-cloid' },
+      error: 'Invalid --cloid: "not-a-cloid". Expected 0x followed by 32 hex characters',
+    },
+    {
+      name: 'removed raw cancel body option',
+      command: 'cancel',
+      args: { 'body-json': '{"cancels":[]}' },
+      error: 'Unknown option for purr hyperliquid cancel: --body-json',
+    },
+  ])('rejects $name before making an HTTP request', async ({ command, args, error }) => {
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(hyperliquidCommand(command, args)).rejects.toThrow(error)
+    expect(mock).not.toHaveBeenCalled()
   })
 
   it.each<WriteRouteCase>([
@@ -279,26 +851,8 @@ describe('hyperliquid plugin', () => {
       expectedBody: {},
     },
     {
-      command: 'order',
-      args: {
-        'body-json': JSON.stringify({
-          orders: [{ a: 0, b: true, p: '100', s: '0.01', r: false, t: { limit: { tif: 'Gtc' } } }],
-          grouping: 'na',
-        }),
-      },
-      expectedPath: '/order',
-      expectedBody: {
-        orders: [{ a: 0, b: true, p: '100', s: '0.01', r: false, t: { limit: { tif: 'Gtc' } } }],
-        grouping: 'na',
-      },
-    },
-    {
       command: 'cancel',
-      args: {
-        'body-json': JSON.stringify({
-          cancels: [{ a: 0, o: 123 }],
-        }),
-      },
+      args: { asset: '0', oid: '123' },
       expectedPath: '/cancel',
       expectedBody: {
         cancels: [{ a: 0, o: 123 }],
@@ -306,28 +860,10 @@ describe('hyperliquid plugin', () => {
     },
     {
       command: 'cancel-by-cloid',
-      args: {
-        'body-json': JSON.stringify({
-          cancels: [{ asset: 0, cloid: '0x00000000000000000000000000000001' }],
-        }),
-      },
+      args: { asset: '0', cloid: '0xABCDEFABCDEFABCDEFABCDEFABCDEFAB' },
       expectedPath: '/cancel-by-cloid',
       expectedBody: {
-        cancels: [{ asset: 0, cloid: '0x00000000000000000000000000000001' }],
-      },
-    },
-    {
-      command: 'modify',
-      args: {
-        'body-json': JSON.stringify({
-          oid: 123,
-          order: { a: 0, b: true, p: '101', s: '0.02', r: false, t: { limit: { tif: 'Gtc' } } },
-        }),
-      },
-      expectedPath: '/modify',
-      expectedBody: {
-        oid: 123,
-        order: { a: 0, b: true, p: '101', s: '0.02', r: false, t: { limit: { tif: 'Gtc' } } },
+        cancels: [{ asset: 0, cloid: '0xabcdefabcdefabcdefabcdefabcdefab' }],
       },
     },
     {
@@ -554,20 +1090,13 @@ describe('hyperliquid plugin', () => {
     vi.stubGlobal('fetch', mock)
 
     await expect(
-      hyperliquidCommand('order', {
-        'body-json': JSON.stringify({
-          orders: [
-            {
-              a: 0,
-              b: true,
-              p: '100',
-              s: '0.01',
-              r: false,
-              t: { limit: { tif: 'Gtc' } },
-            },
-          ],
-          grouping: 'na',
-        }),
+      hyperliquidCommand('limit-order', {
+        asset: '0',
+        side: 'buy',
+        size: '0.01',
+        price: '100',
+        tif: 'Gtc',
+        'reduce-only': 'false',
       }),
     ).rejects.toMatchObject({
       code: 'HYPERLIQUID_BUILDER_FEE_APPROVAL_REQUIRED',
@@ -575,19 +1104,6 @@ describe('hyperliquid plugin', () => {
       status: 428,
     })
     expect(mock).toHaveBeenCalledOnce()
-  })
-
-  it('rejects ambiguous raw body input before parsing JSON', async () => {
-    const mock = mockFetch({ ok: true, data: {} })
-    vi.stubGlobal('fetch', mock)
-
-    await expect(
-      hyperliquidCommand('order', {
-        'body-json': '{bad json',
-        'body-file': './valid-order.json',
-      }),
-    ).rejects.toThrow('Pass either --body-json or --body-file, not both')
-    expect(mock).not.toHaveBeenCalled()
   })
 
   it('rejects network overrides before calling the platform', async () => {

@@ -5,8 +5,6 @@ import {
   apiPut,
   resolveCredentials,
 } from '@pieverseio/purr-core/api-client'
-import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
-import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
 
 type JsonRecord = Record<string, unknown>
 
@@ -67,10 +65,16 @@ Write commands:
   enable
   disable
   approve-builder-fee
-  order --body-json <json> | --body-file <path>
-  cancel --body-json <json> | --body-file <path>
-  cancel-by-cloid --body-json <json> | --body-file <path>
-  modify --body-json <json> | --body-file <path>
+  limit-order --asset <id> --side buy|sell --size <amount> --price <price> --tif Gtc|Ioc|Alo|FrontendMarket --reduce-only true|false [--cloid <cloid>]
+  bracket-order --asset <id> --side buy|sell --size <amount> --entry-price <price> --entry-tif Gtc|Ioc|Alo|FrontendMarket --take-profit-price <price> --stop-loss-price <price> --execution market|limit [--take-profit-worst-price <price>] [--stop-loss-worst-price <price>] [--take-profit-limit-price <price>] [--stop-loss-limit-price <price>] [--cloid <cloid>]
+  stop-loss --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
+  take-profit --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
+  protect-position --asset <id> --position-side long|short --size <amount> --take-profit-price <price> --stop-loss-price <price> --execution market --take-profit-worst-price <price> --stop-loss-worst-price <price>
+  modify-limit-order --oid <oid-or-cloid> --asset <id> --side buy|sell --size <amount> --price <price> --tif Gtc|Ioc|Alo|FrontendMarket --reduce-only true|false [--always-place true] [--cloid <cloid>]
+  modify-stop-loss --oid <oid-or-cloid> --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit --always-place true [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
+  modify-take-profit --oid <oid-or-cloid> --asset <id> --position-side long|short --size <amount> --trigger-price <price> --execution market|limit --always-place true [--worst-price <price>] [--limit-price <price>] [--cloid <cloid>]
+  cancel --asset <id> --oid <oid>
+  cancel-by-cloid --asset <id> --cloid <cloid>
   update-leverage --asset <asset-id> --is-cross true|false --leverage <1-50>
   schedule-cancel [--time <ms>]
   set-abstraction --mode disabled|unifiedAccount|portfolioMargin
@@ -80,7 +84,10 @@ Write commands:
   withdraw --amount <amount>
 
 Trading integration commands call /v1/instances/:id/integrations/hyperliquid-trading.
-Exchange commands call /v1/instances/:id/hyperliquid/* and use the platform mainnet TEE wallet.`
+Exchange commands call /v1/instances/:id/hyperliquid/* and use the platform mainnet TEE wallet.
+
+Market TP/SL requires an explicit worst price: below the trigger when closing long, above the
+trigger when closing short. Limit TP/SL requires the corresponding limit-price option instead.`
 
 const ABSTRACTION_WRITE_MODES = ['disabled', 'unifiedAccount', 'portfolioMargin'] as const
 type AbstractionWriteMode = (typeof ABSTRACTION_WRITE_MODES)[number]
@@ -97,11 +104,17 @@ function requireAbstractionMode(args: Record<string, string>): AbstractionWriteM
   )
 }
 
-const BODY_WRITE_ENDPOINTS: Record<string, string> = {
-  order: '/order',
+const PARAMETER_WRITE_ENDPOINTS: Record<string, string> = {
+  'limit-order': '/order',
+  'bracket-order': '/order',
+  'stop-loss': '/order',
+  'take-profit': '/order',
+  'protect-position': '/order',
+  'modify-limit-order': '/modify',
+  'modify-stop-loss': '/modify',
+  'modify-take-profit': '/modify',
   cancel: '/cancel',
   'cancel-by-cloid': '/cancel-by-cloid',
-  modify: '/modify',
 }
 
 const CONVENIENCE_WRITE_ENDPOINTS: Record<string, string> = {
@@ -113,6 +126,142 @@ const CONVENIENCE_WRITE_ENDPOINTS: Record<string, string> = {
   'send-asset': '/send-asset',
   deposit: '/deposit',
   withdraw: '/withdraw',
+}
+
+const COMMAND_OPTIONS: Record<string, readonly string[]> = {
+  status: [],
+  'trading-status': [],
+  'integration-status': [],
+  snapshot: [],
+  account: [],
+  abstraction: [],
+  'builder-fee-status': [],
+  symbol: ['coin', 'dex'],
+  markets: ['kind', 'dex'],
+  prices: ['dex'],
+  l2: ['coin', 'n-sig-figs', 'nSigFigs', 'mantissa'],
+  candles: ['coin', 'interval', 'start-time', 'startTime', 'end-time', 'endTime'],
+  funding: ['coin', 'start-time', 'startTime', 'end-time', 'endTime'],
+  state: ['kind', 'dex'],
+  orders: ['kind', 'dex'],
+  fills: [
+    'start-time',
+    'startTime',
+    'end-time',
+    'endTime',
+    'aggregate-by-time',
+    'aggregateByTime',
+    'reversed',
+  ],
+  'order-status': ['oid'],
+  'withdraw-status': ['nonce'],
+  enable: [],
+  'enable-trading': [],
+  disable: [],
+  'disable-trading': [],
+  'approve-builder-fee': [],
+  'limit-order': ['asset', 'side', 'size', 'price', 'tif', 'reduce-only', 'cloid'],
+  'bracket-order': [
+    'asset',
+    'side',
+    'size',
+    'entry-price',
+    'entry-tif',
+    'take-profit-price',
+    'stop-loss-price',
+    'execution',
+    'take-profit-worst-price',
+    'stop-loss-worst-price',
+    'take-profit-limit-price',
+    'stop-loss-limit-price',
+    'cloid',
+  ],
+  'stop-loss': [
+    'asset',
+    'position-side',
+    'size',
+    'trigger-price',
+    'execution',
+    'worst-price',
+    'limit-price',
+    'cloid',
+  ],
+  'take-profit': [
+    'asset',
+    'position-side',
+    'size',
+    'trigger-price',
+    'execution',
+    'worst-price',
+    'limit-price',
+    'cloid',
+  ],
+  'protect-position': [
+    'asset',
+    'position-side',
+    'size',
+    'take-profit-price',
+    'stop-loss-price',
+    'execution',
+    'take-profit-worst-price',
+    'stop-loss-worst-price',
+  ],
+  'modify-limit-order': [
+    'oid',
+    'asset',
+    'side',
+    'size',
+    'price',
+    'tif',
+    'reduce-only',
+    'always-place',
+    'cloid',
+  ],
+  'modify-stop-loss': [
+    'oid',
+    'asset',
+    'position-side',
+    'size',
+    'trigger-price',
+    'execution',
+    'worst-price',
+    'limit-price',
+    'always-place',
+    'cloid',
+  ],
+  'modify-take-profit': [
+    'oid',
+    'asset',
+    'position-side',
+    'size',
+    'trigger-price',
+    'execution',
+    'worst-price',
+    'limit-price',
+    'always-place',
+    'cloid',
+  ],
+  cancel: ['asset', 'oid'],
+  'cancel-by-cloid': ['asset', 'cloid'],
+  'update-leverage': ['asset', 'is-cross', 'isCross', 'leverage'],
+  'schedule-cancel': ['time'],
+  'set-abstraction': ['mode', 'abstraction'],
+  'usd-class-transfer': ['amount', 'to-perp', 'toPerp'],
+  'send-asset': ['source-dex', 'sourceDex', 'destination-dex', 'destinationDex', 'amount'],
+  deposit: ['amount'],
+  withdraw: ['amount'],
+}
+
+const LIMIT_TIFS = ['Gtc', 'Ioc', 'Alo', 'FrontendMarket'] as const
+const ORDER_SIDES = ['buy', 'sell'] as const
+const POSITION_SIDES = ['long', 'short'] as const
+const TRIGGER_EXECUTIONS = ['market', 'limit'] as const
+
+const REMOVED_WRITE_COMMANDS: Record<string, string> = {
+  order:
+    'purr hyperliquid order was removed. Use limit-order, bracket-order, stop-loss, take-profit, or protect-position',
+  modify:
+    'purr hyperliquid modify was removed. Use modify-limit-order, modify-stop-loss, or modify-take-profit',
 }
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -242,10 +391,11 @@ async function setHyperliquidTradingIntegration<T = unknown>(enabled: boolean): 
 }
 
 function arg(args: Record<string, string>, ...names: string[]): string | undefined {
-  for (const name of names) {
-    if (args[name] !== undefined) return args[name]
+  const provided = names.filter((name) => args[name] !== undefined)
+  if (provided.length > 1) {
+    throw new Error(`Pass only one of: ${provided.map((name) => `--${name}`).join(', ')}`)
   }
-  return undefined
+  return provided[0] === undefined ? undefined : args[provided[0]]
 }
 
 function requireArg(args: Record<string, string>, name: string, ...aliases: string[]): string {
@@ -288,12 +438,350 @@ function requireBoolean(args: Record<string, string>, name: string, ...aliases: 
   return parseBoolean(requireArg(args, name, ...aliases), name) as boolean
 }
 
-function readBody(args: Record<string, string>): JsonRecord {
-  if (args['body-json'] !== undefined && args['body-file'] !== undefined) {
-    throw new Error('Pass either --body-json or --body-file, not both')
+function optionalAlwaysPlace(args: Record<string, string>): true | undefined {
+  const value = args['always-place']
+  if (value === undefined) return undefined
+  if (parseBoolean(value, 'always-place') !== true) {
+    throw new Error('Invalid --always-place: expected true; false is not supported')
   }
-  const raw = requireArgOrFile(args, 'body-json', 'body-file')
-  return parseJsonCliArg<JsonRecord>(raw, args['body-file'] ? 'body-file' : 'body-json')
+  return true
+}
+
+function assertKnownOptions(command: string, args: Record<string, string>): void {
+  const allowed = COMMAND_OPTIONS[command]
+  if (!allowed) return
+  const allowedSet = new Set(allowed)
+  const unknown = Object.keys(args)
+    .filter((name) => !allowedSet.has(name))
+    .sort()
+  if (unknown.length === 0) return
+
+  const rendered = unknown.map((name) => `--${name}`).join(', ')
+  if (allowed.length === 0) {
+    throw new Error(
+      `Unknown option${unknown.length === 1 ? '' : 's'} for purr hyperliquid ${command}: ${rendered}. This command does not accept options.`,
+    )
+  }
+  throw new Error(
+    `Unknown option${unknown.length === 1 ? '' : 's'} for purr hyperliquid ${command}: ${rendered}. Allowed options: ${allowed.map((name) => `--${name}`).join(', ')}`,
+  )
+}
+
+function requireChoice<const T extends readonly string[]>(
+  args: Record<string, string>,
+  name: string,
+  choices: T,
+): T[number] {
+  const value = requireArg(args, name)
+  if ((choices as readonly string[]).includes(value)) return value as T[number]
+  throw new Error(`Invalid --${name}: "${value}". Expected one of: ${choices.join(', ')}`)
+}
+
+function requirePositiveDecimal(args: Record<string, string>, name: string): string {
+  const value = requireArg(args, name)
+  if (!/^\d+(?:\.\d+)?$/.test(value) || !/[1-9]/.test(value)) {
+    throw new Error(`Invalid --${name}: "${value}". Expected a positive decimal`)
+  }
+  return value
+}
+
+function optionalCloid(args: Record<string, string>): string | undefined {
+  const value = args.cloid
+  if (value === undefined) return undefined
+  if (!/^0x[0-9a-fA-F]{32}$/.test(value)) {
+    throw new Error(`Invalid --cloid: "${value}". Expected 0x followed by 32 hex characters`)
+  }
+  return value.toLowerCase()
+}
+
+function requireCloid(args: Record<string, string>): string {
+  requireArg(args, 'cloid')
+  return optionalCloid(args) as string
+}
+
+function requireOrderRef(args: Record<string, string>): number | string {
+  const value = requireArg(args, 'oid')
+  if (/^0x[0-9a-fA-F]{32}$/.test(value)) return value.toLowerCase()
+  const parsed = parseInteger(value, 'oid')
+  if (parsed !== undefined) return parsed
+  throw new Error(`Invalid --oid: "${value}"`)
+}
+
+function comparePositiveDecimals(left: string, right: string): number {
+  const [leftWhole, leftFraction = ''] = left.split('.')
+  const [rightWhole, rightFraction = ''] = right.split('.')
+  const scale = Math.max(leftFraction.length, rightFraction.length)
+  const leftScaled = BigInt(`${leftWhole}${leftFraction.padEnd(scale, '0')}`)
+  const rightScaled = BigInt(`${rightWhole}${rightFraction.padEnd(scale, '0')}`)
+  return leftScaled < rightScaled ? -1 : leftScaled > rightScaled ? 1 : 0
+}
+
+function withCloid(order: JsonRecord, cloid: string | undefined): JsonRecord {
+  return cloid === undefined ? order : { ...order, c: cloid }
+}
+
+function assertProtectionPriceOrder(
+  positionSide: (typeof POSITION_SIDES)[number],
+  takeProfitPrice: string,
+  stopLossPrice: string,
+): void {
+  const comparison = comparePositiveDecimals(takeProfitPrice, stopLossPrice)
+  if (positionSide === 'long' && comparison <= 0) {
+    throw new Error(
+      '--take-profit-price must be greater than --stop-loss-price for a long position',
+    )
+  }
+  if (positionSide === 'short' && comparison >= 0) {
+    throw new Error('--take-profit-price must be less than --stop-loss-price for a short position')
+  }
+}
+
+function resolveTriggerOrderPrice(
+  args: Record<string, string>,
+  execution: (typeof TRIGGER_EXECUTIONS)[number],
+  positionSide: (typeof POSITION_SIDES)[number],
+  triggerPrice: string,
+  triggerPriceName: string,
+  worstPriceName: string,
+  limitPriceName: string,
+): string {
+  const suppliedWorstPrice = args[worstPriceName]
+  const suppliedLimitPrice = args[limitPriceName]
+
+  if (execution === 'market') {
+    if (suppliedLimitPrice !== undefined) {
+      throw new Error(`--${limitPriceName} is not allowed when --execution is market`)
+    }
+    if (suppliedWorstPrice === undefined) {
+      throw new Error(`--${worstPriceName} is required when --execution is market`)
+    }
+
+    const worstPrice = requirePositiveDecimal(args, worstPriceName)
+    const comparison = comparePositiveDecimals(worstPrice, triggerPrice)
+    if (positionSide === 'long' && comparison >= 0) {
+      throw new Error(
+        `--${worstPriceName} must be less than --${triggerPriceName} when closing a long position`,
+      )
+    }
+    if (positionSide === 'short' && comparison <= 0) {
+      throw new Error(
+        `--${worstPriceName} must be greater than --${triggerPriceName} when closing a short position`,
+      )
+    }
+    return worstPrice
+  }
+
+  if (suppliedWorstPrice !== undefined) {
+    throw new Error(`--${worstPriceName} is not allowed when --execution is limit`)
+  }
+  if (suppliedLimitPrice === undefined) {
+    throw new Error(`--${limitPriceName} is required when --execution is limit`)
+  }
+  return requirePositiveDecimal(args, limitPriceName)
+}
+
+function buildLimitOrder(args: Record<string, string>): JsonRecord {
+  const side = requireChoice(args, 'side', ORDER_SIDES)
+  const tif = requireChoice(args, 'tif', LIMIT_TIFS)
+  return withCloid(
+    {
+      a: requireInteger(args, 'asset'),
+      b: side === 'buy',
+      p: requirePositiveDecimal(args, 'price'),
+      s: requirePositiveDecimal(args, 'size'),
+      r: requireBoolean(args, 'reduce-only'),
+      t: { limit: { tif } },
+    },
+    optionalCloid(args),
+  )
+}
+
+function buildTriggerOrder(args: Record<string, string>, tpsl: 'tp' | 'sl'): JsonRecord {
+  const positionSide = requireChoice(args, 'position-side', POSITION_SIDES)
+  const execution = requireChoice(args, 'execution', TRIGGER_EXECUTIONS)
+  const asset = requireInteger(args, 'asset')
+  const size = requirePositiveDecimal(args, 'size')
+  const triggerPrice = requirePositiveDecimal(args, 'trigger-price')
+  const orderPrice = resolveTriggerOrderPrice(
+    args,
+    execution,
+    positionSide,
+    triggerPrice,
+    'trigger-price',
+    'worst-price',
+    'limit-price',
+  )
+
+  return withCloid(
+    {
+      a: asset,
+      b: positionSide === 'short',
+      p: orderPrice,
+      s: size,
+      r: true,
+      t: {
+        trigger: {
+          isMarket: execution === 'market',
+          triggerPx: triggerPrice,
+          tpsl,
+        },
+      },
+    },
+    optionalCloid(args),
+  )
+}
+
+function buildModifyLimitBody(args: Record<string, string>): JsonRecord {
+  const tif = requireChoice(args, 'tif', LIMIT_TIFS)
+  const order = buildLimitOrder(args)
+  const alwaysPlace = optionalAlwaysPlace(args)
+  if ((tif === 'Ioc' || tif === 'FrontendMarket') && alwaysPlace !== true) {
+    throw new Error(`--always-place true is required when modifying an order with --tif ${tif}`)
+  }
+  return {
+    oid: requireOrderRef(args),
+    order,
+    ...(alwaysPlace === true ? { a: true } : {}),
+  }
+}
+
+function buildModifyTriggerBody(args: Record<string, string>, tpsl: 'tp' | 'sl'): JsonRecord {
+  const order = buildTriggerOrder(args, tpsl)
+  const alwaysPlace = optionalAlwaysPlace(args)
+  if (alwaysPlace !== true) {
+    throw new Error('--always-place true is required when modifying a trigger order')
+  }
+  return {
+    oid: requireOrderRef(args),
+    order,
+    a: true,
+  }
+}
+
+function buildBracketBody(args: Record<string, string>): JsonRecord {
+  const side = requireChoice(args, 'side', ORDER_SIDES)
+  const execution = requireChoice(args, 'execution', TRIGGER_EXECUTIONS)
+  const asset = requireInteger(args, 'asset')
+  const size = requirePositiveDecimal(args, 'size')
+  const entryPrice = requirePositiveDecimal(args, 'entry-price')
+  const entryTif = requireChoice(args, 'entry-tif', LIMIT_TIFS)
+  const takeProfitPrice = requirePositiveDecimal(args, 'take-profit-price')
+  const stopLossPrice = requirePositiveDecimal(args, 'stop-loss-price')
+  const positionSide = side === 'buy' ? 'long' : 'short'
+  assertProtectionPriceOrder(positionSide, takeProfitPrice, stopLossPrice)
+  const takeProfitOrderPrice = resolveTriggerOrderPrice(
+    args,
+    execution,
+    positionSide,
+    takeProfitPrice,
+    'take-profit-price',
+    'take-profit-worst-price',
+    'take-profit-limit-price',
+  )
+  const stopLossOrderPrice = resolveTriggerOrderPrice(
+    args,
+    execution,
+    positionSide,
+    stopLossPrice,
+    'stop-loss-price',
+    'stop-loss-worst-price',
+    'stop-loss-limit-price',
+  )
+
+  const entryOrder = withCloid(
+    {
+      a: asset,
+      b: side === 'buy',
+      p: entryPrice,
+      s: size,
+      r: false,
+      t: { limit: { tif: entryTif } },
+    },
+    optionalCloid(args),
+  )
+  const closeIsBuy = side === 'sell'
+  const triggerOrder = (
+    triggerPrice: string,
+    orderPrice: string,
+    tpsl: 'tp' | 'sl',
+  ): JsonRecord => ({
+    a: asset,
+    b: closeIsBuy,
+    p: orderPrice,
+    s: size,
+    r: true,
+    t: {
+      trigger: {
+        isMarket: execution === 'market',
+        triggerPx: triggerPrice,
+        tpsl,
+      },
+    },
+  })
+
+  return {
+    orders: [
+      entryOrder,
+      triggerOrder(takeProfitPrice, takeProfitOrderPrice, 'tp'),
+      triggerOrder(stopLossPrice, stopLossOrderPrice, 'sl'),
+    ],
+    grouping: 'normalTpsl',
+  }
+}
+
+function buildProtectionBody(args: Record<string, string>): JsonRecord {
+  const positionSide = requireChoice(args, 'position-side', POSITION_SIDES)
+  const execution = requireChoice(args, 'execution', ['market'] as const)
+  const asset = requireInteger(args, 'asset')
+  const size = requirePositiveDecimal(args, 'size')
+  const takeProfitPrice = requirePositiveDecimal(args, 'take-profit-price')
+  const stopLossPrice = requirePositiveDecimal(args, 'stop-loss-price')
+  assertProtectionPriceOrder(positionSide, takeProfitPrice, stopLossPrice)
+  const takeProfitOrderPrice = resolveTriggerOrderPrice(
+    args,
+    execution,
+    positionSide,
+    takeProfitPrice,
+    'take-profit-price',
+    'take-profit-worst-price',
+    'take-profit-limit-price',
+  )
+  const stopLossOrderPrice = resolveTriggerOrderPrice(
+    args,
+    execution,
+    positionSide,
+    stopLossPrice,
+    'stop-loss-price',
+    'stop-loss-worst-price',
+    'stop-loss-limit-price',
+  )
+
+  const isBuy = positionSide === 'short'
+  const triggerOrder = (
+    triggerPrice: string,
+    orderPrice: string,
+    tpsl: 'tp' | 'sl',
+  ): JsonRecord => ({
+    a: asset,
+    b: isBuy,
+    p: orderPrice,
+    s: size,
+    r: true,
+    t: {
+      trigger: {
+        isMarket: execution === 'market',
+        triggerPx: triggerPrice,
+        tpsl,
+      },
+    },
+  })
+  return {
+    orders: [
+      triggerOrder(takeProfitPrice, takeProfitOrderPrice, 'tp'),
+      triggerOrder(stopLossPrice, stopLossOrderPrice, 'sl'),
+    ],
+    grouping: 'positionTpsl',
+  }
 }
 
 function printJson(value: unknown): void {
@@ -393,9 +881,31 @@ function readQueryArgs(command: string, args: Record<string, string>) {
 }
 
 function writeBody(command: string, args: Record<string, string>): JsonRecord {
-  if (BODY_WRITE_ENDPOINTS[command]) return readBody(args)
-
   switch (command) {
+    case 'limit-order':
+      return { orders: [buildLimitOrder(args)], grouping: 'na' }
+    case 'bracket-order':
+      return buildBracketBody(args)
+    case 'stop-loss':
+      return { orders: [buildTriggerOrder(args, 'sl')], grouping: 'positionTpsl' }
+    case 'take-profit':
+      return { orders: [buildTriggerOrder(args, 'tp')], grouping: 'positionTpsl' }
+    case 'protect-position':
+      return buildProtectionBody(args)
+    case 'modify-limit-order':
+      return buildModifyLimitBody(args)
+    case 'modify-stop-loss':
+      return buildModifyTriggerBody(args, 'sl')
+    case 'modify-take-profit':
+      return buildModifyTriggerBody(args, 'tp')
+    case 'cancel':
+      return {
+        cancels: [{ a: requireInteger(args, 'asset'), o: requireInteger(args, 'oid') }],
+      }
+    case 'cancel-by-cloid':
+      return {
+        cancels: [{ asset: requireInteger(args, 'asset'), cloid: requireCloid(args) }],
+      }
     case 'approve-builder-fee':
       return {}
     case 'update-leverage':
@@ -434,7 +944,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
 }
 
 function writeEndpoint(command: string): string | undefined {
-  return BODY_WRITE_ENDPOINTS[command] ?? CONVENIENCE_WRITE_ENDPOINTS[command]
+  return PARAMETER_WRITE_ENDPOINTS[command] ?? CONVENIENCE_WRITE_ENDPOINTS[command]
 }
 
 export function hyperliquidHelp(): string {
@@ -450,7 +960,11 @@ export async function hyperliquidCommand(
     return
   }
 
+  const removedCommandMessage = REMOVED_WRITE_COMMANDS[command]
+  if (removedCommandMessage !== undefined) throw new Error(removedCommandMessage)
+
   ensureMainnetOnly(args)
+  assertKnownOptions(command, args)
 
   const readEndpoints: Record<string, string> = {
     account: '/account',

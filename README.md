@@ -49,6 +49,7 @@ purr <group> <command> [options]
 | `predict-fun` | Predict.fun market discovery, account data, orders, approvals, position actions, and streaming through the platform TEE wallet |
 | `pancake` | PancakeSwap V2/V3 swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
+| `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
@@ -100,6 +101,10 @@ purr binance-onchain-pay estimated-quote --fiat <fiat-symbol> --crypto <crypto-s
 purr binance-onchain-pay pre-order --fiat <fiat-symbol> --crypto <crypto-symbol> --requested-amount <amount> --amount-type <1|2> --network <network> --address <wallet-address> --pay-method-code <pay-method-code>
 purr opensea buy --wallet <wallet-address> --fulfillment-file <path-to-fulfillment-json>
 purr lista list-vaults --zone <zone>
+purr pieverse staking contracts
+purr pieverse staking positions --chain-id 1
+purr pieverse staking stake --amount-wei <amount> --duration 90d --chain-id 1 --execute
+purr pieverse staking withdraw --stake-id 0 --chain-id 1 --execute
 purr osero balances --chain base
 purr osero apy --chain base
 purr osero preview --action mint-susds --chain base --amount 1000000
@@ -175,6 +180,18 @@ Hyperliquid trigger modifications require `--always-place true`. The same flag i
 `modify-limit-order` uses `Ioc`, `FrontendMarket`, or an executable `Gtc`; it means the replacement
 is placed even if the target cancel does not succeed, so callers must verify the target and accept
 that risk. The CLI cannot determine locally whether a `Gtc` price is executable.
+
+Pieverse staking commands print portable transaction steps by default. Add `--execute` to
+submit them through the configured agent wallet. Supported durations are `90d`, `180d`, and
+`365d`; supported chain IDs are Ethereum `1` and BNB Chain `56`. The `positions` command
+automatically reads the configured agent wallet. Stake amounts support at most two decimal
+places and use increments of `0.01 PIEVERSE`; pass the exact 18-decimal wei value through
+`--amount-wei`.
+
+| Mainnet | PIEVERSE token | Staking proxy |
+| --- | --- | --- |
+| Ethereum | `0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9` | `0xaE4c8Ca1dC8127C380099657774CB09ca8197e78` |
+| BNB Chain | `0x0E63B9C287E32A05E6b9AB8ee8dF88A2760225A9` | `0xaE4c8Ca1dC8127C380099657774CB09ca8197e78` |
 
 ## Development
 

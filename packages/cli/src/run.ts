@@ -77,6 +77,14 @@ import {
   listVaults,
 } from '@pieverseio/purr-plugin-vendors/lista'
 import {
+  buildPieverseStakeSteps,
+  buildPieverseWithdrawBatchSteps,
+  buildPieverseWithdrawSteps,
+  getPieverseStakingDeployment,
+  listPieverseStakingDeployments,
+  readPieverseStakingPositions,
+} from '@pieverseio/purr-plugin-vendors/pieverse-staking'
+import {
   HyperliquidCliError,
   hyperliquidCommand,
   hyperliquidHelp,
@@ -313,6 +321,41 @@ function requireArg(args: Record<string, string>, name: string): string {
     throw new Error(`Missing required argument: --${name}`)
   }
   return val
+}
+
+function rejectUnsupportedArgs(
+  args: Record<string, string>,
+  rawArgs: readonly string[],
+  allowedArgs: readonly string[],
+  command: string,
+): void {
+  const allowed = new Set(allowedArgs)
+  const unsupported = Object.keys(args)
+    .filter((name) => !allowed.has(name))
+    .map((name) => `--${name}`)
+
+  for (let index = 0; index < rawArgs.length; index++) {
+    const arg = rawArgs[index]
+    if (!arg.startsWith('--')) {
+      unsupported.push(arg)
+      continue
+    }
+
+    const raw = arg.slice(2)
+    const equalsIndex = raw.indexOf('=')
+    const name = equalsIndex >= 0 ? raw.slice(0, equalsIndex) : raw
+    if (equalsIndex < 0 && name !== 'execute') {
+      const next = rawArgs[index + 1]
+      if (next !== undefined && !next.startsWith('-')) index++
+    }
+  }
+
+  const uniqueUnsupported = [...new Set(unsupported)]
+  if (uniqueUnsupported.length > 0) {
+    throw new Error(
+      `Unsupported argument${uniqueUnsupported.length === 1 ? '' : 's'} for ${command}: ${uniqueUnsupported.join(', ')}`,
+    )
+  }
 }
 
 function optionalJsonArg<T extends Record<string, unknown>>(
@@ -564,7 +607,7 @@ Groups:
   predict-fun       Predict.fun market data and trading through the platform TEE wallet
   pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
-  pieverse          Pieverse campaign card flow
+  pieverse          Pieverse campaigns and PIEVERSE staking
   pns               Pie Name Service and identity lookup helpers
   .pie              Resolve .pie identities and transfer to their wallets
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap)
@@ -647,6 +690,11 @@ Examples:
   purr pieverse purrfect-yap create-job --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse purrfect-yap fund --purchase-id 00000000-0000-0000-0000-000000000000
   purr pieverse purrfect-yap result --purchase-id 00000000-0000-0000-0000-000000000000 --wait
+  purr pieverse staking contracts
+  purr pieverse staking positions --chain-id 1
+  purr pieverse staking stake --amount-wei 1000000000000000000 --duration 90d --chain-id 1 --execute
+  purr pieverse staking withdraw --stake-id 0 --chain-id 1 --execute
+  purr pieverse staking withdraw-batch --stake-ids 0,1 --chain-id 56 --execute
   purr pns resolve alice
   purr pns by-account --channel telegram --account @alice
   purr pns accounts alice.pie
@@ -729,6 +777,7 @@ Examples:
   const args = parseArgs(rest)
   const executeFlag = args.execute === 'true'
   let output: StepOutput
+  let stakingDisplayChainId: number | undefined
 
   switch (group) {
     case 'instance': {
@@ -1665,9 +1714,115 @@ Examples:
           await pieversePurrfectYap(purrfectYapCommand, parseArgs(purrfectYapRest))
           return
         }
+        case 'staking': {
+          const [stakingCommand, ...stakingRest] = rest
+          const stakingArgs = parseArgs(stakingRest)
+
+          if (
+            stakingCommand === undefined ||
+            stakingCommand === 'help' ||
+            stakingCommand === '--help' ||
+            stakingCommand === '-h'
+          ) {
+            console.log(`Usage: purr pieverse staking <command> [options]
+
+Commands:
+  contracts       List configured PIEVERSE token and staking contracts
+  positions       Read the configured agent wallet's PIEVERSE balance and open stakes
+  stake           Approve PIEVERSE when needed, then create a fixed-term stake
+  withdraw        Withdraw one matured stake
+  withdraw-batch  Atomically withdraw multiple matured stakes
+
+Supported chains:
+  1   Ethereum
+  56  BNB Chain
+
+Staking durations:
+  90d | 180d | 365d
+
+Stake amounts:
+  At most 2 decimal places; minimum increment 0.01 PIEVERSE.
+  Pass the exact 18-decimal value with --amount-wei.
+
+Execution:
+  Omit --execute to print portable steps JSON.
+  Add --execute to submit the steps through the configured agent wallet.`)
+            return
+          }
+
+          const allowedArgsByCommand: Record<string, readonly string[]> = {
+            contracts: ['chain-id'],
+            positions: ['chain-id'],
+            stake: ['amount-wei', 'duration', 'chain-id', 'execute'],
+            withdraw: ['stake-id', 'chain-id', 'execute'],
+            'withdraw-batch': ['stake-ids', 'chain-id', 'execute'],
+          }
+          const allowedArgs = allowedArgsByCommand[stakingCommand]
+          if (allowedArgs) {
+            rejectUnsupportedArgs(
+              stakingArgs,
+              stakingRest,
+              allowedArgs,
+              `purr pieverse staking ${stakingCommand}`,
+            )
+          }
+
+          if (stakingCommand === 'contracts') {
+            const deployments = stakingArgs['chain-id']
+              ? [getPieverseStakingDeployment(parseChainId(stakingArgs['chain-id']))]
+              : listPieverseStakingDeployments()
+            const result = deployments.map(({ chainId, pieverse, staking, durations }) => ({
+              chainId,
+              pieverse,
+              staking,
+              durations,
+            }))
+            console.log(JSON.stringify(result))
+            return
+          }
+
+          const chainId = parseChainId(requireArg(stakingArgs, 'chain-id'))
+          const deployment = getPieverseStakingDeployment(chainId)
+          if (stakingCommand === 'positions') {
+            const result = await readPieverseStakingPositions({ chainId: deployment.chainId })
+            console.log(JSON.stringify(result))
+            return
+          }
+
+          switch (stakingCommand) {
+            case 'stake':
+              stakingDisplayChainId = chainId
+              output = buildPieverseStakeSteps({
+                amountWei: requireArg(stakingArgs, 'amount-wei'),
+                duration: requireArg(stakingArgs, 'duration'),
+                chainId,
+              })
+              break
+            case 'withdraw':
+              stakingDisplayChainId = chainId
+              output = buildPieverseWithdrawSteps({
+                stakeId: requireArg(stakingArgs, 'stake-id'),
+                chainId,
+              })
+              break
+            case 'withdraw-batch':
+              stakingDisplayChainId = chainId
+              output = buildPieverseWithdrawBatchSteps({
+                stakeIds: requireArg(stakingArgs, 'stake-ids'),
+                chainId,
+              })
+              break
+            default:
+              throw new Error(
+                `Unknown pieverse staking command: ${stakingCommand}. Use: contracts, positions, stake, withdraw, withdraw-batch`,
+              )
+          }
+          break
+        }
         default:
-          throw new Error(`Unknown pieverse command: ${command}. Use: card, purrfect-yap`)
+          throw new Error(`Unknown pieverse command: ${command}. Use: card, purrfect-yap, staking`)
       }
+      break
     }
 
     case 'pns': {
@@ -2115,7 +2270,9 @@ Examples:
     }
     const json = JSON.stringify(output)
     const result = await executeStepsFromJson(json, args['dedup-key'])
-    console.log(JSON.stringify(result, null, 2))
+    const displayedResult =
+      stakingDisplayChainId === undefined ? result : { ...result, chainId: stakingDisplayChainId }
+    console.log(JSON.stringify(displayedResult, null, 2))
   } else {
     console.log(JSON.stringify(output))
   }

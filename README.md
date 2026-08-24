@@ -130,7 +130,17 @@ purr hyperliquid symbol --coin CXMT
 purr hyperliquid markets --kind perp --dex xyz
 purr hyperliquid builder-fee-status
 purr hyperliquid approve-builder-fee
-purr hyperliquid order --body-file <path-to-order-json>
+purr hyperliquid limit-order --asset 0 --side buy --size 0.01 --price 3000 --tif Gtc --reduce-only false
+purr hyperliquid bracket-order --asset 0 --side buy --size 0.01 --entry-price 3000 --entry-tif Gtc --take-profit-price 3300 --take-profit-worst-price 3260 --stop-loss-price 2900 --stop-loss-worst-price 2850 --execution market
+purr hyperliquid stop-loss --asset 0 --position-side long --size 0.01 --trigger-price 2900 --worst-price 2850 --execution market
+purr hyperliquid take-profit --asset 0 --position-side long --size 0.01 --trigger-price 3300 --worst-price 3260 --execution market
+purr hyperliquid protect-position --asset 0 --position-side long --size 0.01 --take-profit-price 3300 --take-profit-worst-price 3260 --stop-loss-price 2900 --stop-loss-worst-price 2850 --execution market
+purr hyperliquid orders --kind frontend
+purr hyperliquid modify-limit-order --oid 123 --asset 0 --side buy --size 0.01 --price 3050 --tif Gtc --reduce-only false
+purr hyperliquid modify-take-profit --oid 124 --asset 0 --position-side long --size 0.01 --trigger-price 3350 --worst-price 3310 --execution market --always-place true
+purr hyperliquid modify-stop-loss --oid 125 --asset 0 --position-side long --size 0.01 --trigger-price 2950 --worst-price 2900 --execution market --always-place true
+purr hyperliquid cancel --asset 0 --oid 123
+purr hyperliquid cancel-by-cloid --asset 0 --cloid 0x1234567890abcdef1234567890abcdef
 purr hyperliquid deposit --amount 5
 purr hyperliquid withdraw --amount 5
 purr hyperliquid withdraw-status --nonce <nonce>
@@ -147,6 +157,29 @@ purr store install <slug>
 purr store install <source>:<slug>
 purr store remove <slug>
 ```
+
+Use the parameterized order commands for limit, stop-loss, take-profit, position protection, and
+order modification workflows. Hyperliquid commands reject missing, duplicate, unknown,
+conflicting, or invalid options before sending a platform request. Raw order and modify payloads
+are not exposed by the CLI; cancellation commands accept a single asset and order id instead of a
+raw or batch payload.
+
+Trigger orders with `--execution market` require an explicit worst acceptable execution boundary.
+Use `--worst-price` for one trigger, or the separate `--take-profit-worst-price` and
+`--stop-loss-worst-price` options for paired protection. The worst price must be below the trigger
+when closing a long position and above the trigger when closing a short position. Limit trigger
+orders use `--limit-price` instead and reject market worst-price options.
+
+`bracket-order` submits an entry order with attached reduce-only TP/SL children in one request.
+Modify the entry price with `modify-limit-order`; modify each attached TP/SL child with
+`modify-take-profit` or `modify-stop-loss` using that child order's oid. Use
+`orders --kind frontend` to find the entry and child order ids. If a position does not have
+protection orders yet, use `protect-position` to add TP and SL orders.
+
+Hyperliquid trigger modifications require `--always-place true`. The same flag is required when
+`modify-limit-order` uses `Ioc`, `FrontendMarket`, or an executable `Gtc`; it means the replacement
+is placed even if the target cancel does not succeed, so callers must verify the target and accept
+that risk. The CLI cannot determine locally whether a `Gtc` price is executable.
 
 Pieverse staking commands print portable transaction steps by default. Add `--execute` to
 submit them through the configured agent wallet. Supported durations are `90d`, `180d`, and

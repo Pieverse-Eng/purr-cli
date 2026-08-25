@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
 import { handleDepsCommand } from './deps.js'
+import { resolveAsterUser } from './aster.js'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
 import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
 import { NATIVE_EVM, parseChainId } from '@pieverseio/purr-core/shared'
@@ -987,7 +988,7 @@ Examples:
         const result = await asterApi({
           method: args.method ?? 'GET',
           endpoint: requireArg(args, 'endpoint'),
-          user: requireArg(args, 'user'),
+          user: resolveAsterUser(args),
           privateKey: args['private-key'],
           signer: args.signer,
           baseUrl: args['base-url'],

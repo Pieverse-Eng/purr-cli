@@ -120,7 +120,7 @@ purr predict-fun stream --topics orderbook:<market-id>,wallet --max-events 10
 # Predict idempotency is platform-managed; callers do not provide idempotency keys.
 purr evm approve --token <token-address> --spender <spender-address> --amount <amount> --chain-id <chain-id>
 purr evm abi-call --to <contract-address> --signature <function-signature> --args <json-args> --chain-id <chain-id>
-purr aster api --endpoint /fapi/v3/balance --user <main-aster-wallet>
+ASTER_USER_WALLET=<main-aster-wallet> purr aster api --endpoint /fapi/v3/balance
 purr aster deposit --token <token-address> --amount-wei <amount-wei> --wallet <wallet-address> --chain-id <chain-id>
 purr hyperliquid account
 purr hyperliquid status

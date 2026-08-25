@@ -15,6 +15,8 @@ describe('purr deps catalog', () => {
     expect(versions).toMatchObject({
       opensea: '1.10.0',
       baw: '1.2.1',
+      'okx-cex': '1.4.4',
+      'bitget-cex': '3.0.0',
       ows: '1.4.2',
       'mantle-cli': '0.1.19',
       'bnbchain-mcp': '1.5.1',

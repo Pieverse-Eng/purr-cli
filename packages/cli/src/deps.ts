@@ -84,6 +84,22 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
     npmPackage: '@binance/agentic-wallet',
   },
   {
+    id: 'okx-cex',
+    bin: 'okx',
+    version: '1.4.4',
+    skills: ['okx-cex'],
+    kind: 'npm',
+    npmPackage: '@okx_ai/okx-trade-cli',
+  },
+  {
+    id: 'bitget-cex',
+    bin: 'bgc',
+    version: '3.0.0',
+    skills: ['bitget'],
+    kind: 'npm',
+    npmPackage: '@bitget-ai/bitget-agent-cli',
+  },
+  {
     id: 'ows',
     bin: 'ows',
     version: '1.4.2',

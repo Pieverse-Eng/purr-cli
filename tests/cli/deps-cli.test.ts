@@ -15,6 +15,9 @@ describe('purr deps catalog', () => {
     expect(versions).toMatchObject({
       opensea: '1.10.0',
       baw: '1.2.1',
+      'okx-cex': '1.4.4',
+      'okx-outcomes': 'v1.0.3',
+      'bitget-cex': '3.0.0',
       ows: '1.4.2',
       'mantle-cli': '0.1.19',
       'bnbchain-mcp': '1.5.1',
@@ -28,6 +31,28 @@ describe('purr deps catalog', () => {
     })
   })
 
+  it('uses the expected packages and binaries for exchange CLIs', () => {
+    const deps = Object.fromEntries(SKILL_CLI_DEPS.map((dep) => [dep.id, dep]))
+
+    expect(deps['okx-cex']).toMatchObject({
+      bin: 'okx',
+      kind: 'npm',
+      npmPackage: '@okx_ai/okx-trade-cli',
+      version: '1.4.4',
+    })
+    expect(deps['okx-outcomes']).toMatchObject({
+      bin: 'okx-outcomes',
+      kind: 'binary',
+      version: 'v1.0.3',
+    })
+    expect(deps['bitget-cex']).toMatchObject({
+      bin: 'bgc',
+      kind: 'npm',
+      npmPackage: '@bitget-ai/bitget-agent-cli',
+      version: '3.0.0',
+    })
+  })
+
   it('rejects unknown --only ids', () => {
     expect(() => selectDeps(parseOnlyList('surf,nope'))).toThrow(/Unknown skill CLI id: nope/)
   })
@@ -37,6 +62,17 @@ describe('purr deps catalog', () => {
     expect(gateDex?.resolve?.({ os: 'linux', arch: 'amd64' })?.url).toBe(
       'https://gate-dex-cli.gateweb3.cc/v1.0.6/gate-dex-linux-x64',
     )
+  })
+
+  it('resolves pinned OKX Outcomes archives for Linux and macOS', () => {
+    const outcomes = SKILL_CLI_DEPS.find((dep) => dep.id === 'okx-outcomes')
+    expect(outcomes?.resolve?.({ os: 'linux', arch: 'amd64' })?.url).toBe(
+      'https://github.com/okx/outcomes-cli/releases/download/v1.0.3/outcomes-cli-v1.0.3-x86_64-unknown-linux-gnu.tar.gz',
+    )
+    expect(outcomes?.resolve?.({ os: 'darwin', arch: 'arm64' })?.url).toBe(
+      'https://github.com/okx/outcomes-cli/releases/download/v1.0.3/outcomes-cli-v1.0.3-aarch64-apple-darwin.tar.gz',
+    )
+    expect(outcomes?.resolve?.({ os: 'windows', arch: 'amd64' })).toBeNull()
   })
 })
 

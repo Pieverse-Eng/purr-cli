@@ -62,8 +62,17 @@ const CAW_SHA256 = {
   arm64: '18a8920febd9396f7e9800ddf75a78d811820be75952bb6ba047682dffc102ab',
 } as const
 
+const OKX_OUTCOMES_VERSION = 'v1.0.3'
+
 function linuxGnuTarget(arch: CpuArch): string {
   return arch === 'arm64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu'
+}
+
+function outcomesTarget(host: HostInfo): string | null {
+  if (host.os === 'linux') return linuxGnuTarget(host.arch)
+  if (host.os === 'darwin')
+    return host.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
+  return null
 }
 
 export const SKILL_CLI_DEPS: SkillCliDep[] = [
@@ -82,6 +91,40 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
     skills: ['binance-agentic-wallet'],
     kind: 'npm',
     npmPackage: '@binance/agentic-wallet',
+  },
+  {
+    id: 'okx-cex',
+    bin: 'okx',
+    version: '1.4.4',
+    skills: ['okx-cex'],
+    kind: 'npm',
+    npmPackage: '@okx_ai/okx-trade-cli',
+  },
+  {
+    id: 'okx-outcomes',
+    bin: 'okx-outcomes',
+    version: OKX_OUTCOMES_VERSION,
+    skills: ['okx-cex'],
+    kind: 'binary',
+    resolve: (host) => {
+      const target = outcomesTarget(host)
+      if (!target) return null
+      const file = `outcomes-cli-${OKX_OUTCOMES_VERSION}-${target}.tar.gz`
+      return {
+        url: `https://github.com/okx/outcomes-cli/releases/download/${OKX_OUTCOMES_VERSION}/${file}`,
+        checksumUrl: `https://github.com/okx/outcomes-cli/releases/download/${OKX_OUTCOMES_VERSION}/checksums.txt`,
+        archive: 'tar-gz',
+        archiveMember: 'okx-outcomes',
+      }
+    },
+  },
+  {
+    id: 'bitget-cex',
+    bin: 'bgc',
+    version: '3.0.0',
+    skills: ['bitget'],
+    kind: 'npm',
+    npmPackage: '@bitget-ai/bitget-agent-cli',
   },
   {
     id: 'ows',

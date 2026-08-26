@@ -66,6 +66,13 @@ function linuxGnuTarget(arch: CpuArch): string {
   return arch === 'arm64' ? 'aarch64-unknown-linux-gnu' : 'x86_64-unknown-linux-gnu'
 }
 
+function outcomesTarget(host: HostInfo): string | null {
+  if (host.os === 'linux') return linuxGnuTarget(host.arch)
+  if (host.os === 'darwin')
+    return host.arch === 'arm64' ? 'aarch64-apple-darwin' : 'x86_64-apple-darwin'
+  return null
+}
+
 export const SKILL_CLI_DEPS: SkillCliDep[] = [
   {
     id: 'opensea',
@@ -90,6 +97,24 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
     skills: ['okx-cex'],
     kind: 'npm',
     npmPackage: '@okx_ai/okx-trade-cli',
+  },
+  {
+    id: 'okx-outcomes',
+    bin: 'okx-outcomes',
+    version: 'v1.0.3',
+    skills: ['okx-cex'],
+    kind: 'binary',
+    resolve: (host) => {
+      const target = outcomesTarget(host)
+      if (!target) return null
+      const file = `outcomes-cli-v1.0.3-${target}.tar.gz`
+      return {
+        url: `https://github.com/okx/outcomes-cli/releases/download/v1.0.3/${file}`,
+        checksumUrl: 'https://github.com/okx/outcomes-cli/releases/download/v1.0.3/checksums.txt',
+        archive: 'tar-gz',
+        archiveMember: 'okx-outcomes',
+      }
+    },
   },
   {
     id: 'bitget-cex',

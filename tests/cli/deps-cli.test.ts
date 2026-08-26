@@ -31,6 +31,28 @@ describe('purr deps catalog', () => {
     })
   })
 
+  it('uses the expected packages and binaries for exchange CLIs', () => {
+    const deps = Object.fromEntries(SKILL_CLI_DEPS.map((dep) => [dep.id, dep]))
+
+    expect(deps['okx-cex']).toMatchObject({
+      bin: 'okx',
+      kind: 'npm',
+      npmPackage: '@okx_ai/okx-trade-cli',
+      version: '1.4.4',
+    })
+    expect(deps['okx-outcomes']).toMatchObject({
+      bin: 'okx-outcomes',
+      kind: 'binary',
+      version: 'v1.0.3',
+    })
+    expect(deps['bitget-cex']).toMatchObject({
+      bin: 'bgc',
+      kind: 'npm',
+      npmPackage: '@bitget-ai/bitget-agent-cli',
+      version: '3.0.0',
+    })
+  })
+
   it('rejects unknown --only ids', () => {
     expect(() => selectDeps(parseOnlyList('surf,nope'))).toThrow(/Unknown skill CLI id: nope/)
   })

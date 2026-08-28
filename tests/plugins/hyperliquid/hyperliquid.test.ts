@@ -181,11 +181,6 @@ describe('hyperliquid plugin', () => {
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/builder-fee/status',
     },
     {
-      command: 'prices',
-      args: { dex: 'xyz' },
-      expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/prices?dex=xyz',
-    },
-    {
       command: 'l2',
       args: { coin: 'ETH', 'n-sig-figs': '5', mantissa: '2' },
       expectedUrl:
@@ -269,6 +264,39 @@ describe('hyperliquid plugin', () => {
       type: 'metaAndAssetCtxs',
       dex: 'xyz',
     })
+  })
+
+  it('normalizes the default dex selector for public markets', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const mock = mockFetch([{ universe: [] }, []])
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('markets', { kind: 'perp', dex: 'default' })
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({ type: 'metaAndAssetCtxs' })
+  })
+
+  it.each([
+    { args: {}, expectedBody: { type: 'allMids' } },
+    { args: { dex: 'default' }, expectedBody: { type: 'allMids' } },
+    { args: { dex: 'xyz' }, expectedBody: { type: 'allMids', dex: 'xyz' } },
+  ])('reads public prices without wallet credentials for $args', async ({ args, expectedBody }) => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const mock = mockFetch({ BTC: '80000.0' })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('prices', args)
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][0]).toBe('https://api.hyperliquid.xyz/info')
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual(expectedBody)
   })
 
   it('reads candles from the public API without wallet credentials', async () => {

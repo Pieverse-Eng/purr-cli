@@ -127,7 +127,7 @@ Write commands:
   deposit --amount <amount>
   withdraw --amount <amount>
 
-Symbol resolution, markets, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
+Symbol resolution, markets, prices, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
 Trading integration and all other exchange commands use the platform mainnet TEE wallet.
 
 Market TP/SL requires an explicit worst price: below the trigger when closing long, above the
@@ -462,7 +462,7 @@ async function getPublicHyperliquidMarkets(
   }
   const perpRequest = {
     type: 'metaAndAssetCtxs',
-    ...(params.dex === undefined ? {} : { dex: params.dex }),
+    ...(params.dex === undefined || params.dex === 'default' ? {} : { dex: params.dex }),
   }
   if (kind === 'perp') return postHyperliquidInfo(perpRequest)
   if (kind === 'spot') return postHyperliquidInfo({ type: 'spotMetaAndAssetCtxs' })
@@ -470,6 +470,15 @@ async function getPublicHyperliquidMarkets(
     perp: await postHyperliquidInfo(perpRequest),
     spot: await postHyperliquidInfo({ type: 'spotMetaAndAssetCtxs' }),
   }
+}
+
+function getPublicHyperliquidPrices(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<unknown> {
+  return postHyperliquidInfo({
+    type: 'allMids',
+    ...(params.dex === undefined || params.dex === 'default' ? {} : { dex: params.dex }),
+  })
 }
 
 function symbolDexName(coin: string): string | undefined {
@@ -1260,7 +1269,6 @@ export async function hyperliquidCommand(
     abstraction: '/abstraction',
     'builder-fee-status': '/builder-fee/status',
     markets: '/markets',
-    prices: '/prices',
     l2: '/l2',
     candles: '/candles',
     funding: '/funding',
@@ -1295,6 +1303,11 @@ export async function hyperliquidCommand(
 
   if (command === 'markets') {
     printJson(await getPublicHyperliquidMarkets(readQueryArgs(command, args)))
+    return
+  }
+
+  if (command === 'prices') {
+    printJson(await getPublicHyperliquidPrices(readQueryArgs(command, args)))
     return
   }
 

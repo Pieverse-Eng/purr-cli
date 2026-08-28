@@ -8,6 +8,9 @@ import {
 
 type JsonRecord = Record<string, unknown>
 
+const HYPERLIQUID_INFO_URL = 'https://api.hyperliquid.xyz/info'
+const HYPERLIQUID_PUBLIC_REQUEST_TIMEOUT_MS = 10_000
+
 interface ApiEnvelope<T> {
   ok: boolean
   data?: T
@@ -83,8 +86,8 @@ Write commands:
   deposit --amount <amount>
   withdraw --amount <amount>
 
-Trading integration commands call /v1/instances/:id/integrations/hyperliquid-trading.
-Exchange commands call /v1/instances/:id/hyperliquid/* and use the platform mainnet TEE wallet.
+Markets and candles call Hyperliquid's public mainnet Info API without wallet credentials.
+Trading integration and all other exchange commands use the platform mainnet TEE wallet.
 
 Market TP/SL requires an explicit worst price: below the trigger when closing long, above the
 trigger when closing short. Limit TP/SL requires the corresponding limit-price option instead.`
@@ -376,6 +379,70 @@ async function getHyperliquid<T = unknown>(
   params: Record<string, string | number | boolean | undefined> = {},
 ): Promise<T> {
   return getEnvelope(`${hyperliquidBasePath()}${path}`, params)
+}
+
+async function postHyperliquidInfo<T = unknown>(body: JsonRecord): Promise<T> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), HYPERLIQUID_PUBLIC_REQUEST_TIMEOUT_MS)
+  try {
+    const response = await fetch(HYPERLIQUID_INFO_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+    const data = (await response.json()) as unknown
+    if (!response.ok) {
+      throw new HyperliquidCliError(`Hyperliquid public API returned HTTP ${response.status}`, {
+        status: response.status,
+        data,
+      })
+    }
+    return data as T
+  } catch (error) {
+    if (error instanceof HyperliquidCliError) throw error
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new HyperliquidCliError('Hyperliquid public API request timed out', {
+        code: 'HYPERLIQUID_REQUEST_TIMEOUT',
+      })
+    }
+    throw error instanceof Error ? error : new Error(String(error))
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function getPublicHyperliquidMarkets(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<unknown> {
+  const kind = params.kind ?? 'both'
+  if (!['perp', 'spot', 'both'].includes(String(kind))) {
+    throw new Error(`Invalid --kind: "${String(kind)}"`)
+  }
+  const perpRequest = {
+    type: 'metaAndAssetCtxs',
+    ...(params.dex === undefined ? {} : { dex: params.dex }),
+  }
+  if (kind === 'perp') return postHyperliquidInfo(perpRequest)
+  if (kind === 'spot') return postHyperliquidInfo({ type: 'spotMetaAndAssetCtxs' })
+  return {
+    perp: await postHyperliquidInfo(perpRequest),
+    spot: await postHyperliquidInfo({ type: 'spotMetaAndAssetCtxs' }),
+  }
+}
+
+function getPublicHyperliquidCandles(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<unknown> {
+  return postHyperliquidInfo({
+    type: 'candleSnapshot',
+    req: {
+      coin: params.coin,
+      interval: params.interval,
+      startTime: params.startTime,
+      ...(params.endTime === undefined ? {} : { endTime: params.endTime }),
+    },
+  })
 }
 
 async function postHyperliquid<T = unknown>(path: string, body: JsonRecord): Promise<T> {
@@ -1002,6 +1069,16 @@ export async function hyperliquidCommand(
 
   if (integrationWriteCommands[command] !== undefined) {
     printJson(await setHyperliquidTradingIntegration(integrationWriteCommands[command]))
+    return
+  }
+
+  if (command === 'markets') {
+    printJson(await getPublicHyperliquidMarkets(readQueryArgs(command, args)))
+    return
+  }
+
+  if (command === 'candles') {
+    printJson(await getPublicHyperliquidCandles(readQueryArgs(command, args)))
     return
   }
 

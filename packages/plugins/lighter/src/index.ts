@@ -53,6 +53,7 @@ export class LighterCliError extends Error {
 }
 
 export const LIGHTER_REQUEST_TIMEOUT_MS = 20_000
+const LIGHTER_PUBLIC_API_URL = 'https://mainnet.zklighter.elliot.ai'
 const MAX_LIGHTER_ORDER_INDEX = 9_223_372_036_854_775_807n
 
 export const LIGHTER_USAGE = `Usage: purr lighter <command> [options]
@@ -111,6 +112,7 @@ Write commands:
   withdraw --amount <USDC> [--yes]
   fast-withdraw --amount <USDC> [--yes]
 Withdrawal commands preview without --yes. Adding --yes fetches and executes the latest quote, which may differ from an earlier preview.
+Markets and candles call Lighter's public mainnet API without wallet credentials.
 Lighter read and preview requests use a 20s client timeout. Confirmed write commands wait for the Platform response.
 IOC market/limit orders do not accept expiry flags.`
 
@@ -277,6 +279,62 @@ async function getLighter<T = unknown>(
   params: Record<string, string | number | boolean | undefined> = {},
 ): Promise<T> {
   return getEnvelope(`${lighterBasePath()}${path}`, params)
+}
+
+async function getPublicLighter<T = unknown>(
+  path: string,
+  params: Record<string, string | number | boolean | undefined> = {},
+): Promise<T> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), LIGHTER_REQUEST_TIMEOUT_MS)
+  try {
+    const url = appendQuery(`${LIGHTER_PUBLIC_API_URL}${path}`, params)
+    const response = await fetch(url, { signal: controller.signal })
+    const data = (await response.json()) as unknown
+    if (!response.ok) {
+      throw new LighterCliError(`Lighter public API returned HTTP ${response.status}`, {
+        status: response.status,
+        data,
+      })
+    }
+    return data as T
+  } catch (error) {
+    if (error instanceof LighterCliError) throw error
+    if (isTimeoutError(error)) {
+      throw new LighterCliError('Lighter public API request timed out', {
+        code: 'LIGHTER_REQUEST_TIMEOUT',
+        data: { timeoutMs: LIGHTER_REQUEST_TIMEOUT_MS },
+      })
+    }
+    throw error instanceof Error ? error : new Error(String(error))
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function lighterPublicQuery(
+  params: Record<string, string | number | boolean | undefined>,
+): Record<string, string | number | boolean | undefined> {
+  const mapped: Record<string, string | number | boolean | undefined> = {}
+  for (const [key, value] of Object.entries(params)) {
+    mapped[key.replace(/[A-Z]/g, (char) => `_${char.toLowerCase()}`)] = value
+  }
+  return mapped
+}
+
+function getPublicLighterMarkets(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<unknown> {
+  return getPublicLighter('/api/v1/orderBooks', {
+    market_id: params.marketId,
+    filter: params.type ?? 'all',
+  })
+}
+
+function getPublicLighterCandles(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<unknown> {
+  return getPublicLighter('/api/v1/candles', lighterPublicQuery(params))
 }
 
 async function postLighter<T = unknown>(path: string, body: JsonRecord): Promise<T> {
@@ -486,7 +544,7 @@ async function resolveMarketArgs(
   if (symbol === undefined) return args
 
   const marketType = readMarketType(args, command)
-  const response = await getLighter('/markets', { type: marketType })
+  const response = await getPublicLighterMarkets({ type: marketType })
   const matches = marketRecords(response).filter((record) => {
     const candidate = marketRecordSymbol(record)
     if (!candidate || !marketSymbolMatches(candidate, symbol)) return false
@@ -851,6 +909,14 @@ export async function lighterCommand(
   }
 
   const resolvedArgs = await resolveMarketArgs(command, args)
+  if (command === 'markets') {
+    printJson(await getPublicLighterMarkets(readQueryArgs(command, resolvedArgs)))
+    return
+  }
+  if (command === 'candles') {
+    printJson(await getPublicLighterCandles(readQueryArgs(command, resolvedArgs)))
+    return
+  }
   const endpoint = readEndpoint(command, resolvedArgs)
   if (endpoint) {
     printJson(await getLighter(endpoint, readQueryArgs(command, resolvedArgs)))

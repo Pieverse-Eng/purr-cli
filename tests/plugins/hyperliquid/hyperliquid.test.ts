@@ -151,11 +151,6 @@ describe('hyperliquid plugin', () => {
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/symbol?coin=CXMT&dex=xyz',
     },
     {
-      command: 'markets',
-      args: { kind: 'both', dex: 'xyz' },
-      expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/markets?kind=both&dex=xyz',
-    },
-    {
       command: 'prices',
       args: { dex: 'xyz' },
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/prices?dex=xyz',
@@ -165,12 +160,6 @@ describe('hyperliquid plugin', () => {
       args: { coin: 'ETH', 'n-sig-figs': '5', mantissa: '2' },
       expectedUrl:
         'https://api.test/v1/instances/inst-123/hyperliquid/l2?coin=ETH&nSigFigs=5&mantissa=2',
-    },
-    {
-      command: 'candles',
-      args: { coin: 'ETH', interval: '1h', 'start-time': '123', 'end-time': '456' },
-      expectedUrl:
-        'https://api.test/v1/instances/inst-123/hyperliquid/candles?coin=ETH&interval=1h&startTime=123&endTime=456',
     },
     {
       command: 'funding',
@@ -231,6 +220,47 @@ describe('hyperliquid plugin', () => {
       headers: {
         Authorization: 'Bearer test-token',
       },
+    })
+  })
+
+  it('reads markets from the public API without wallet credentials', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const mock = mockFetch([{ universe: [] }, []])
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('markets', { kind: 'perp', dex: 'xyz' })
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][0]).toBe('https://api.hyperliquid.xyz/info')
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+      type: 'metaAndAssetCtxs',
+      dex: 'xyz',
+    })
+  })
+
+  it('reads candles from the public API without wallet credentials', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const mock = mockFetch([])
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('candles', {
+      coin: 'ETH',
+      interval: '1h',
+      'start-time': '123',
+      'end-time': '456',
+    })
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][0]).toBe('https://api.hyperliquid.xyz/info')
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+      type: 'candleSnapshot',
+      req: { coin: 'ETH', interval: '1h', startTime: 123, endTime: 456 },
     })
   })
 

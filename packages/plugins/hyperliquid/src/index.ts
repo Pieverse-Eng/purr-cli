@@ -632,13 +632,7 @@ async function getPublicHyperliquidSymbol(
   )
   for (const { dex, index, meta } of builderMetas) {
     const coin = `${dex.name}:${inputCoin}`
-    const candidate = publicPerpCandidate(
-      inputCoin,
-      coin,
-      meta,
-      100_000 + index * 10_000,
-      dex.name,
-    )
+    const candidate = publicPerpCandidate(inputCoin, coin, meta, 100_000 + index * 10_000, dex.name)
     if (candidate) candidates.push(candidate)
   }
 

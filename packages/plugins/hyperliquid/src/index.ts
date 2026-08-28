@@ -25,6 +25,47 @@ interface ApiErrorBody {
   data?: unknown
 }
 
+interface PublicPerpAsset {
+  name: string
+  szDecimals: number
+}
+
+interface PublicPerpMeta {
+  universe: PublicPerpAsset[]
+}
+
+interface PublicPerpDex {
+  name: string
+  assetToStreamingOiCap: Array<[string, string]>
+}
+
+interface PublicSpotToken {
+  index: number
+  name: string
+  szDecimals: number
+}
+
+interface PublicSpotMarket {
+  index: number
+  name: string
+  tokens: [number, number]
+}
+
+interface PublicSpotMeta {
+  tokens: PublicSpotToken[]
+  universe: PublicSpotMarket[]
+}
+
+interface PublicSymbolResolution {
+  network: 'mainnet'
+  inputCoin: string
+  coin: string
+  assetId: number
+  szDecimals: number
+  dex?: string
+  spotPairId?: string
+}
+
 export class HyperliquidCliError extends Error {
   readonly code?: string
   readonly status?: number
@@ -86,7 +127,7 @@ Write commands:
   deposit --amount <amount>
   withdraw --amount <amount>
 
-Markets and candles call Hyperliquid's public mainnet Info API without wallet credentials.
+Symbol resolution, markets, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
 Trading integration and all other exchange commands use the platform mainnet TEE wallet.
 
 Market TP/SL requires an explicit worst price: below the trigger when closing long, above the
@@ -429,6 +470,193 @@ async function getPublicHyperliquidMarkets(
     perp: await postHyperliquidInfo(perpRequest),
     spot: await postHyperliquidInfo({ type: 'spotMetaAndAssetCtxs' }),
   }
+}
+
+function symbolDexName(coin: string): string | undefined {
+  const separator = coin.indexOf(':')
+  if (separator <= 0) return undefined
+  return coin.slice(0, separator)
+}
+
+function symbolBareName(coin: string): string {
+  const separator = coin.indexOf(':')
+  if (separator <= 0) return coin
+  return coin.slice(separator + 1)
+}
+
+function publicPerpCandidate(
+  inputCoin: string,
+  coin: string,
+  meta: PublicPerpMeta,
+  offset: number,
+  dex?: string,
+): PublicSymbolResolution | null {
+  const index = meta.universe.findIndex((asset) => asset.name === coin)
+  if (index < 0) return null
+  const asset = meta.universe[index]
+  return {
+    network: 'mainnet',
+    inputCoin,
+    coin,
+    assetId: offset + index,
+    szDecimals: asset.szDecimals,
+    ...(dex ? { dex } : {}),
+  }
+}
+
+function publicSpotCandidate(
+  inputCoin: string,
+  spotMeta: PublicSpotMeta,
+): PublicSymbolResolution | null {
+  const tokens = new Map(spotMeta.tokens.map((token) => [token.index, token]))
+  for (const market of spotMeta.universe) {
+    const base = tokens.get(market.tokens[0])
+    const quote = tokens.get(market.tokens[1])
+    if (!base || !quote || `${base.name}/${quote.name}` !== inputCoin) continue
+    return {
+      network: 'mainnet',
+      inputCoin,
+      coin: inputCoin,
+      assetId: 10_000 + market.index,
+      szDecimals: base.szDecimals,
+      spotPairId: market.name,
+    }
+  }
+  return null
+}
+
+function publicSymbolError(
+  code: string,
+  message: string,
+  status: number,
+  data: JsonRecord,
+): HyperliquidCliError {
+  return new HyperliquidCliError(message, { code, status, data })
+}
+
+async function getPublicHyperliquidSymbol(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<PublicSymbolResolution> {
+  const inputCoin = String(params.coin)
+  const requestedDex = params.dex === undefined ? undefined : String(params.dex)
+  const embeddedDex = symbolDexName(inputCoin)
+  if (embeddedDex === 'default') {
+    throw publicSymbolError(
+      'HYPERLIQUID_SYMBOL_INVALID',
+      'default is a selector; use dex=default',
+      400,
+      { coin: inputCoin },
+    )
+  }
+  if (requestedDex && embeddedDex && requestedDex !== embeddedDex) {
+    throw publicSymbolError(
+      'HYPERLIQUID_SYMBOL_DEX_MISMATCH',
+      'coin dex prefix does not match dex query parameter',
+      400,
+      { coin: inputCoin, dex: requestedDex },
+    )
+  }
+
+  const selectedDex = requestedDex ?? embeddedDex
+  const resolvedCoin =
+    selectedDex && selectedDex !== 'default' && !embeddedDex
+      ? `${selectedDex}:${inputCoin}`
+      : selectedDex === 'default'
+        ? symbolBareName(inputCoin)
+        : inputCoin
+
+  if (selectedDex === 'default') {
+    const meta = await postHyperliquidInfo<PublicPerpMeta>({ type: 'meta' })
+    const candidate = publicPerpCandidate(inputCoin, resolvedCoin, meta, 0, selectedDex)
+    if (candidate) return candidate
+    throw publicSymbolError(
+      'HYPERLIQUID_SYMBOL_NOT_FOUND',
+      `Hyperliquid symbol was not found: ${inputCoin}`,
+      404,
+      { coin: inputCoin, dex: selectedDex, resolvedCoin },
+    )
+  }
+
+  const perpDexs = await postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' })
+  if (selectedDex) {
+    const dexIndex = perpDexs.findIndex((dex) => dex?.name === selectedDex)
+    if (dexIndex > 0) {
+      const meta = await postHyperliquidInfo<PublicPerpMeta>({ type: 'meta', dex: selectedDex })
+      const candidate = publicPerpCandidate(
+        inputCoin,
+        resolvedCoin,
+        meta,
+        100_000 + dexIndex * 10_000,
+        selectedDex,
+      )
+      if (candidate) return candidate
+    }
+    throw publicSymbolError(
+      'HYPERLIQUID_SYMBOL_NOT_FOUND',
+      `Hyperliquid symbol was not found: ${inputCoin}`,
+      404,
+      { coin: inputCoin, dex: selectedDex, resolvedCoin },
+    )
+  }
+
+  const [defaultMeta, spotMeta] = await Promise.all([
+    postHyperliquidInfo<PublicPerpMeta>({ type: 'meta' }),
+    postHyperliquidInfo<PublicSpotMeta>({ type: 'spotMeta' }),
+  ])
+  const candidates: PublicSymbolResolution[] = []
+  const defaultCandidate = publicPerpCandidate(
+    inputCoin,
+    inputCoin,
+    defaultMeta,
+    0,
+    defaultMeta.universe.some((asset) => asset.name === inputCoin) ? 'default' : undefined,
+  )
+  if (defaultCandidate) candidates.push(defaultCandidate)
+  const spotCandidate = publicSpotCandidate(inputCoin, spotMeta)
+  if (spotCandidate) candidates.push(spotCandidate)
+
+  const matchingDexs = perpDexs
+    .map((dex, index) => ({ dex, index }))
+    .filter(
+      (entry): entry is { dex: PublicPerpDex; index: number } =>
+        entry.index > 0 &&
+        entry.dex !== null &&
+        entry.dex.assetToStreamingOiCap.some(([asset]) => symbolBareName(asset) === inputCoin),
+    )
+  const builderMetas = await Promise.all(
+    matchingDexs.map(async ({ dex, index }) => ({
+      dex,
+      index,
+      meta: await postHyperliquidInfo<PublicPerpMeta>({ type: 'meta', dex: dex.name }),
+    })),
+  )
+  for (const { dex, index, meta } of builderMetas) {
+    const coin = `${dex.name}:${inputCoin}`
+    const candidate = publicPerpCandidate(
+      inputCoin,
+      coin,
+      meta,
+      100_000 + index * 10_000,
+      dex.name,
+    )
+    if (candidate) candidates.push(candidate)
+  }
+
+  if (candidates.length === 1) return candidates[0]
+  if (candidates.length > 1) {
+    throw publicSymbolError(
+      'HYPERLIQUID_SYMBOL_AMBIGUOUS',
+      `Hyperliquid symbol is ambiguous: ${inputCoin}`,
+      409,
+      { coin: inputCoin, candidates },
+    )
+  }
+  throw publicSymbolError(
+    'HYPERLIQUID_SYMBOL_NOT_FOUND',
+    `Hyperliquid symbol was not found: ${inputCoin}`,
+    404,
+    { coin: inputCoin },
+  )
 }
 
 function getPublicHyperliquidCandles(
@@ -1037,7 +1265,6 @@ export async function hyperliquidCommand(
     account: '/account',
     abstraction: '/abstraction',
     'builder-fee-status': '/builder-fee/status',
-    symbol: '/symbol',
     markets: '/markets',
     prices: '/prices',
     l2: '/l2',
@@ -1074,6 +1301,11 @@ export async function hyperliquidCommand(
 
   if (command === 'markets') {
     printJson(await getPublicHyperliquidMarkets(readQueryArgs(command, args)))
+    return
+  }
+
+  if (command === 'symbol') {
+    printJson(await getPublicHyperliquidSymbol(readQueryArgs(command, args)))
     return
   }
 

@@ -29,36 +29,71 @@ describe('hyperliquid plugin', () => {
     delete process.env.INSTANCE_ID
   })
 
-  it('calls symbol resolution with optional dex selector', async () => {
-    const mock = mockFetch({
-      ok: true,
-      data: {
-        network: 'mainnet',
-        inputCoin: 'CXMT',
-        coin: 'xyz:CXMT',
-        dex: 'xyz',
-        assetId: 110101,
-        szDecimals: 1,
-      },
-    })
+  it('resolves a builder-dex symbol from the public API without wallet credentials', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const universe = Array.from({ length: 102 }, (_, index) => ({
+      name: index === 101 ? 'xyz:CXMT' : `xyz:ASSET-${index}`,
+      szDecimals: index === 101 ? 1 : 2,
+    }))
+    const mock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => [
+          null,
+          { name: 'xyz', assetToStreamingOiCap: [['xyz:CXMT', '250000000.0']] },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ universe }),
+      })
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     vi.stubGlobal('fetch', mock)
 
     await hyperliquidCommand('symbol', { coin: 'CXMT', dex: 'xyz' })
 
-    expect(mock).toHaveBeenCalledOnce()
-    expect(mock.mock.calls[0][0]).toBe(
-      'https://api.test/v1/instances/inst-123/hyperliquid/symbol?coin=CXMT&dex=xyz',
-    )
-    expect(mock.mock.calls[0][1]).toMatchObject({
-      method: 'GET',
-      headers: {
-        Authorization: 'Bearer test-token',
-      },
+    expect(mock).toHaveBeenCalledTimes(2)
+    expect(mock.mock.calls[0][0]).toBe('https://api.hyperliquid.xyz/info')
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({ type: 'perpDexs' })
+    expect(JSON.parse(mock.mock.calls[1][1].body)).toEqual({
+      type: 'meta',
+      dex: 'xyz',
     })
     expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      network: 'mainnet',
+      inputCoin: 'CXMT',
       coin: 'xyz:CXMT',
+      dex: 'xyz',
       assetId: 110101,
+      szDecimals: 1,
+    })
+  })
+
+  it('resolves a default perp symbol from the public API without wallet credentials', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const mock = mockFetch({ universe: [{ name: 'BTC', szDecimals: 5 }] })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('symbol', { coin: 'BTC', dex: 'default' })
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][0]).toBe('https://api.hyperliquid.xyz/info')
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({ type: 'meta' })
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      network: 'mainnet',
+      inputCoin: 'BTC',
+      coin: 'BTC',
+      assetId: 0,
+      szDecimals: 5,
+      dex: 'default',
     })
   })
 
@@ -144,11 +179,6 @@ describe('hyperliquid plugin', () => {
       command: 'builder-fee-status',
       args: {},
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/builder-fee/status',
-    },
-    {
-      command: 'symbol',
-      args: { coin: 'CXMT', dex: 'xyz' },
-      expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/symbol?coin=CXMT&dex=xyz',
     },
     {
       command: 'prices',
@@ -1085,20 +1115,37 @@ describe('hyperliquid plugin', () => {
     })
   })
 
-  it('preserves Hyperliquid platform error codes for automation', async () => {
+  it('preserves Hyperliquid symbol error codes for automation', async () => {
     const candidates = [
-      { coin: 'BTC', dex: 'default', assetId: 0, szDecimals: 5 },
-      { coin: 'hyna:BTC', dex: 'hyna', assetId: 120000, szDecimals: 5 },
-    ]
-    const mock = mockFetch(
       {
-        ok: false,
-        code: 'HYPERLIQUID_SYMBOL_AMBIGUOUS',
-        error: 'Hyperliquid symbol is ambiguous: BTC',
-        data: { coin: 'BTC', candidates },
+        network: 'mainnet',
+        inputCoin: 'BTC',
+        coin: 'BTC',
+        dex: 'default',
+        assetId: 0,
+        szDecimals: 5,
       },
-      409,
-    )
+      {
+        network: 'mainnet',
+        inputCoin: 'BTC',
+        coin: 'hyna:BTC',
+        dex: 'hyna',
+        assetId: 120000,
+        szDecimals: 5,
+      },
+    ]
+    const mock = vi.fn().mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init.body)
+      const data =
+        body.type === 'perpDexs'
+          ? [null, null, { name: 'hyna', assetToStreamingOiCap: [['hyna:BTC', '1.0']] }]
+          : body.type === 'spotMeta'
+            ? { tokens: [], universe: [] }
+            : body.dex === 'hyna'
+              ? { universe: [{ name: 'hyna:BTC', szDecimals: 5 }] }
+              : { universe: [{ name: 'BTC', szDecimals: 5 }] }
+      return { ok: true, status: 200, json: async () => data }
+    })
     vi.stubGlobal('fetch', mock)
 
     await expect(hyperliquidCommand('symbol', { coin: 'BTC' })).rejects.toMatchObject({

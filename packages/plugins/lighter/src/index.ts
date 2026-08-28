@@ -112,7 +112,7 @@ Write commands:
   withdraw --amount <USDC> [--yes]
   fast-withdraw --amount <USDC> [--yes]
 Withdrawal commands preview without --yes. Adding --yes fetches and executes the latest quote, which may differ from an earlier preview.
-Markets and candles call Lighter's public mainnet API without wallet credentials.
+Market lookup, markets, and candles call Lighter's public mainnet API without wallet credentials.
 Lighter read and preview requests use a 20s client timeout. Confirmed write commands wait for the Platform response.
 IOC market/limit orders do not accept expiry flags.`
 
@@ -329,6 +329,20 @@ function getPublicLighterMarkets(
     market_id: params.marketId,
     filter: params.type ?? 'all',
   })
+}
+
+async function getPublicLighterMarket(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<JsonRecord> {
+  const response = await getPublicLighterMarkets(params)
+  const records = marketRecords(response)
+  if (records.length !== 1) {
+    throw new LighterCliError('Lighter returned an invalid single-market response.', {
+      code: 'LIGHTER_MARKET_INVALID_RESPONSE',
+      data: { marketId: params.marketId, matches: records.length },
+    })
+  }
+  return records[0]
 }
 
 function getPublicLighterCandles(
@@ -704,8 +718,6 @@ function readEndpoint(command: string, args: Record<string, string>): string | u
       return `/deposits/${encodeURIComponent(requireArg(args, 'request-id', 'requestId'))}`
     case 'request-status':
       return `/requests/${encodeURIComponent(requireArg(args, 'request-id', 'requestId'))}`
-    case 'market':
-      return `/markets/${requireInteger(args, 'market-id', 'marketId')}`
     case 'transaction':
       return `/transactions/${encodeURIComponent(requireArg(args, 'tx-hash', 'txHash'))}`
     case 'l1-transaction':
@@ -911,6 +923,15 @@ export async function lighterCommand(
   const resolvedArgs = await resolveMarketArgs(command, args)
   if (command === 'markets') {
     printJson(await getPublicLighterMarkets(readQueryArgs(command, resolvedArgs)))
+    return
+  }
+  if (command === 'market') {
+    printJson(
+      await getPublicLighterMarket({
+        marketId: requireInteger(resolvedArgs, 'market-id', 'marketId'),
+        type: readMarketType(resolvedArgs, command),
+      }),
+    )
     return
   }
   if (command === 'candles') {

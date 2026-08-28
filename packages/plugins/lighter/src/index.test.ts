@@ -203,6 +203,44 @@ describe('lighter account opening', () => {
     expect(mocks.resolveCredentials).not.toHaveBeenCalled()
   })
 
+  it('resolves one market entirely through the public API', async () => {
+    const btc = {
+      market_id: 1,
+      symbol: 'BTC',
+      market_type: 'perp',
+      status: 'active',
+      supported_size_decimals: 5,
+      supported_price_decimals: 1,
+    }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 200, order_books: [btc] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 200, order_books: [btc] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await lighterCommand('market', { market: 'BTC', 'market-type': 'perp' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      'https://mainnet.zklighter.elliot.ai/api/v1/orderBooks?filter=perp',
+    )
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      'https://mainnet.zklighter.elliot.ai/api/v1/orderBooks?market_id=1&filter=perp',
+    )
+    expect(console.log).toHaveBeenCalledWith(JSON.stringify(btc, null, 2))
+    expect(mocks.resolveCredentials).not.toHaveBeenCalled()
+  })
+
   it('resolves a candle symbol entirely through the public API', async () => {
     const fetchMock = vi
       .fn()

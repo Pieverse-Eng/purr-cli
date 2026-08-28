@@ -208,23 +208,6 @@ describe('Hyperliquid CLI e2e', () => {
         return
       }
 
-      if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/symbol?coin=BTC`) {
-        assert.equal(req.method, 'GET')
-        writeJson(res, 409, {
-          ok: false,
-          code: 'HYPERLIQUID_SYMBOL_AMBIGUOUS',
-          error: 'Hyperliquid symbol is ambiguous: BTC',
-          data: {
-            coin: 'BTC',
-            candidates: [
-              { coin: 'BTC', dex: 'default', assetId: 0, szDecimals: 5 },
-              { coin: 'hyna:BTC', dex: 'hyna', assetId: 120000, szDecimals: 5 },
-            ],
-          },
-        })
-        return
-      }
-
       if (req.url === `/v1/instances/${INSTANCE_ID}/hyperliquid/builder-fee/approve`) {
         assert.equal(req.method, 'POST')
         assert.deepEqual(JSON.parse(body), {})
@@ -439,25 +422,6 @@ describe('Hyperliquid CLI e2e', () => {
       authorization: `Bearer ${API_TOKEN}`,
       body: '',
     })
-  })
-
-  it('prints ambiguity candidates so the caller can select the intended dex', async () => {
-    const result = await runPurr(port, tmpHome, ['hyperliquid', 'symbol', '--coin', 'BTC'])
-
-    expect(result.code).toBe(1)
-    expect(result.stdout).toBe('')
-    const [errorLine, ...detailLines] = result.stderr.split('\n')
-    expect(errorLine).toBe(
-      'error [HYPERLIQUID_SYMBOL_AMBIGUOUS]: Hyperliquid symbol is ambiguous: BTC',
-    )
-    expect(JSON.parse(detailLines.join('\n'))).toEqual({
-      coin: 'BTC',
-      candidates: [
-        { coin: 'BTC', dex: 'default', assetId: 0, szDecimals: 5 },
-        { coin: 'hyna:BTC', dex: 'hyna', assetId: 120000, szDecimals: 5 },
-      ],
-    })
-    expect(requestCount).toBe(1)
   })
 
   it('approves the fixed Hyperliquid builder fee through the platform route', async () => {

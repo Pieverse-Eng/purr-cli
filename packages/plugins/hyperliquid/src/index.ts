@@ -77,14 +77,35 @@ interface PublicPerpAnnotation {
 
 type PublicPerpConciseAnnotation = [string, PublicPerpAnnotation]
 
-interface PublicPerpSearchListing {
-  coin: string
+type PublicAllPerpMetas = PublicPerpMeta[]
+
+interface PublicPerpSearchCandidate {
+  kind: 'perp'
+  symbol: string
+  dex: string
   assetId: number
   szDecimals: number
-  dex: string
   maxLeverage?: number
   active: boolean
+  score: number
+  matchedFields: string[]
+  conciseAnnotation?: PublicPerpAnnotation
 }
+
+interface PublicSpotSearchCandidate {
+  kind: 'spot'
+  symbol: string
+  pairId: string
+  assetId: number
+  base: string
+  quote: string
+  szDecimals: number
+  active: true
+  score: number
+  matchedFields: string[]
+}
+
+type PublicMarketSearchCandidate = PublicPerpSearchCandidate | PublicSpotSearchCandidate
 
 const HYPERLIQUID_SEARCH_RESULT_LIMIT = 5
 
@@ -539,17 +560,10 @@ function searchFieldScore(query: ReturnType<typeof normalizeSearchText>, value: 
   return 0
 }
 
-function conciseAnnotationScore(
+function searchFieldsScore(
   query: ReturnType<typeof normalizeSearchText>,
-  coin: string,
-  annotation: PublicPerpAnnotation,
+  fields: Array<[string, string | undefined]>,
 ): { score: number; matchedFields: string[] } {
-  const fields: Array<[string, string | undefined]> = [
-    ['coin', coin],
-    ['coin', symbolBareName(coin)],
-    ['displayName', annotation.displayName],
-    ...(annotation.keywords ?? []).map((keyword): [string, string] => ['keyword', keyword]),
-  ]
   let score = 0
   const matchedFields = new Set<string>()
   for (const [field, value] of fields) {
@@ -561,96 +575,128 @@ function conciseAnnotationScore(
   return { score, matchedFields: [...matchedFields] }
 }
 
-async function resolvePublicPerpSearchListings(
-  coins: string[],
-): Promise<Map<string, PublicPerpSearchListing>> {
-  const perpDexs = await postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' })
-  const dexNames = [...new Set(coins.map(symbolDexName))]
-  const metas = new Map<string | undefined, PublicPerpMeta>()
-  await Promise.all(
-    dexNames.map(async (dex) => {
-      metas.set(
+function buildPerpSearchCandidates(
+  query: ReturnType<typeof normalizeSearchText>,
+  perpDexs: Array<PublicPerpDex | null>,
+  allPerpMetas: PublicAllPerpMetas,
+  annotations: Map<string, PublicPerpAnnotation>,
+): PublicPerpSearchCandidate[] {
+  const candidates: PublicPerpSearchCandidate[] = []
+  for (const [dexIndex, meta] of allPerpMetas.entries()) {
+    const dex = dexIndex === 0 ? 'default' : perpDexs[dexIndex]?.name
+    if (!dex) continue
+    for (const [universeIndex, asset] of meta.universe.entries()) {
+      const annotation = annotations.get(asset.name)
+      const match = searchFieldsScore(query, [
+        ['symbol', asset.name],
+        ['symbol', symbolBareName(asset.name)],
+        ['displayName', annotation?.displayName],
+        ...(annotation?.keywords ?? []).map((keyword): [string, string] => ['keyword', keyword]),
+      ])
+      if (match.score === 0) continue
+      candidates.push({
+        kind: 'perp',
+        symbol: asset.name,
         dex,
-        await postHyperliquidInfo<PublicPerpMeta>({
-          type: 'meta',
-          ...(dex ? { dex } : {}),
+        assetId: dexIndex === 0 ? universeIndex : 100_000 + dexIndex * 10_000 + universeIndex,
+        szDecimals: asset.szDecimals,
+        ...(asset.maxLeverage === undefined ? {} : { maxLeverage: asset.maxLeverage }),
+        active: asset.isDelisted !== true,
+        ...match,
+        ...(annotation ? { conciseAnnotation: annotation } : {}),
+      })
+    }
+  }
+  return candidates
+}
+
+function buildSpotSearchCandidates(
+  query: ReturnType<typeof normalizeSearchText>,
+  spotMeta: PublicSpotMeta,
+): PublicSpotSearchCandidate[] {
+  const tokens = new Map(spotMeta.tokens.map((token) => [token.index, token]))
+  const candidates: PublicSpotSearchCandidate[] = []
+  for (const market of spotMeta.universe) {
+    const base = tokens.get(market.tokens[0])
+    const quote = tokens.get(market.tokens[1])
+    if (!base || !quote) continue
+    const symbol = `${base.name}/${quote.name}`
+    const match = searchFieldsScore(query, [
+      ['symbol', market.name],
+      ['symbol', symbol],
+      ['base', base.name],
+      ['quote', quote.name],
+    ])
+    if (match.score === 0) continue
+    candidates.push({
+      kind: 'spot',
+      symbol,
+      pairId: market.name,
+      assetId: 10_000 + market.index,
+      base: base.name,
+      quote: quote.name,
+      szDecimals: base.szDecimals,
+      active: true,
+      ...match,
+    })
+  }
+  return candidates
+}
+
+async function searchPublicHyperliquidMarkets(queryValue: string): Promise<unknown> {
+  if (queryValue.length > 200) throw new Error('--query must contain at most 200 characters')
+  const query = normalizeSearchText(queryValue)
+  if (!query.spaced) throw new Error('--query must contain searchable letters or numbers')
+
+  const [perpDexs, allPerpMetas, spotMeta, conciseAnnotations] = await Promise.all([
+    postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' }),
+    postHyperliquidInfo<PublicAllPerpMetas>({ type: 'allPerpMetas' }),
+    postHyperliquidInfo<PublicSpotMeta>({ type: 'spotMeta' }),
+    postHyperliquidInfo<PublicPerpConciseAnnotation[]>({ type: 'perpConciseAnnotations' }),
+  ])
+  const annotationIndex = new Map(conciseAnnotations)
+  const candidates: PublicMarketSearchCandidate[] = [
+    ...buildPerpSearchCandidates(query, perpDexs, allPerpMetas, annotationIndex),
+    ...buildSpotSearchCandidates(query, spotMeta),
+  ]
+  candidates.sort(
+    (left, right) =>
+      right.score - left.score ||
+      Number(right.active) - Number(left.active) ||
+      left.symbol.localeCompare(right.symbol),
+  )
+  const selected = candidates.slice(0, HYPERLIQUID_SEARCH_RESULT_LIMIT)
+
+  if (selected.length === 0) return { network: 'mainnet', query: queryValue, matches: [] }
+
+  const detailedAnnotations = new Map<string, PublicPerpAnnotation | null>()
+  await Promise.all(
+    selected.map(async (candidate) => {
+      if (candidate.kind !== 'perp') return
+      detailedAnnotations.set(
+        candidate.symbol,
+        await postHyperliquidInfo<PublicPerpAnnotation | null>({
+          type: 'perpAnnotation',
+          coin: candidate.symbol,
         }),
       )
     }),
   )
 
-  const listings = new Map<string, PublicPerpSearchListing>()
-  for (const coin of coins) {
-    const dex = symbolDexName(coin)
-    const meta = metas.get(dex)
-    if (!meta) continue
-    const universeIndex = meta.universe.findIndex((asset) => asset.name === coin)
-    if (universeIndex < 0) continue
-    const dexIndex = dex ? perpDexs.findIndex((entry) => entry?.name === dex) : 0
-    if (dex && dexIndex <= 0) continue
-    const asset = meta.universe[universeIndex]
-    listings.set(coin, {
-      coin,
-      assetId: dex ? 100_000 + dexIndex * 10_000 + universeIndex : universeIndex,
-      szDecimals: asset.szDecimals,
-      dex: dex ?? 'default',
-      ...(asset.maxLeverage === undefined ? {} : { maxLeverage: asset.maxLeverage }),
-      active: asset.isDelisted !== true,
-    })
-  }
-  return listings
-}
-
-async function searchPublicHyperliquidPerps(queryValue: string): Promise<unknown> {
-  if (queryValue.length > 200) throw new Error('--query must contain at most 200 characters')
-  const query = normalizeSearchText(queryValue)
-  if (!query.spaced) throw new Error('--query must contain searchable letters or numbers')
-
-  const concise = await postHyperliquidInfo<PublicPerpConciseAnnotation[]>({
-    type: 'perpConciseAnnotations',
-  })
-  const candidates = concise
-    .map(([coin, annotation]) => ({
-      coin,
-      annotation,
-      ...conciseAnnotationScore(query, coin, annotation),
-    }))
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => right.score - left.score || left.coin.localeCompare(right.coin))
-    .slice(0, HYPERLIQUID_SEARCH_RESULT_LIMIT)
-
-  if (candidates.length === 0) return { network: 'mainnet', query: queryValue, matches: [] }
-
-  const [annotations, listings] = await Promise.all([
-    Promise.all(
-      candidates.map((candidate) =>
-        postHyperliquidInfo<PublicPerpAnnotation>({
-          type: 'perpAnnotation',
-          coin: candidate.coin,
-        }),
-      ),
-    ),
-    resolvePublicPerpSearchListings(candidates.map((candidate) => candidate.coin)),
-  ])
-
   return {
     network: 'mainnet',
     query: queryValue,
-    matches: candidates.flatMap((candidate, index) => {
-      const listing = listings.get(candidate.coin)
-      if (!listing) return []
-      const annotation = annotations[index]
-      return [
-        {
-          ...listing,
-          score: candidate.score,
-          matchedFields: candidate.matchedFields,
-          ...(annotation.category ? { category: annotation.category } : {}),
-          ...(annotation.displayName ? { displayName: annotation.displayName } : {}),
-          ...(annotation.keywords ? { keywords: annotation.keywords } : {}),
-          ...(annotation.description ? { description: annotation.description } : {}),
-        },
-      ]
+    matches: selected.map((candidate) => {
+      if (candidate.kind === 'spot') return candidate
+      const { conciseAnnotation: _concise, ...listing } = candidate
+      const annotation = detailedAnnotations.get(candidate.symbol) ?? candidate.conciseAnnotation
+      return {
+        ...listing,
+        ...(annotation?.category ? { category: annotation.category } : {}),
+        ...(annotation?.displayName ? { displayName: annotation.displayName } : {}),
+        ...(annotation?.keywords ? { keywords: annotation.keywords } : {}),
+        ...(annotation?.description ? { description: annotation.description } : {}),
+      }
     }),
   }
 }
@@ -1487,7 +1533,7 @@ export async function hyperliquidCommand(
 
   if (command === 'search') {
     const params = readQueryArgs(command, args)
-    printJson(await searchPublicHyperliquidPerps(String(params.query)))
+    printJson(await searchPublicHyperliquidMarkets(String(params.query)))
     return
   }
 

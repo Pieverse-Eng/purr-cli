@@ -261,6 +261,57 @@ describe('hyperliquid plugin', () => {
     expect(mock).toHaveBeenCalledTimes(4)
   })
 
+  it('keeps a matching spot pair when several perp listings rank ahead of it', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      perpDexs: [
+        null,
+        { name: 'hyna', assetToStreamingOiCap: [] },
+        { name: 'cash', assetToStreamingOiCap: [] },
+        { name: 'flx', assetToStreamingOiCap: [] },
+        { name: 'xyz', assetToStreamingOiCap: [] },
+      ],
+      allPerpMetas: [
+        { universe: [{ name: 'BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'hyna:BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'cash:BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'flx:BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'xyz:BTC', szDecimals: 5 }] },
+      ],
+      spotMeta: {
+        tokens: [
+          { index: 0, name: 'USDC', szDecimals: 6 },
+          { index: 197, name: 'UBTC', szDecimals: 5 },
+        ],
+        universe: [{ index: 142, name: '@142', tokens: [197, 0] }],
+      },
+      perpConciseAnnotations: [],
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => (body.type === 'perpAnnotation' ? null : responses[body.type]),
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'BTC' })
+
+    const result = JSON.parse(String(log.mock.calls[0][0]))
+    expect(result.matches).toContainEqual(
+      expect.objectContaining({
+        kind: 'spot',
+        symbol: 'UBTC/USDC',
+        pairId: '@142',
+      }),
+    )
+  })
+
   it('resolves a builder-dex symbol from the public API without wallet credentials', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN

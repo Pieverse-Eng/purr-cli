@@ -107,7 +107,7 @@ interface PublicSpotSearchCandidate {
 
 type PublicMarketSearchCandidate = PublicPerpSearchCandidate | PublicSpotSearchCandidate
 
-const HYPERLIQUID_SEARCH_RESULT_LIMIT = 5
+const HYPERLIQUID_SEARCH_RESULT_LIMIT = 10
 
 export class HyperliquidCliError extends Error {
   readonly code?: string

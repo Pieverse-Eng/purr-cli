@@ -28,6 +28,8 @@ interface ApiErrorBody {
 interface PublicPerpAsset {
   name: string
   szDecimals: number
+  maxLeverage?: number
+  isDelisted?: boolean
 }
 
 interface PublicPerpMeta {
@@ -66,6 +68,26 @@ interface PublicSymbolResolution {
   spotPairId?: string
 }
 
+interface PublicPerpAnnotation {
+  category?: string
+  description?: string
+  displayName?: string
+  keywords?: string[]
+}
+
+type PublicPerpConciseAnnotation = [string, PublicPerpAnnotation]
+
+interface PublicPerpSearchListing {
+  coin: string
+  assetId: number
+  szDecimals: number
+  dex: string
+  maxLeverage?: number
+  active: boolean
+}
+
+const HYPERLIQUID_SEARCH_RESULT_LIMIT = 5
+
 export class HyperliquidCliError extends Error {
   readonly code?: string
   readonly status?: number
@@ -93,6 +115,7 @@ Read commands:
   account
   abstraction
   builder-fee-status
+  search --query <company-or-asset>
   symbol --coin <coin> [--dex <dex|default>]
   markets [--kind perp|spot|both] [--dex <dex>]
   prices [--dex <dex>]
@@ -127,7 +150,7 @@ Write commands:
   deposit --amount <amount>
   withdraw --amount <amount>
 
-Symbol resolution, markets, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
+Search, symbol resolution, markets, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
 Trading integration and all other exchange commands use the platform mainnet TEE wallet.
 
 Market TP/SL requires an explicit worst price: below the trigger when closing long, above the
@@ -180,6 +203,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   account: [],
   abstraction: [],
   'builder-fee-status': [],
+  search: ['query'],
   symbol: ['coin', 'dex'],
   markets: ['kind', 'dex'],
   prices: ['dex'],
@@ -469,6 +493,165 @@ async function getPublicHyperliquidMarkets(
   return {
     perp: await postHyperliquidInfo(perpRequest),
     spot: await postHyperliquidInfo({ type: 'spotMetaAndAssetCtxs' }),
+  }
+}
+
+function normalizeSearchText(value: string): {
+  spaced: string
+  collapsed: string
+  tokens: string[]
+} {
+  const spaced = value
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+  return {
+    spaced,
+    collapsed: spaced.replaceAll(' ', ''),
+    tokens: spaced ? spaced.split(' ') : [],
+  }
+}
+
+function searchFieldScore(query: ReturnType<typeof normalizeSearchText>, value: string): number {
+  const candidate = normalizeSearchText(value)
+  if (!candidate.spaced) return 0
+  if (candidate.spaced === query.spaced) return 100
+  if (candidate.collapsed === query.collapsed) return 95
+  if (
+    candidate.spaced.startsWith(query.spaced) ||
+    candidate.collapsed.startsWith(query.collapsed)
+  ) {
+    return 85
+  }
+  if (candidate.spaced.includes(query.spaced) || candidate.collapsed.includes(query.collapsed)) {
+    return 75
+  }
+  if (
+    query.tokens.length > 1 &&
+    query.tokens.every(
+      (token) => candidate.spaced.includes(token) || candidate.collapsed.includes(token),
+    )
+  ) {
+    return 65
+  }
+  return 0
+}
+
+function conciseAnnotationScore(
+  query: ReturnType<typeof normalizeSearchText>,
+  coin: string,
+  annotation: PublicPerpAnnotation,
+): { score: number; matchedFields: string[] } {
+  const fields: Array<[string, string | undefined]> = [
+    ['coin', coin],
+    ['coin', symbolBareName(coin)],
+    ['displayName', annotation.displayName],
+    ...(annotation.keywords ?? []).map((keyword): [string, string] => ['keyword', keyword]),
+  ]
+  let score = 0
+  const matchedFields = new Set<string>()
+  for (const [field, value] of fields) {
+    if (!value) continue
+    const fieldScore = searchFieldScore(query, value)
+    if (fieldScore > 0) matchedFields.add(field)
+    score = Math.max(score, fieldScore)
+  }
+  return { score, matchedFields: [...matchedFields] }
+}
+
+async function resolvePublicPerpSearchListings(
+  coins: string[],
+): Promise<Map<string, PublicPerpSearchListing>> {
+  const perpDexs = await postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' })
+  const dexNames = [...new Set(coins.map(symbolDexName))]
+  const metas = new Map<string | undefined, PublicPerpMeta>()
+  await Promise.all(
+    dexNames.map(async (dex) => {
+      metas.set(
+        dex,
+        await postHyperliquidInfo<PublicPerpMeta>({
+          type: 'meta',
+          ...(dex ? { dex } : {}),
+        }),
+      )
+    }),
+  )
+
+  const listings = new Map<string, PublicPerpSearchListing>()
+  for (const coin of coins) {
+    const dex = symbolDexName(coin)
+    const meta = metas.get(dex)
+    if (!meta) continue
+    const universeIndex = meta.universe.findIndex((asset) => asset.name === coin)
+    if (universeIndex < 0) continue
+    const dexIndex = dex ? perpDexs.findIndex((entry) => entry?.name === dex) : 0
+    if (dex && dexIndex <= 0) continue
+    const asset = meta.universe[universeIndex]
+    listings.set(coin, {
+      coin,
+      assetId: dex ? 100_000 + dexIndex * 10_000 + universeIndex : universeIndex,
+      szDecimals: asset.szDecimals,
+      dex: dex ?? 'default',
+      ...(asset.maxLeverage === undefined ? {} : { maxLeverage: asset.maxLeverage }),
+      active: asset.isDelisted !== true,
+    })
+  }
+  return listings
+}
+
+async function searchPublicHyperliquidPerps(queryValue: string): Promise<unknown> {
+  if (queryValue.length > 200) throw new Error('--query must contain at most 200 characters')
+  const query = normalizeSearchText(queryValue)
+  if (!query.spaced) throw new Error('--query must contain searchable letters or numbers')
+
+  const concise = await postHyperliquidInfo<PublicPerpConciseAnnotation[]>({
+    type: 'perpConciseAnnotations',
+  })
+  const candidates = concise
+    .map(([coin, annotation]) => ({
+      coin,
+      annotation,
+      ...conciseAnnotationScore(query, coin, annotation),
+    }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score || left.coin.localeCompare(right.coin))
+    .slice(0, HYPERLIQUID_SEARCH_RESULT_LIMIT)
+
+  if (candidates.length === 0) return { network: 'mainnet', query: queryValue, matches: [] }
+
+  const [annotations, listings] = await Promise.all([
+    Promise.all(
+      candidates.map((candidate) =>
+        postHyperliquidInfo<PublicPerpAnnotation>({
+          type: 'perpAnnotation',
+          coin: candidate.coin,
+        }),
+      ),
+    ),
+    resolvePublicPerpSearchListings(candidates.map((candidate) => candidate.coin)),
+  ])
+
+  return {
+    network: 'mainnet',
+    query: queryValue,
+    matches: candidates.flatMap((candidate, index) => {
+      const listing = listings.get(candidate.coin)
+      if (!listing) return []
+      const annotation = annotations[index]
+      return [
+        {
+          ...listing,
+          score: candidate.score,
+          matchedFields: candidate.matchedFields,
+          ...(annotation.category ? { category: annotation.category } : {}),
+          ...(annotation.displayName ? { displayName: annotation.displayName } : {}),
+          ...(annotation.keywords ? { keywords: annotation.keywords } : {}),
+          ...(annotation.description ? { description: annotation.description } : {}),
+        },
+      ]
+    }),
   }
 }
 
@@ -1091,6 +1274,10 @@ function readQueryArgs(command: string, args: Record<string, string>) {
     case 'abstraction':
     case 'builder-fee-status':
       return {}
+    case 'search':
+      return {
+        query: requireArg(args, 'query'),
+      }
     case 'symbol':
       return {
         coin: requireArg(args, 'coin'),
@@ -1295,6 +1482,12 @@ export async function hyperliquidCommand(
 
   if (command === 'markets') {
     printJson(await getPublicHyperliquidMarkets(readQueryArgs(command, args)))
+    return
+  }
+
+  if (command === 'search') {
+    const params = readQueryArgs(command, args)
+    printJson(await searchPublicHyperliquidPerps(String(params.query)))
     return
   }
 

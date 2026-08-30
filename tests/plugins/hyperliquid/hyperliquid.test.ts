@@ -29,6 +29,121 @@ describe('hyperliquid plugin', () => {
     delete process.env.INSTANCE_ID
   })
 
+  it('searches and enriches public perp annotations without wallet credentials', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      perpConciseAnnotations: [
+        [
+          'xyz:SKHX',
+          {
+            category: 'stocks',
+            displayName: 'SKHYNIX',
+            keywords: ['000660', 'memory'],
+          },
+        ],
+        [
+          'xyz:SKHY',
+          {
+            category: 'stocks',
+            displayName: 'SKHY',
+            keywords: ['skhynix', 'memory'],
+          },
+        ],
+        ['xyz:NVDA', { category: 'stocks', displayName: 'NVIDIA' }],
+      ],
+      'perpAnnotation:xyz:SKHX': {
+        category: 'stocks',
+        displayName: 'SKHYNIX',
+        keywords: ['000660', 'memory'],
+        description: 'References 1 SK hynix Inc. common share.',
+      },
+      'perpAnnotation:xyz:SKHY': {
+        category: 'stocks',
+        displayName: 'SKHY',
+        keywords: ['skhynix', 'memory'],
+        description: 'References 1 SK hynix Inc. ADS.',
+      },
+      perpDexs: [null, { name: 'xyz', assetToStreamingOiCap: [] }],
+      'meta:xyz': {
+        universe: [
+          { name: 'xyz:SKHX', szDecimals: 3, maxLeverage: 10 },
+          { name: 'xyz:SKHY', szDecimals: 2, maxLeverage: 10 },
+        ],
+      },
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string; coin?: string; dex?: string }
+      const key =
+        body.type === 'perpAnnotation'
+          ? `${body.type}:${body.coin}`
+          : body.type === 'meta'
+            ? `${body.type}:${body.dex ?? 'default'}`
+            : body.type
+      return {
+        ok: true,
+        status: 200,
+        json: async () => responses[key],
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'SK Hynix' })
+
+    const result = JSON.parse(String(log.mock.calls[0][0]))
+    expect(result).toMatchObject({
+      network: 'mainnet',
+      query: 'SK Hynix',
+      matches: [
+        {
+          coin: 'xyz:SKHX',
+          assetId: 110000,
+          dex: 'xyz',
+          displayName: 'SKHYNIX',
+          description: 'References 1 SK hynix Inc. common share.',
+          active: true,
+        },
+        {
+          coin: 'xyz:SKHY',
+          assetId: 110001,
+          dex: 'xyz',
+          displayName: 'SKHY',
+          description: 'References 1 SK hynix Inc. ADS.',
+          active: true,
+        },
+      ],
+    })
+    expect(mock.mock.calls.map((call) => JSON.parse(String(call[1].body)).type)).toEqual(
+      expect.arrayContaining(['perpConciseAnnotations', 'perpAnnotation', 'perpDexs', 'meta']),
+    )
+    expect(mock.mock.calls.every((call) => call[0] === 'https://api.hyperliquid.xyz/info')).toBe(
+      true,
+    )
+  })
+
+  it('returns no matches without fetching detailed public metadata', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const mock = mockFetch([['xyz:BTC', { displayName: 'Bitcoin' }]])
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'SK Hynix' })
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+      type: 'perpConciseAnnotations',
+    })
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      network: 'mainnet',
+      query: 'SK Hynix',
+      matches: [],
+    })
+  })
+
   it('resolves a builder-dex symbol from the public API without wallet credentials', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN

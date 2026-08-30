@@ -44,6 +44,7 @@ interface PublicPerpDex {
 interface PublicSpotToken {
   index: number
   name: string
+  fullName?: string
   szDecimals: number
 }
 
@@ -98,6 +99,7 @@ interface PublicSpotSearchCandidate {
   pairId: string
   assetId: number
   base: string
+  baseFullName?: string
   quote: string
   szDecimals: number
   active: true
@@ -625,6 +627,7 @@ function buildSpotSearchCandidates(
       ['symbol', market.name],
       ['symbol', symbol],
       ['base', base.name],
+      ['baseFullName', base.fullName],
       ['quote', quote.name],
     ])
     if (match.score === 0) continue
@@ -634,6 +637,7 @@ function buildSpotSearchCandidates(
       pairId: market.name,
       assetId: 10_000 + market.index,
       base: base.name,
+      ...(base.fullName ? { baseFullName: base.fullName } : {}),
       quote: quote.name,
       szDecimals: base.szDecimals,
       active: true,

@@ -261,6 +261,61 @@ describe('hyperliquid plugin', () => {
     expect(mock).toHaveBeenCalledTimes(4)
   })
 
+  it('searches spot pairs by the public token full name', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      perpDexs: [null],
+      allPerpMetas: [{ universe: [] }],
+      spotMeta: {
+        tokens: [
+          { index: 0, name: 'USDC', szDecimals: 6 },
+          {
+            index: 849,
+            name: 'MUX',
+            fullName: 'Wrapped Micron Technology xStock',
+            szDecimals: 2,
+          },
+        ],
+        universe: [{ index: 708, name: '@708', tokens: [849, 0] }],
+      },
+      perpConciseAnnotations: [],
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => responses[body.type],
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'Micron Technology' })
+
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      network: 'mainnet',
+      query: 'Micron Technology',
+      matches: [
+        {
+          kind: 'spot',
+          symbol: 'MUX/USDC',
+          pairId: '@708',
+          assetId: 10708,
+          base: 'MUX',
+          baseFullName: 'Wrapped Micron Technology xStock',
+          quote: 'USDC',
+          szDecimals: 2,
+          active: true,
+          score: 75,
+          matchedFields: ['baseFullName'],
+        },
+      ],
+    })
+  })
+
   it('keeps a matching spot pair when several perp listings rank ahead of it', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN

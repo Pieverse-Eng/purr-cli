@@ -732,6 +732,7 @@ Examples:
   purr hyperliquid status
   purr hyperliquid enable
   purr hyperliquid snapshot
+  purr hyperliquid search --query "SK Hynix"
   purr hyperliquid symbol --coin CXMT
   purr hyperliquid bracket-order --asset 0 --side buy --size 0.01 --entry-price 3000 --entry-tif Gtc --take-profit-price 3300 --take-profit-worst-price 3260 --stop-loss-price 2900 --stop-loss-worst-price 2850 --execution market
   purr hyperliquid stop-loss --asset 0 --position-side long --size 0.01 --trigger-price 2900 --worst-price 2850 --execution market

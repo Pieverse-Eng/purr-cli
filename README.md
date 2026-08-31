@@ -126,6 +126,7 @@ purr hyperliquid account
 purr hyperliquid status
 purr hyperliquid enable
 purr hyperliquid snapshot
+purr hyperliquid search --query "SK Hynix"
 purr hyperliquid symbol --coin CXMT
 purr hyperliquid markets --kind perp --dex xyz
 purr hyperliquid builder-fee-status

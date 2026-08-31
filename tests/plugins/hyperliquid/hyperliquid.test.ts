@@ -29,6 +29,365 @@ describe('hyperliquid plugin', () => {
     delete process.env.INSTANCE_ID
   })
 
+  it('searches raw perp tickers and enriches matches with public annotations', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      'perpAnnotation:xyz:SKHX': {
+        category: 'stocks',
+        displayName: 'SKHYNIX',
+        keywords: ['000660', 'memory'],
+        description: 'References 1 SK hynix Inc. common share.',
+      },
+      perpDexs: [null, { name: 'xyz', assetToStreamingOiCap: [] }],
+      allPerpMetas: [
+        { universe: [{ name: 'BTC', szDecimals: 5, maxLeverage: 40 }] },
+        {
+          universe: [
+            { name: 'xyz:SKHX', szDecimals: 3, maxLeverage: 10 },
+            { name: 'xyz:SKHY', szDecimals: 2, maxLeverage: 10 },
+          ],
+        },
+      ],
+      spotMeta: {
+        tokens: [],
+        universe: [],
+      },
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string; coin?: string }
+      const key = body.type === 'perpAnnotation' ? `${body.type}:${body.coin}` : body.type
+      return {
+        ok: true,
+        status: 200,
+        json: async () => responses[key],
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'SKHX' })
+
+    const result = JSON.parse(String(log.mock.calls[0][0]))
+    expect(result).toMatchObject({
+      network: 'mainnet',
+      query: 'SKHX',
+      matches: [
+        {
+          kind: 'perp',
+          symbol: 'xyz:SKHX',
+          assetId: 110000,
+          dex: 'xyz',
+          displayName: 'SKHYNIX',
+          description: 'References 1 SK hynix Inc. common share.',
+          active: true,
+        },
+      ],
+    })
+    expect(mock.mock.calls.map((call) => JSON.parse(String(call[1].body)).type)).toEqual(
+      expect.arrayContaining(['perpDexs', 'allPerpMetas', 'spotMeta', 'perpAnnotation']),
+    )
+    expect(mock.mock.calls.every((call) => call[0] === 'https://api.hyperliquid.xyz/info')).toBe(
+      true,
+    )
+  })
+
+  it('searches live builder-perp annotations when raw symbols do not match', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      'perpAnnotation:xyz:SKHX': {
+        category: 'stocks',
+        displayName: 'SKHYNIX',
+        keywords: ['000660', 'memory'],
+        description: 'References 1 SK hynix Inc. common share.',
+      },
+      perpConciseAnnotations: [
+        [
+          'xyz:SKHX',
+          {
+            category: 'stocks',
+            displayName: 'SKHYNIX',
+            keywords: ['000660', 'memory'],
+          },
+        ],
+      ],
+      perpDexs: [null, { name: 'xyz', assetToStreamingOiCap: [] }],
+      allPerpMetas: [
+        { universe: [{ name: 'BTC', szDecimals: 5 }] },
+        {
+          universe: [
+            { name: 'xyz:SKHX', szDecimals: 3 },
+            { name: 'xyz:SKHY', szDecimals: 2 },
+          ],
+        },
+      ],
+      spotMeta: { tokens: [], universe: [] },
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string; coin?: string }
+      const key = body.type === 'perpAnnotation' ? `${body.type}:${body.coin}` : body.type
+      return {
+        ok: true,
+        status: 200,
+        json: async () => responses[key] ?? null,
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'SK Hynix' })
+    await hyperliquidCommand('search', { query: '000660' })
+
+    expect(mock).toHaveBeenCalledTimes(10)
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
+      network: 'mainnet',
+      query: 'SK Hynix',
+      matches: [
+        {
+          kind: 'perp',
+          symbol: 'xyz:SKHX',
+          dex: 'xyz',
+          active: true,
+          score: 100,
+          matchedFields: ['displayName'],
+          displayName: 'SKHYNIX',
+          keywords: ['000660', 'memory'],
+        },
+      ],
+    })
+    expect(JSON.parse(String(log.mock.calls[1][0]))).toMatchObject({
+      network: 'mainnet',
+      query: '000660',
+      matches: [
+        {
+          symbol: 'xyz:SKHX',
+          score: 100,
+          matchedFields: ['keyword'],
+          displayName: 'SKHYNIX',
+        },
+      ],
+    })
+  })
+
+  it('finds an unannotated perp from the complete public market directory', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      perpDexs: [null],
+      allPerpMetas: [{ universe: [{ name: 'BTC', szDecimals: 5, maxLeverage: 40 }] }],
+      spotMeta: { tokens: [], universe: [] },
+      'perpAnnotation:BTC': null,
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string; coin?: string }
+      const key = body.type === 'perpAnnotation' ? `${body.type}:${body.coin}` : body.type
+      return {
+        ok: true,
+        status: 200,
+        json: async () => responses[key],
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'BTC' })
+
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      network: 'mainnet',
+      query: 'BTC',
+      matches: [
+        {
+          kind: 'perp',
+          symbol: 'BTC',
+          dex: 'default',
+          assetId: 0,
+          szDecimals: 5,
+          maxLeverage: 40,
+          active: true,
+          score: 100,
+          matchedFields: ['symbol'],
+        },
+      ],
+    })
+  })
+
+  it('searches spot pairs by public token names', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      perpDexs: [null],
+      allPerpMetas: [{ universe: [] }],
+      spotMeta: {
+        tokens: [
+          { index: 0, name: 'USDC', szDecimals: 6 },
+          { index: 150, name: 'HYPE', szDecimals: 2 },
+        ],
+        universe: [{ index: 107, name: '@107', tokens: [150, 0] }],
+      },
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => responses[body.type],
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'HYPE' })
+
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      network: 'mainnet',
+      query: 'HYPE',
+      matches: [
+        {
+          kind: 'spot',
+          symbol: 'HYPE/USDC',
+          pairId: '@107',
+          assetId: 10107,
+          base: 'HYPE',
+          quote: 'USDC',
+          szDecimals: 2,
+          active: true,
+          score: 100,
+          matchedFields: ['symbol', 'base'],
+        },
+      ],
+    })
+    expect(mock).toHaveBeenCalledTimes(4)
+  })
+
+  it('searches spot token full names from the live public directory', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      perpDexs: [null],
+      allPerpMetas: [{ universe: [] }],
+      spotMeta: {
+        tokens: [
+          { index: 0, name: 'USDC', szDecimals: 6 },
+          {
+            index: 849,
+            name: 'MUX',
+            fullName: 'Wrapped Micron Technology xStock',
+            szDecimals: 2,
+          },
+        ],
+        universe: [{ index: 708, name: '@708', tokens: [849, 0] }],
+      },
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => responses[body.type],
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'Micron Technology' })
+    await hyperliquidCommand('search', { query: 'MUX' })
+
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      network: 'mainnet',
+      query: 'Micron Technology',
+      matches: [
+        {
+          kind: 'spot',
+          symbol: 'MUX/USDC',
+          pairId: '@708',
+          assetId: 10708,
+          base: 'MUX',
+          baseFullName: 'Wrapped Micron Technology xStock',
+          quote: 'USDC',
+          szDecimals: 2,
+          active: true,
+          score: 75,
+          matchedFields: ['baseFullName'],
+        },
+      ],
+    })
+    expect(JSON.parse(String(log.mock.calls[1][0]))).toEqual({
+      network: 'mainnet',
+      query: 'MUX',
+      matches: [
+        {
+          kind: 'spot',
+          symbol: 'MUX/USDC',
+          pairId: '@708',
+          assetId: 10708,
+          base: 'MUX',
+          baseFullName: 'Wrapped Micron Technology xStock',
+          quote: 'USDC',
+          szDecimals: 2,
+          active: true,
+          score: 100,
+          matchedFields: ['symbol', 'base'],
+        },
+      ],
+    })
+  })
+
+  it('keeps a matching spot pair when several perp listings rank ahead of it', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const responses: Record<string, unknown> = {
+      perpDexs: [
+        null,
+        { name: 'hyna', assetToStreamingOiCap: [] },
+        { name: 'cash', assetToStreamingOiCap: [] },
+        { name: 'flx', assetToStreamingOiCap: [] },
+        { name: 'xyz', assetToStreamingOiCap: [] },
+      ],
+      allPerpMetas: [
+        { universe: [{ name: 'BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'hyna:BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'cash:BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'flx:BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'xyz:BTC', szDecimals: 5 }] },
+      ],
+      spotMeta: {
+        tokens: [
+          { index: 0, name: 'USDC', szDecimals: 6 },
+          { index: 197, name: 'UBTC', szDecimals: 5 },
+        ],
+        universe: [{ index: 142, name: '@142', tokens: [197, 0] }],
+      },
+    }
+    const mock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { type: string }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => (body.type === 'perpAnnotation' ? null : responses[body.type]),
+      }
+    })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('search', { query: 'BTC' })
+
+    const result = JSON.parse(String(log.mock.calls[0][0]))
+    expect(result.matches).toContainEqual(
+      expect.objectContaining({
+        kind: 'spot',
+        symbol: 'UBTC/USDC',
+        pairId: '@142',
+      }),
+    )
+  })
+
   it('resolves a builder-dex symbol from the public API without wallet credentials', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
@@ -292,6 +651,26 @@ describe('hyperliquid plugin', () => {
       type: 'candleSnapshot',
       req: { coin: 'ETH', interval: '1h', startTime: 123, endTime: 456 },
     })
+  })
+
+  it('preserves the venue candle response including the current open candle', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const closed = { t: 100, T: 999, s: 'ETH', i: '1h', o: '1', c: '2', h: '3', l: '1' }
+    const closingNow = { ...closed, t: 200, T: 1_000 }
+    const stillOpen = { ...closed, t: 300, T: 1_001 }
+    const mock = mockFetch([closed, closingNow, stillOpen])
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('candles', {
+      coin: 'ETH',
+      interval: '1h',
+      'start-time': '100',
+    })
+
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual([closed, closingNow, stillOpen])
   })
 
   it.each([

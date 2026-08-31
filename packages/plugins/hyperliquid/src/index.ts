@@ -28,6 +28,8 @@ interface ApiErrorBody {
 interface PublicPerpAsset {
   name: string
   szDecimals: number
+  maxLeverage?: number
+  isDelisted?: boolean
 }
 
 interface PublicPerpMeta {
@@ -42,6 +44,7 @@ interface PublicPerpDex {
 interface PublicSpotToken {
   index: number
   name: string
+  fullName?: string
   szDecimals: number
 }
 
@@ -65,6 +68,46 @@ interface PublicSymbolResolution {
   dex?: string
   spotPairId?: string
 }
+
+interface PublicPerpAnnotation {
+  category?: string
+  description?: string
+  displayName?: string
+  keywords?: string[]
+}
+
+type PublicAllPerpMetas = PublicPerpMeta[]
+type PublicPerpConciseAnnotations = Array<[string, PublicPerpAnnotation]>
+
+interface PublicPerpSearchCandidate {
+  kind: 'perp'
+  symbol: string
+  dex: string
+  assetId: number
+  szDecimals: number
+  maxLeverage?: number
+  active: boolean
+  score: number
+  matchedFields: string[]
+}
+
+interface PublicSpotSearchCandidate {
+  kind: 'spot'
+  symbol: string
+  pairId: string
+  assetId: number
+  base: string
+  baseFullName?: string
+  quote: string
+  szDecimals: number
+  active: true
+  score: number
+  matchedFields: string[]
+}
+
+type PublicMarketSearchCandidate = PublicPerpSearchCandidate | PublicSpotSearchCandidate
+
+const HYPERLIQUID_SEARCH_RESULT_LIMIT = 10
 
 export class HyperliquidCliError extends Error {
   readonly code?: string
@@ -93,6 +136,7 @@ Read commands:
   account
   abstraction
   builder-fee-status
+  search --query <company-or-asset>
   symbol --coin <coin> [--dex <dex|default>]
   markets [--kind perp|spot|both] [--dex <dex>]
   prices [--dex <dex>]
@@ -127,7 +171,7 @@ Write commands:
   deposit --amount <amount>
   withdraw --amount <amount>
 
-Symbol resolution, markets, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
+Search, symbol resolution, markets, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
 Trading integration and all other exchange commands use the platform mainnet TEE wallet.
 
 Market TP/SL requires an explicit worst price: below the trigger when closing long, above the
@@ -180,6 +224,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   account: [],
   abstraction: [],
   'builder-fee-status': [],
+  search: ['query'],
   symbol: ['coin', 'dex'],
   markets: ['kind', 'dex'],
   prices: ['dex'],
@@ -472,6 +517,180 @@ async function getPublicHyperliquidMarkets(
   }
 }
 
+function normalizeSearchText(value: string): string {
+  return value.normalize('NFKC').trim().toLocaleLowerCase('en-US')
+}
+
+function searchFieldScore(query: string, value: string): number {
+  const candidate = normalizeSearchText(value)
+  if (!candidate) return 0
+  if (candidate === query) return 100
+  if (candidate.startsWith(query)) return 85
+  if (candidate.includes(query)) return 75
+  const compactQuery = query.replace(/[^\p{L}\p{N}]+/gu, '')
+  const compactCandidate = candidate.replace(/[^\p{L}\p{N}]+/gu, '')
+  if (!compactQuery || !compactCandidate) return 0
+  if (compactCandidate === compactQuery) return 100
+  if (compactCandidate.startsWith(compactQuery)) return 85
+  if (compactCandidate.includes(compactQuery)) return 75
+  return 0
+}
+
+function searchFieldsScore(
+  query: string,
+  fields: Array<[string, string | undefined]>,
+): { score: number; matchedFields: string[] } {
+  let score = 0
+  const matchedFields = new Set<string>()
+  for (const [field, value] of fields) {
+    if (!value) continue
+    const fieldScore = searchFieldScore(query, value)
+    if (fieldScore > 0) matchedFields.add(field)
+    score = Math.max(score, fieldScore)
+  }
+  return { score, matchedFields: [...matchedFields] }
+}
+
+function buildPerpSearchCandidates(
+  query: string,
+  perpDexs: Array<PublicPerpDex | null>,
+  allPerpMetas: PublicAllPerpMetas,
+  annotations: ReadonlyMap<string, PublicPerpAnnotation | null> = new Map(),
+): PublicPerpSearchCandidate[] {
+  const candidates: PublicPerpSearchCandidate[] = []
+  for (const [dexIndex, meta] of allPerpMetas.entries()) {
+    const dex = dexIndex === 0 ? 'default' : perpDexs[dexIndex]?.name
+    if (!dex) continue
+    for (const [universeIndex, asset] of meta.universe.entries()) {
+      const annotation = annotations.get(asset.name)
+      const match = searchFieldsScore(query, [
+        ['symbol', asset.name],
+        ['symbol', symbolBareName(asset.name)],
+        ['displayName', annotation?.displayName],
+        ...(annotation?.keywords?.map(
+          (keyword) => ['keyword', keyword] as [string, string | undefined],
+        ) ?? []),
+      ])
+      if (match.score === 0) continue
+      candidates.push({
+        kind: 'perp',
+        symbol: asset.name,
+        dex,
+        assetId: dexIndex === 0 ? universeIndex : 100_000 + dexIndex * 10_000 + universeIndex,
+        szDecimals: asset.szDecimals,
+        ...(asset.maxLeverage === undefined ? {} : { maxLeverage: asset.maxLeverage }),
+        active: asset.isDelisted !== true,
+        ...match,
+      })
+    }
+  }
+  return candidates
+}
+
+function buildSpotSearchCandidates(
+  query: string,
+  spotMeta: PublicSpotMeta,
+): PublicSpotSearchCandidate[] {
+  const tokens = new Map(spotMeta.tokens.map((token) => [token.index, token]))
+  const candidates: PublicSpotSearchCandidate[] = []
+  for (const market of spotMeta.universe) {
+    const base = tokens.get(market.tokens[0])
+    const quote = tokens.get(market.tokens[1])
+    if (!base || !quote) continue
+    const symbol = `${base.name}/${quote.name}`
+    const match = searchFieldsScore(query, [
+      ['symbol', market.name],
+      ['symbol', symbol],
+      ['base', base.name],
+      ['baseFullName', base.fullName],
+      ['quote', quote.name],
+    ])
+    if (match.score === 0) continue
+    candidates.push({
+      kind: 'spot',
+      symbol,
+      pairId: market.name,
+      assetId: 10_000 + market.index,
+      base: base.name,
+      ...(base.fullName ? { baseFullName: base.fullName } : {}),
+      quote: quote.name,
+      szDecimals: base.szDecimals,
+      active: true,
+      ...match,
+    })
+  }
+  return candidates
+}
+
+async function loadPerpConciseAnnotations(): Promise<Map<string, PublicPerpAnnotation>> {
+  return new Map(
+    await postHyperliquidInfo<PublicPerpConciseAnnotations>({
+      type: 'perpConciseAnnotations',
+    }),
+  )
+}
+
+async function searchPublicHyperliquidMarkets(queryValue: string): Promise<unknown> {
+  if (queryValue.length > 200) throw new Error('--query must contain at most 200 characters')
+  const query = normalizeSearchText(queryValue)
+  if (!query) throw new Error('--query must not be empty')
+
+  const [perpDexs, allPerpMetas, spotMeta, annotations] = await Promise.all([
+    postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' }),
+    postHyperliquidInfo<PublicAllPerpMetas>({ type: 'allPerpMetas' }),
+    postHyperliquidInfo<PublicSpotMeta>({ type: 'spotMeta' }),
+    loadPerpConciseAnnotations().catch(() => new Map<string, PublicPerpAnnotation>()),
+  ])
+  const perpCandidates = buildPerpSearchCandidates(query, perpDexs, allPerpMetas, annotations)
+  const spotCandidates = buildSpotSearchCandidates(query, spotMeta)
+  const candidates: PublicMarketSearchCandidate[] = [...perpCandidates, ...spotCandidates]
+  candidates.sort(
+    (left, right) =>
+      right.score - left.score ||
+      Number(right.active) - Number(left.active) ||
+      left.symbol.localeCompare(right.symbol),
+  )
+  const selected = candidates.slice(0, HYPERLIQUID_SEARCH_RESULT_LIMIT)
+
+  if (selected.length === 0) return { network: 'mainnet', query: queryValue, matches: [] }
+
+  const detailedAnnotations = new Map<string, PublicPerpAnnotation | null>()
+  await Promise.all(
+    selected.map(async (candidate) => {
+      if (candidate.kind !== 'perp') return
+      try {
+        detailedAnnotations.set(
+          candidate.symbol,
+          (await postHyperliquidInfo<PublicPerpAnnotation | null>({
+            type: 'perpAnnotation',
+            coin: candidate.symbol,
+          })) ??
+            annotations.get(candidate.symbol) ??
+            null,
+        )
+      } catch {
+        detailedAnnotations.set(candidate.symbol, annotations.get(candidate.symbol) ?? null)
+      }
+    }),
+  )
+
+  return {
+    network: 'mainnet',
+    query: queryValue,
+    matches: selected.map((candidate) => {
+      if (candidate.kind === 'spot') return candidate
+      const annotation = detailedAnnotations.get(candidate.symbol)
+      return {
+        ...candidate,
+        ...(annotation?.category ? { category: annotation.category } : {}),
+        ...(annotation?.displayName ? { displayName: annotation.displayName } : {}),
+        ...(annotation?.keywords ? { keywords: annotation.keywords } : {}),
+        ...(annotation?.description ? { description: annotation.description } : {}),
+      }
+    }),
+  }
+}
+
 function symbolDexName(coin: string): string | undefined {
   const separator = coin.indexOf(':')
   if (separator <= 0) return undefined
@@ -653,10 +872,10 @@ async function getPublicHyperliquidSymbol(
   )
 }
 
-function getPublicHyperliquidCandles(
+async function getPublicHyperliquidCandles(
   params: Record<string, string | number | boolean | undefined>,
 ): Promise<unknown> {
-  return postHyperliquidInfo({
+  return postHyperliquidInfo<unknown>({
     type: 'candleSnapshot',
     req: {
       coin: params.coin,
@@ -1091,6 +1310,10 @@ function readQueryArgs(command: string, args: Record<string, string>) {
     case 'abstraction':
     case 'builder-fee-status':
       return {}
+    case 'search':
+      return {
+        query: requireArg(args, 'query'),
+      }
     case 'symbol':
       return {
         coin: requireArg(args, 'coin'),
@@ -1295,6 +1518,12 @@ export async function hyperliquidCommand(
 
   if (command === 'markets') {
     printJson(await getPublicHyperliquidMarkets(readQueryArgs(command, args)))
+    return
+  }
+
+  if (command === 'search') {
+    const params = readQueryArgs(command, args)
+    printJson(await searchPublicHyperliquidMarkets(String(params.query)))
     return
   }
 

@@ -29,41 +29,16 @@ describe('hyperliquid plugin', () => {
     delete process.env.INSTANCE_ID
   })
 
-  it('searches and enriches public perp annotations without wallet credentials', async () => {
+  it('searches raw perp tickers and enriches matches with public annotations', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
     const responses: Record<string, unknown> = {
-      perpConciseAnnotations: [
-        [
-          'xyz:SKHX',
-          {
-            category: 'stocks',
-            displayName: 'SKHYNIX',
-            keywords: ['000660', 'memory'],
-          },
-        ],
-        [
-          'xyz:SKHY',
-          {
-            category: 'stocks',
-            displayName: 'SKHY',
-            keywords: ['skhynix', 'memory'],
-          },
-        ],
-        ['xyz:NVDA', { category: 'stocks', displayName: 'NVIDIA' }],
-      ],
       'perpAnnotation:xyz:SKHX': {
         category: 'stocks',
         displayName: 'SKHYNIX',
         keywords: ['000660', 'memory'],
         description: 'References 1 SK hynix Inc. common share.',
-      },
-      'perpAnnotation:xyz:SKHY': {
-        category: 'stocks',
-        displayName: 'SKHY',
-        keywords: ['skhynix', 'memory'],
-        description: 'References 1 SK hynix Inc. ADS.',
       },
       perpDexs: [null, { name: 'xyz', assetToStreamingOiCap: [] }],
       allPerpMetas: [
@@ -92,12 +67,12 @@ describe('hyperliquid plugin', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     vi.stubGlobal('fetch', mock)
 
-    await hyperliquidCommand('search', { query: 'SK Hynix' })
+    await hyperliquidCommand('search', { query: 'SKHX' })
 
     const result = JSON.parse(String(log.mock.calls[0][0]))
     expect(result).toMatchObject({
       network: 'mainnet',
-      query: 'SK Hynix',
+      query: 'SKHX',
       matches: [
         {
           kind: 'perp',
@@ -108,15 +83,6 @@ describe('hyperliquid plugin', () => {
           description: 'References 1 SK hynix Inc. common share.',
           active: true,
         },
-        {
-          kind: 'perp',
-          symbol: 'xyz:SKHY',
-          assetId: 110001,
-          dex: 'xyz',
-          displayName: 'SKHY',
-          description: 'References 1 SK hynix Inc. ADS.',
-          active: true,
-        },
       ],
     })
     expect(mock.mock.calls.map((call) => JSON.parse(String(call[1].body)).type)).toEqual(
@@ -124,7 +90,6 @@ describe('hyperliquid plugin', () => {
         'perpDexs',
         'allPerpMetas',
         'spotMeta',
-        'perpConciseAnnotations',
         'perpAnnotation',
       ]),
     )
@@ -133,15 +98,17 @@ describe('hyperliquid plugin', () => {
     )
   })
 
-  it('returns no matches without fetching detailed perp annotations', async () => {
+  it('does not use annotations to select search candidates', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
     const responses: Record<string, unknown> = {
-      perpDexs: [null],
-      allPerpMetas: [{ universe: [{ name: 'BTC', szDecimals: 5 }] }],
+      perpDexs: [null, { name: 'xyz', assetToStreamingOiCap: [] }],
+      allPerpMetas: [
+        { universe: [{ name: 'BTC', szDecimals: 5 }] },
+        { universe: [{ name: 'xyz:SKHX', szDecimals: 3 }] },
+      ],
       spotMeta: { tokens: [], universe: [] },
-      perpConciseAnnotations: [['BTC', { displayName: 'Bitcoin' }]],
     }
     const mock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { type: string }
@@ -156,7 +123,7 @@ describe('hyperliquid plugin', () => {
 
     await hyperliquidCommand('search', { query: 'SK Hynix' })
 
-    expect(mock).toHaveBeenCalledTimes(4)
+    expect(mock).toHaveBeenCalledTimes(3)
     expect(
       mock.mock.calls.some((call) => JSON.parse(String(call[1].body)).type === 'perpAnnotation'),
     ).toBe(false)
@@ -175,7 +142,6 @@ describe('hyperliquid plugin', () => {
       perpDexs: [null],
       allPerpMetas: [{ universe: [{ name: 'BTC', szDecimals: 5, maxLeverage: 40 }] }],
       spotMeta: { tokens: [], universe: [] },
-      perpConciseAnnotations: [],
       'perpAnnotation:BTC': null,
     }
     const mock = vi.fn(async (_url: string, init: RequestInit) => {
@@ -225,7 +191,6 @@ describe('hyperliquid plugin', () => {
         ],
         universe: [{ index: 107, name: '@107', tokens: [150, 0] }],
       },
-      perpConciseAnnotations: [],
     }
     const mock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { type: string }
@@ -258,10 +223,10 @@ describe('hyperliquid plugin', () => {
         },
       ],
     })
-    expect(mock).toHaveBeenCalledTimes(4)
+    expect(mock).toHaveBeenCalledTimes(3)
   })
 
-  it('searches spot pairs by the public token full name', async () => {
+  it('uses raw spot token names for selection and returns full names as enrichment', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
@@ -280,7 +245,6 @@ describe('hyperliquid plugin', () => {
         ],
         universe: [{ index: 708, name: '@708', tokens: [849, 0] }],
       },
-      perpConciseAnnotations: [],
     }
     const mock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { type: string }
@@ -294,10 +258,16 @@ describe('hyperliquid plugin', () => {
     vi.stubGlobal('fetch', mock)
 
     await hyperliquidCommand('search', { query: 'Micron Technology' })
+    await hyperliquidCommand('search', { query: 'MUX' })
 
     expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
       network: 'mainnet',
       query: 'Micron Technology',
+      matches: [],
+    })
+    expect(JSON.parse(String(log.mock.calls[1][0]))).toEqual({
+      network: 'mainnet',
+      query: 'MUX',
       matches: [
         {
           kind: 'spot',
@@ -309,8 +279,8 @@ describe('hyperliquid plugin', () => {
           quote: 'USDC',
           szDecimals: 2,
           active: true,
-          score: 75,
-          matchedFields: ['baseFullName'],
+          score: 100,
+          matchedFields: ['symbol', 'base'],
         },
       ],
     })
@@ -342,7 +312,6 @@ describe('hyperliquid plugin', () => {
         ],
         universe: [{ index: 142, name: '@142', tokens: [197, 0] }],
       },
-      perpConciseAnnotations: [],
     }
     const mock = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as { type: string }

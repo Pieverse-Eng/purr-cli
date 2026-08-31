@@ -76,8 +76,6 @@ interface PublicPerpAnnotation {
   keywords?: string[]
 }
 
-type PublicPerpConciseAnnotation = [string, PublicPerpAnnotation]
-
 type PublicAllPerpMetas = PublicPerpMeta[]
 
 interface PublicPerpSearchCandidate {
@@ -90,7 +88,6 @@ interface PublicPerpSearchCandidate {
   active: boolean
   score: number
   matchedFields: string[]
-  conciseAnnotation?: PublicPerpAnnotation
 }
 
 interface PublicSpotSearchCandidate {
@@ -519,51 +516,21 @@ async function getPublicHyperliquidMarkets(
   }
 }
 
-function normalizeSearchText(value: string): {
-  spaced: string
-  collapsed: string
-  tokens: string[]
-} {
-  const spaced = value
-    .normalize('NFKC')
-    .toLocaleLowerCase('en-US')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim()
-    .replace(/\s+/g, ' ')
-  return {
-    spaced,
-    collapsed: spaced.replaceAll(' ', ''),
-    tokens: spaced ? spaced.split(' ') : [],
-  }
+function normalizeSearchText(value: string): string {
+  return value.normalize('NFKC').trim().toLocaleLowerCase('en-US')
 }
 
-function searchFieldScore(query: ReturnType<typeof normalizeSearchText>, value: string): number {
+function searchFieldScore(query: string, value: string): number {
   const candidate = normalizeSearchText(value)
-  if (!candidate.spaced) return 0
-  if (candidate.spaced === query.spaced) return 100
-  if (candidate.collapsed === query.collapsed) return 95
-  if (
-    candidate.spaced.startsWith(query.spaced) ||
-    candidate.collapsed.startsWith(query.collapsed)
-  ) {
-    return 85
-  }
-  if (candidate.spaced.includes(query.spaced) || candidate.collapsed.includes(query.collapsed)) {
-    return 75
-  }
-  if (
-    query.tokens.length > 1 &&
-    query.tokens.every(
-      (token) => candidate.spaced.includes(token) || candidate.collapsed.includes(token),
-    )
-  ) {
-    return 65
-  }
+  if (!candidate) return 0
+  if (candidate === query) return 100
+  if (candidate.startsWith(query)) return 85
+  if (candidate.includes(query)) return 75
   return 0
 }
 
 function searchFieldsScore(
-  query: ReturnType<typeof normalizeSearchText>,
+  query: string,
   fields: Array<[string, string | undefined]>,
 ): { score: number; matchedFields: string[] } {
   let score = 0
@@ -578,22 +545,18 @@ function searchFieldsScore(
 }
 
 function buildPerpSearchCandidates(
-  query: ReturnType<typeof normalizeSearchText>,
+  query: string,
   perpDexs: Array<PublicPerpDex | null>,
   allPerpMetas: PublicAllPerpMetas,
-  annotations: Map<string, PublicPerpAnnotation>,
 ): PublicPerpSearchCandidate[] {
   const candidates: PublicPerpSearchCandidate[] = []
   for (const [dexIndex, meta] of allPerpMetas.entries()) {
     const dex = dexIndex === 0 ? 'default' : perpDexs[dexIndex]?.name
     if (!dex) continue
     for (const [universeIndex, asset] of meta.universe.entries()) {
-      const annotation = annotations.get(asset.name)
       const match = searchFieldsScore(query, [
         ['symbol', asset.name],
         ['symbol', symbolBareName(asset.name)],
-        ['displayName', annotation?.displayName],
-        ...(annotation?.keywords ?? []).map((keyword): [string, string] => ['keyword', keyword]),
       ])
       if (match.score === 0) continue
       candidates.push({
@@ -605,7 +568,6 @@ function buildPerpSearchCandidates(
         ...(asset.maxLeverage === undefined ? {} : { maxLeverage: asset.maxLeverage }),
         active: asset.isDelisted !== true,
         ...match,
-        ...(annotation ? { conciseAnnotation: annotation } : {}),
       })
     }
   }
@@ -613,7 +575,7 @@ function buildPerpSearchCandidates(
 }
 
 function buildSpotSearchCandidates(
-  query: ReturnType<typeof normalizeSearchText>,
+  query: string,
   spotMeta: PublicSpotMeta,
 ): PublicSpotSearchCandidate[] {
   const tokens = new Map(spotMeta.tokens.map((token) => [token.index, token]))
@@ -627,7 +589,6 @@ function buildSpotSearchCandidates(
       ['symbol', market.name],
       ['symbol', symbol],
       ['base', base.name],
-      ['baseFullName', base.fullName],
       ['quote', quote.name],
     ])
     if (match.score === 0) continue
@@ -650,17 +611,15 @@ function buildSpotSearchCandidates(
 async function searchPublicHyperliquidMarkets(queryValue: string): Promise<unknown> {
   if (queryValue.length > 200) throw new Error('--query must contain at most 200 characters')
   const query = normalizeSearchText(queryValue)
-  if (!query.spaced) throw new Error('--query must contain searchable letters or numbers')
+  if (!query) throw new Error('--query must not be empty')
 
-  const [perpDexs, allPerpMetas, spotMeta, conciseAnnotations] = await Promise.all([
+  const [perpDexs, allPerpMetas, spotMeta] = await Promise.all([
     postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' }),
     postHyperliquidInfo<PublicAllPerpMetas>({ type: 'allPerpMetas' }),
     postHyperliquidInfo<PublicSpotMeta>({ type: 'spotMeta' }),
-    postHyperliquidInfo<PublicPerpConciseAnnotation[]>({ type: 'perpConciseAnnotations' }),
   ])
-  const annotationIndex = new Map(conciseAnnotations)
   const candidates: PublicMarketSearchCandidate[] = [
-    ...buildPerpSearchCandidates(query, perpDexs, allPerpMetas, annotationIndex),
+    ...buildPerpSearchCandidates(query, perpDexs, allPerpMetas),
     ...buildSpotSearchCandidates(query, spotMeta),
   ]
   candidates.sort(
@@ -692,10 +651,9 @@ async function searchPublicHyperliquidMarkets(queryValue: string): Promise<unkno
     query: queryValue,
     matches: selected.map((candidate) => {
       if (candidate.kind === 'spot') return candidate
-      const { conciseAnnotation: _concise, ...listing } = candidate
-      const annotation = detailedAnnotations.get(candidate.symbol) ?? candidate.conciseAnnotation
+      const annotation = detailedAnnotations.get(candidate.symbol)
       return {
-        ...listing,
+        ...candidate,
         ...(annotation?.category ? { category: annotation.category } : {}),
         ...(annotation?.displayName ? { displayName: annotation.displayName } : {}),
         ...(annotation?.keywords ? { keywords: annotation.keywords } : {}),

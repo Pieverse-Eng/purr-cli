@@ -93,39 +93,82 @@ describe('hyperliquid plugin', () => {
     )
   })
 
-  it('does not use annotations to select search candidates', async () => {
+  it('searches live builder-perp annotations when raw symbols do not match', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
     const responses: Record<string, unknown> = {
+      'perpAnnotation:xyz:SKHX': {
+        category: 'stocks',
+        displayName: 'SKHYNIX',
+        keywords: ['000660', 'memory'],
+        description: 'References 1 SK hynix Inc. common share.',
+      },
+      perpConciseAnnotations: [
+        [
+          'xyz:SKHX',
+          {
+            category: 'stocks',
+            displayName: 'SKHYNIX',
+            keywords: ['000660', 'memory'],
+          },
+        ],
+      ],
       perpDexs: [null, { name: 'xyz', assetToStreamingOiCap: [] }],
       allPerpMetas: [
         { universe: [{ name: 'BTC', szDecimals: 5 }] },
-        { universe: [{ name: 'xyz:SKHX', szDecimals: 3 }] },
+        {
+          universe: [
+            { name: 'xyz:SKHX', szDecimals: 3 },
+            { name: 'xyz:SKHY', szDecimals: 2 },
+          ],
+        },
       ],
       spotMeta: { tokens: [], universe: [] },
     }
     const mock = vi.fn(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as { type: string }
+      const body = JSON.parse(String(init.body)) as { type: string; coin?: string }
+      const key = body.type === 'perpAnnotation' ? `${body.type}:${body.coin}` : body.type
       return {
         ok: true,
         status: 200,
-        json: async () => responses[body.type],
+        json: async () => responses[key] ?? null,
       }
     })
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     vi.stubGlobal('fetch', mock)
 
     await hyperliquidCommand('search', { query: 'SK Hynix' })
+    await hyperliquidCommand('search', { query: '000660' })
 
-    expect(mock).toHaveBeenCalledTimes(3)
-    expect(
-      mock.mock.calls.some((call) => JSON.parse(String(call[1].body)).type === 'perpAnnotation'),
-    ).toBe(false)
-    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+    expect(mock).toHaveBeenCalledTimes(10)
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({
       network: 'mainnet',
       query: 'SK Hynix',
-      matches: [],
+      matches: [
+        {
+          kind: 'perp',
+          symbol: 'xyz:SKHX',
+          dex: 'xyz',
+          active: true,
+          score: 100,
+          matchedFields: ['displayName'],
+          displayName: 'SKHYNIX',
+          keywords: ['000660', 'memory'],
+        },
+      ],
+    })
+    expect(JSON.parse(String(log.mock.calls[1][0]))).toMatchObject({
+      network: 'mainnet',
+      query: '000660',
+      matches: [
+        {
+          symbol: 'xyz:SKHX',
+          score: 100,
+          matchedFields: ['keyword'],
+          displayName: 'SKHYNIX',
+        },
+      ],
     })
   })
 
@@ -218,10 +261,10 @@ describe('hyperliquid plugin', () => {
         },
       ],
     })
-    expect(mock).toHaveBeenCalledTimes(3)
+    expect(mock).toHaveBeenCalledTimes(4)
   })
 
-  it('uses raw spot token names for selection and returns full names as enrichment', async () => {
+  it('searches spot token full names from the live public directory', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
@@ -258,7 +301,21 @@ describe('hyperliquid plugin', () => {
     expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
       network: 'mainnet',
       query: 'Micron Technology',
-      matches: [],
+      matches: [
+        {
+          kind: 'spot',
+          symbol: 'MUX/USDC',
+          pairId: '@708',
+          assetId: 10708,
+          base: 'MUX',
+          baseFullName: 'Wrapped Micron Technology xStock',
+          quote: 'USDC',
+          szDecimals: 2,
+          active: true,
+          score: 75,
+          matchedFields: ['baseFullName'],
+        },
+      ],
     })
     expect(JSON.parse(String(log.mock.calls[1][0]))).toEqual({
       network: 'mainnet',

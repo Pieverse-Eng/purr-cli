@@ -77,6 +77,7 @@ interface PublicPerpAnnotation {
 }
 
 type PublicAllPerpMetas = PublicPerpMeta[]
+type PublicPerpConciseAnnotations = Array<[string, PublicPerpAnnotation]>
 
 interface PublicPerpSearchCandidate {
   kind: 'perp'
@@ -526,6 +527,12 @@ function searchFieldScore(query: string, value: string): number {
   if (candidate === query) return 100
   if (candidate.startsWith(query)) return 85
   if (candidate.includes(query)) return 75
+  const compactQuery = query.replace(/[^\p{L}\p{N}]+/gu, '')
+  const compactCandidate = candidate.replace(/[^\p{L}\p{N}]+/gu, '')
+  if (!compactQuery || !compactCandidate) return 0
+  if (compactCandidate === compactQuery) return 100
+  if (compactCandidate.startsWith(compactQuery)) return 85
+  if (compactCandidate.includes(compactQuery)) return 75
   return 0
 }
 
@@ -548,15 +555,21 @@ function buildPerpSearchCandidates(
   query: string,
   perpDexs: Array<PublicPerpDex | null>,
   allPerpMetas: PublicAllPerpMetas,
+  annotations: ReadonlyMap<string, PublicPerpAnnotation | null> = new Map(),
 ): PublicPerpSearchCandidate[] {
   const candidates: PublicPerpSearchCandidate[] = []
   for (const [dexIndex, meta] of allPerpMetas.entries()) {
     const dex = dexIndex === 0 ? 'default' : perpDexs[dexIndex]?.name
     if (!dex) continue
     for (const [universeIndex, asset] of meta.universe.entries()) {
+      const annotation = annotations.get(asset.name)
       const match = searchFieldsScore(query, [
         ['symbol', asset.name],
         ['symbol', symbolBareName(asset.name)],
+        ['displayName', annotation?.displayName],
+        ...(annotation?.keywords?.map(
+          (keyword) => ['keyword', keyword] as [string, string | undefined],
+        ) ?? []),
       ])
       if (match.score === 0) continue
       candidates.push({
@@ -589,6 +602,7 @@ function buildSpotSearchCandidates(
       ['symbol', market.name],
       ['symbol', symbol],
       ['base', base.name],
+      ['baseFullName', base.fullName],
       ['quote', quote.name],
     ])
     if (match.score === 0) continue
@@ -608,20 +622,28 @@ function buildSpotSearchCandidates(
   return candidates
 }
 
+async function loadPerpConciseAnnotations(): Promise<Map<string, PublicPerpAnnotation>> {
+  return new Map(
+    await postHyperliquidInfo<PublicPerpConciseAnnotations>({
+      type: 'perpConciseAnnotations',
+    }),
+  )
+}
+
 async function searchPublicHyperliquidMarkets(queryValue: string): Promise<unknown> {
   if (queryValue.length > 200) throw new Error('--query must contain at most 200 characters')
   const query = normalizeSearchText(queryValue)
   if (!query) throw new Error('--query must not be empty')
 
-  const [perpDexs, allPerpMetas, spotMeta] = await Promise.all([
+  const [perpDexs, allPerpMetas, spotMeta, annotations] = await Promise.all([
     postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' }),
     postHyperliquidInfo<PublicAllPerpMetas>({ type: 'allPerpMetas' }),
     postHyperliquidInfo<PublicSpotMeta>({ type: 'spotMeta' }),
+    loadPerpConciseAnnotations().catch(() => new Map<string, PublicPerpAnnotation>()),
   ])
-  const candidates: PublicMarketSearchCandidate[] = [
-    ...buildPerpSearchCandidates(query, perpDexs, allPerpMetas),
-    ...buildSpotSearchCandidates(query, spotMeta),
-  ]
+  const perpCandidates = buildPerpSearchCandidates(query, perpDexs, allPerpMetas, annotations)
+  const spotCandidates = buildSpotSearchCandidates(query, spotMeta)
+  const candidates: PublicMarketSearchCandidate[] = [...perpCandidates, ...spotCandidates]
   candidates.sort(
     (left, right) =>
       right.score - left.score ||
@@ -636,13 +658,19 @@ async function searchPublicHyperliquidMarkets(queryValue: string): Promise<unkno
   await Promise.all(
     selected.map(async (candidate) => {
       if (candidate.kind !== 'perp') return
-      detailedAnnotations.set(
-        candidate.symbol,
-        await postHyperliquidInfo<PublicPerpAnnotation | null>({
-          type: 'perpAnnotation',
-          coin: candidate.symbol,
-        }),
-      )
+      try {
+        detailedAnnotations.set(
+          candidate.symbol,
+          (await postHyperliquidInfo<PublicPerpAnnotation | null>({
+            type: 'perpAnnotation',
+            coin: candidate.symbol,
+          })) ??
+            annotations.get(candidate.symbol) ??
+            null,
+        )
+      } catch {
+        detailedAnnotations.set(candidate.symbol, annotations.get(candidate.symbol) ?? null)
+      }
     }),
   )
 

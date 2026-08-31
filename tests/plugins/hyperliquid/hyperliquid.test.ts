@@ -596,7 +596,7 @@ describe('hyperliquid plugin', () => {
     })
   })
 
-  it('excludes candles that have not closed yet', async () => {
+  it('preserves the venue candle response including the current open candle', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
@@ -605,7 +605,6 @@ describe('hyperliquid plugin', () => {
     const stillOpen = { ...closed, t: 300, T: 1_001 }
     const mock = mockFetch([closed, closingNow, stillOpen])
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-    vi.spyOn(Date, 'now').mockReturnValue(1_000)
     vi.stubGlobal('fetch', mock)
 
     await hyperliquidCommand('candles', {
@@ -614,7 +613,7 @@ describe('hyperliquid plugin', () => {
       'start-time': '100',
     })
 
-    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual([closed])
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual([closed, closingNow, stillOpen])
   })
 
   it.each([

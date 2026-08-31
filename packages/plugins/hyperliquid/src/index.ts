@@ -847,7 +847,7 @@ async function getPublicHyperliquidSymbol(
 async function getPublicHyperliquidCandles(
   params: Record<string, string | number | boolean | undefined>,
 ): Promise<unknown> {
-  const candles = await postHyperliquidInfo<unknown>({
+  return postHyperliquidInfo<unknown>({
     type: 'candleSnapshot',
     req: {
       coin: params.coin,
@@ -855,13 +855,6 @@ async function getPublicHyperliquidCandles(
       startTime: params.startTime,
       ...(params.endTime === undefined ? {} : { endTime: params.endTime }),
     },
-  })
-  if (!Array.isArray(candles)) return candles
-
-  const now = Date.now()
-  return candles.filter((candle) => {
-    if (!isRecord(candle) || typeof candle.T !== 'number') return true
-    return candle.T < now
   })
 }
 

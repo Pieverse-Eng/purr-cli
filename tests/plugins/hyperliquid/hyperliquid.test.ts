@@ -86,12 +86,7 @@ describe('hyperliquid plugin', () => {
       ],
     })
     expect(mock.mock.calls.map((call) => JSON.parse(String(call[1].body)).type)).toEqual(
-      expect.arrayContaining([
-        'perpDexs',
-        'allPerpMetas',
-        'spotMeta',
-        'perpAnnotation',
-      ]),
+      expect.arrayContaining(['perpDexs', 'allPerpMetas', 'spotMeta', 'perpAnnotation']),
     )
     expect(mock.mock.calls.every((call) => call[0] === 'https://api.hyperliquid.xyz/info')).toBe(
       true,

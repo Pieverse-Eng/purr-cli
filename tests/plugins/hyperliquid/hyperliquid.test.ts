@@ -545,12 +545,6 @@ describe('hyperliquid plugin', () => {
       expectedUrl: 'https://api.test/v1/instances/inst-123/hyperliquid/prices?dex=xyz',
     },
     {
-      command: 'l2',
-      args: { coin: 'ETH', 'n-sig-figs': '5', mantissa: '2' },
-      expectedUrl:
-        'https://api.test/v1/instances/inst-123/hyperliquid/l2?coin=ETH&nSigFigs=5&mantissa=2',
-    },
-    {
       command: 'funding',
       args: { coin: 'ETH', 'start-time': '123', 'end-time': '456' },
       expectedUrl:
@@ -627,6 +621,30 @@ describe('hyperliquid plugin', () => {
     expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
       type: 'metaAndAssetCtxs',
       dex: 'xyz',
+    })
+  })
+
+  it('reads L2 books from the public API without wallet credentials', async () => {
+    delete process.env.WALLET_API_URL
+    delete process.env.WALLET_API_TOKEN
+    delete process.env.INSTANCE_ID
+    const mock = mockFetch({ coin: 'BTC', levels: [[], []], time: 123 })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+
+    await hyperliquidCommand('l2', {
+      coin: 'BTC',
+      'n-sig-figs': '5',
+      mantissa: '2',
+    })
+
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][0]).toBe('https://api.hyperliquid.xyz/info')
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+      type: 'l2Book',
+      coin: 'BTC',
+      nSigFigs: 5,
+      mantissa: 2,
     })
   })
 

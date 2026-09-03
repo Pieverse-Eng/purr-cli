@@ -203,6 +203,42 @@ describe('lighter account opening', () => {
     expect(mocks.resolveCredentials).not.toHaveBeenCalled()
   })
 
+  it('reads order-book depth from the public API without platform credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 200, bids: [], asks: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await lighterCommand('order-book-depth', { 'market-id': '1', limit: '20' })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://mainnet.zklighter.elliot.ai/api/v1/orderBookOrders?market_id=1&limit=20',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(mocks.resolveCredentials).not.toHaveBeenCalled()
+  })
+
+  it('reads order-book metadata from the public API without platform credentials', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 200, order_books: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await lighterCommand('order-books', { 'market-type': 'perp', 'market-id': '1' })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://mainnet.zklighter.elliot.ai/api/v1/orderBooks?market_id=1&filter=perp',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(mocks.resolveCredentials).not.toHaveBeenCalled()
+  })
+
   it('resolves one market entirely through the public API', async () => {
     const btc = {
       market_id: 1,

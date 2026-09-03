@@ -171,7 +171,7 @@ Write commands:
   deposit --amount <amount>
   withdraw --amount <amount>
 
-Search, symbol resolution, markets, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
+Search, symbol resolution, markets, L2 books, and candles call Hyperliquid's public mainnet Info API without wallet credentials.
 Trading integration and all other exchange commands use the platform mainnet TEE wallet.
 
 Market TP/SL requires an explicit worst price: below the trigger when closing long, above the
@@ -515,6 +515,17 @@ async function getPublicHyperliquidMarkets(
     perp: await postHyperliquidInfo(perpRequest),
     spot: await postHyperliquidInfo({ type: 'spotMetaAndAssetCtxs' }),
   }
+}
+
+async function getPublicHyperliquidL2(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<unknown> {
+  return postHyperliquidInfo<unknown>({
+    type: 'l2Book',
+    coin: params.coin,
+    ...(params.nSigFigs === undefined ? {} : { nSigFigs: params.nSigFigs }),
+    ...(params.mantissa === undefined ? {} : { mantissa: params.mantissa }),
+  })
 }
 
 function normalizeSearchText(value: string): string {
@@ -1529,6 +1540,11 @@ export async function hyperliquidCommand(
 
   if (command === 'symbol') {
     printJson(await getPublicHyperliquidSymbol(readQueryArgs(command, args)))
+    return
+  }
+
+  if (command === 'l2') {
+    printJson(await getPublicHyperliquidL2(readQueryArgs(command, args)))
     return
   }
 

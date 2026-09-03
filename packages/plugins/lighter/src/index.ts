@@ -112,7 +112,7 @@ Write commands:
   withdraw --amount <USDC> [--yes]
   fast-withdraw --amount <USDC> [--yes]
 Withdrawal commands preview without --yes. Adding --yes fetches and executes the latest quote, which may differ from an earlier preview.
-Market lookup, markets, and candles call Lighter's public mainnet API without wallet credentials.
+Market lookup, markets, order books, order-book depth, and candles call Lighter's public mainnet API without wallet credentials.
 Lighter read and preview requests use a 20s client timeout. Confirmed write commands wait for the Platform response.
 IOC market/limit orders do not accept expiry flags.`
 
@@ -349,6 +349,12 @@ function getPublicLighterCandles(
   params: Record<string, string | number | boolean | undefined>,
 ): Promise<unknown> {
   return getPublicLighter('/api/v1/candles', lighterPublicQuery(params))
+}
+
+function getPublicLighterOrderBookDepth(
+  params: Record<string, string | number | boolean | undefined>,
+): Promise<unknown> {
+  return getPublicLighter('/api/v1/orderBookOrders', lighterPublicQuery(params))
 }
 
 async function postLighter<T = unknown>(path: string, body: JsonRecord): Promise<T> {
@@ -921,7 +927,7 @@ export async function lighterCommand(
   }
 
   const resolvedArgs = await resolveMarketArgs(command, args)
-  if (command === 'markets') {
+  if (command === 'markets' || command === 'order-books') {
     printJson(await getPublicLighterMarkets(readQueryArgs(command, resolvedArgs)))
     return
   }
@@ -936,6 +942,10 @@ export async function lighterCommand(
   }
   if (command === 'candles') {
     printJson(await getPublicLighterCandles(readQueryArgs(command, resolvedArgs)))
+    return
+  }
+  if (command === 'order-book-depth') {
+    printJson(await getPublicLighterOrderBookDepth(readQueryArgs(command, resolvedArgs)))
     return
   }
   const endpoint = readEndpoint(command, resolvedArgs)

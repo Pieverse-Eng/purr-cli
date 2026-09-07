@@ -17,15 +17,13 @@ type Pool = {
   volume_usd_24h?: unknown
   candidate?: string
 }
-type Website = { url: string; label?: string }
-type Social = { url: string; type?: string }
 type Candidate = {
   token: string
   name: string
   symbol: string
   pool_names: string[]
-  websites: Website[]
-  socials: Social[]
+  websites: string[]
+  socials: string[]
 }
 type Row = Candidate & { volume: number; rank: number }
 export type GetJson = (url: string) => Promise<unknown>
@@ -100,9 +98,9 @@ export function projectLinks(
   data: unknown,
   chain: Chain,
   address: string,
-): { websites: Website[]; socials: Social[] } {
-  const websites: Website[] = [],
-    socials: Social[] = []
+): { websites: string[]; socials: string[] } {
+  const websites: string[] = [],
+    socials: string[] = []
   for (const value of list(data)) {
     const p = pair(value)
     // DEXScreener profiles describe the base token, even when the requested CA is the quote.
@@ -110,9 +108,9 @@ export function projectLinks(
       continue
     const info = record(value).info
     if (!info || typeof info !== 'object' || Array.isArray(info)) continue
-    for (const [field, label, output] of [
-      ['websites', 'label', websites],
-      ['socials', 'type', socials],
+    for (const [field, output] of [
+      ['websites', websites],
+      ['socials', socials],
     ] as const) {
       const entries = (info as Record<string, unknown>)[field]
       if (!Array.isArray(entries)) continue
@@ -123,11 +121,8 @@ export function projectLinks(
         } catch {
           continue
         }
-        if (output.some((link) => link.url === entry.url)) continue
-        output.push({
-          url: entry.url,
-          ...(typeof entry[label] === 'string' ? { [label]: entry[label] } : {}),
-        })
+        if (output.includes(entry.url)) continue
+        output.push(entry.url)
       }
     }
   }

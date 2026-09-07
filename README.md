@@ -246,7 +246,7 @@ the command rather than returning an apparently complete result. Each request
 has a 10-second timeout within a 70-second overall retrieval budget.
 
 Project links reuse the same per-token DEXScreener response: `websites` contains
-`{url,label?}` and `socials` contains `{url,type?}`. Only profiles whose base token
+URL strings and `socials` contains URL strings. Only profiles whose base token
 matches the requested CA and chain are used; quote-side profiles belong to the
 counterasset and are ignored. Links are deduplicated by URL; absent profiles
 produce empty arrays. These are provider-listed project links, not independently

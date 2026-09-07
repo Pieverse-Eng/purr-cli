@@ -184,8 +184,8 @@ it('extracts only exact base-token profile links, deduplicating and ignoring inv
   }
   const otherChain = { ...owned, chainId: 'robinhood' }
   expect(projectLinks([owned, owned, counter, otherChain], 'bsc', address(2))).toEqual({
-    websites: [{ url: 'https://meme.example', label: 'Website' }],
-    socials: [{ url: 'https://x.com/meme', type: 'twitter' }],
+    websites: ['https://meme.example'],
+    socials: ['https://x.com/meme'],
   })
   expect(projectLinks([counter], 'bsc', address(2))).toEqual({ websites: [], socials: [] })
   expect(

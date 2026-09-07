@@ -17,7 +17,16 @@ type Pool = {
   volume_usd_24h?: unknown
   candidate?: string
 }
-type Candidate = { token: string; name: string; symbol: string; pool_names: string[] }
+type Website = { url: string; label?: string }
+type Social = { url: string; type?: string }
+type Candidate = {
+  token: string
+  name: string
+  symbol: string
+  pool_names: string[]
+  websites: Website[]
+  socials: Social[]
+}
 type Row = Candidate & { volume: number; rank: number }
 export type GetJson = (url: string) => Promise<unknown>
 const DEX = 'https://api.dexscreener.com'
@@ -85,6 +94,44 @@ export function stockAddresses(data: unknown): Set<string> {
   }
   if (!addresses.size) throw new Error('Robinhood stock/ETF catalog unavailable; discovery stopped')
   return addresses
+}
+
+export function projectLinks(
+  data: unknown,
+  chain: Chain,
+  address: string,
+): { websites: Website[]; socials: Social[] } {
+  const websites: Website[] = [],
+    socials: Social[] = []
+  for (const value of list(data)) {
+    const p = pair(value)
+    // DEXScreener profiles describe the base token, even when the requested CA is the quote.
+    if (p.chainId !== chain || normalize(p.baseToken.address, chain) !== normalize(address, chain))
+      continue
+    const info = record(value).info
+    if (!info || typeof info !== 'object' || Array.isArray(info)) continue
+    for (const [field, label, output] of [
+      ['websites', 'label', websites],
+      ['socials', 'type', socials],
+    ] as const) {
+      const entries = (info as Record<string, unknown>)[field]
+      if (!Array.isArray(entries)) continue
+      for (const entry of entries) {
+        if (!entry || typeof entry !== 'object' || typeof entry.url !== 'string') continue
+        try {
+          if (!['http:', 'https:'].includes(new URL(entry.url).protocol)) continue
+        } catch {
+          continue
+        }
+        if (output.some((link) => link.url === entry.url)) continue
+        output.push({
+          url: entry.url,
+          ...(typeof entry[label] === 'string' ? { [label]: entry[label] } : {}),
+        })
+      }
+    }
+  }
+  return { websites, socials }
 }
 
 export function bestPool(data: unknown, chain: Chain, address: string): string[] {
@@ -233,6 +280,8 @@ export async function trending(
           name: t.name ?? '',
           symbol: t.symbol ?? '',
           pool_names: [],
+          websites: [],
+          socials: [],
           volume: 0,
           rank: ranks.get(ca) ?? Infinity,
         }
@@ -245,19 +294,19 @@ export async function trending(
     .sort((a, b) => (chain === 'solana' ? a.rank - b.rank : b.volume - a.volume))
     .slice(0, 5)
   for (const row of ranked) {
-    row.pool_names = bestPool(
-      await get(`${DEX}/token-pairs/v1/${chain}/${encodeURIComponent(row.token)}`),
-      chain,
-      row.token,
-    )
+    const data = await get(`${DEX}/token-pairs/v1/${chain}/${encodeURIComponent(row.token)}`)
+    row.pool_names = bestPool(data, chain, row.token)
+    Object.assign(row, projectLinks(data, chain, row.token))
   }
   return {
     chain,
-    candidates: ranked.map(({ token, name, symbol, pool_names }) => ({
+    candidates: ranked.map(({ token, name, symbol, pool_names, websites, socials }) => ({
       token,
       name,
       symbol,
       pool_names,
+      websites,
+      socials,
     })),
   }
 }

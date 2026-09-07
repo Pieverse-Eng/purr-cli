@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { bestPool, marketCommand, stockAddresses, trending } from './market.js'
+import { bestPool, marketCommand, projectLinks, stockAddresses, trending } from './market.js'
 
 const address = (n: number) => `0x${n.toString(16).padStart(40, '0')}`
 const makePair = (id: string, base: string, quote: string, liquidity = 200_000, chain = 'bsc') => ({
@@ -37,7 +37,14 @@ describe('market trending', () => {
     }
     const result = await trending('bsc', get)
     expect(result.candidates).toEqual([
-      { token: address(2), name: address(2), symbol: 'MEME', pool_names: ['SPCXB / MarsCoin'] },
+      {
+        token: address(2),
+        name: address(2),
+        symbol: 'MEME',
+        pool_names: ['SPCXB / MarsCoin'],
+        websites: [],
+        socials: [],
+      },
     ])
     expect(urls.some((url) => url.endsWith(`/token-pairs/v1/bsc/${address(2)}`))).toBe(true)
   })
@@ -163,4 +170,25 @@ describe('market trending', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('purr market trending'))
     log.mockRestore()
   })
+})
+
+it('extracts only exact base-token profile links, deduplicating and ignoring invalid URLs', () => {
+  const profile = {
+    websites: [{ url: 'https://meme.example', label: 'Website' }, { url: 'javascript:alert(1)' }],
+    socials: [{ url: 'https://x.com/meme', type: 'twitter' }],
+  }
+  const owned = { ...makePair(address(1), address(2), address(3)), info: profile }
+  const counter = {
+    ...makePair(address(4), address(3), address(2)),
+    info: { websites: [{ url: 'https://stock.example' }] },
+  }
+  const otherChain = { ...owned, chainId: 'robinhood' }
+  expect(projectLinks([owned, owned, counter, otherChain], 'bsc', address(2))).toEqual({
+    websites: [{ url: 'https://meme.example', label: 'Website' }],
+    socials: [{ url: 'https://x.com/meme', type: 'twitter' }],
+  })
+  expect(projectLinks([counter], 'bsc', address(2))).toEqual({ websites: [], socials: [] })
+  expect(
+    projectLinks([{ ...owned, chainId: 'solana', baseToken: { address: 'AbC' } }], 'solana', 'abc'),
+  ).toEqual({ websites: [], socials: [] })
 })

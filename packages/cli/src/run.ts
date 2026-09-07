@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
 import { handleDepsCommand } from './deps.js'
+import { marketCommand } from './market.js'
 import { resolveAsterUser } from './aster.js'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
 import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
@@ -615,6 +616,7 @@ Groups:
   redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
+  market            Public trending tokens and their most liquid active pool
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
   lighter           Lighter account, market data, orders, deposits, and withdrawals
   execute           Execute on-chain steps from a JSON file
@@ -726,6 +728,7 @@ Examples:
   purr redpacket pending --sender bob.pie
   purr redpacket claim
   purr redpacket sent --limit 20 --offset 0
+  purr market trending --chain robinhood
   purr instance status
   purr instance credits
   purr hyperliquid account
@@ -782,6 +785,14 @@ Examples:
   let stakingDisplayChainId: number | undefined
 
   switch (group) {
+    case 'market': {
+      await marketCommand(
+        command,
+        rest.includes('--help') ? { help: 'true' } : parseStrictNamedArgs(rest, 'purr market'),
+      )
+      return
+    }
+
     case 'instance': {
       await handleInstanceCommand(command, args)
       return
@@ -2250,7 +2261,7 @@ Execution:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, execute, config, version, store`,
+        `Unknown group: ${group}. Use: market, aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, execute, config, version, store`,
       )
   }
 

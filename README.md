@@ -276,3 +276,11 @@ with at least $100k liquidity **where the requested token is the base token**.
 This can differ from trending's pool, which may contain the candidate on either
 side. Metrics describe that one pool, not total token or chain volume. New pools
 have incomplete time windows; these snapshots are not candlestick history.
+
+For an explicitly supplied CA, use `purr market token --chain <chain> <ca>`.
+It returns the same `{chain, candidates}` shape as trending, with at most one
+candidate. Exact identity can match either pool side; project links are taken
+only from matching base-token profiles. Discovery ranking and exclusion lists
+are not applied. A known token without an eligible active pool has empty
+`pool_names`; no matching token returns `candidates: []`. Provider errors fail
+the command rather than being reported as an unknown token.

@@ -308,10 +308,47 @@ export async function trending(
   }
 }
 
+export async function marketToken(
+  chain: Chain,
+  address: string,
+  get: GetJson = publicClient(),
+): Promise<{ chain: Chain; candidates: Candidate[] }> {
+  if (!(chain === 'solana' ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/ : /^0x[0-9a-f]{40}$/i).test(address))
+    throw new Error(`Invalid ${chain} token address: ${address}`)
+  const ca = normalize(address, chain)
+  const data = list(await get(`${DEX}/token-pairs/v1/${chain}/${encodeURIComponent(ca)}`))
+  const matches = data
+    .map(pair)
+    .filter(
+      (p) =>
+        p.chainId === chain &&
+        [p.baseToken, p.quoteToken].some((t) => normalize(t.address, chain) === ca),
+    )
+  // Prefer base-side metadata; quote-side matches still resolve exact token identity.
+  const identity =
+    matches.flatMap((p) => [p.baseToken]).find((t) => normalize(t.address, chain) === ca) ??
+    matches.flatMap((p) => [p.quoteToken]).find((t) => normalize(t.address, chain) === ca)
+  if (!identity) return { chain, candidates: [] }
+  return {
+    chain,
+    candidates: [
+      {
+        token: ca,
+        name: identity.name ?? '',
+        symbol: identity.symbol ?? '',
+        pool_names: bestPool(data, chain, ca),
+        ...projectLinks(data, chain, ca),
+      },
+    ],
+  }
+}
+
 export const marketHelp = `Usage: purr market trending --chain <robinhood|bnb|bsc|solana>
+       purr market token --chain <robinhood|bnb|bsc|solana> <ca>
        purr market read-pages <url...>
        purr market snapshot --chain <robinhood|bnb|bsc|solana> <ca...>
 
+token: exact CA lookup, same candidate shape as trending; no discovery exclusions.
 read-pages: 1–10 URLs, concurrency 3, bounded HTML/JSON extraction.
 snapshot: 1–5 CAs, most-liquid active base-token pool metrics.
 
@@ -338,7 +375,7 @@ export async function marketCommand(
     console.log(JSON.stringify(await readPages(positionals)))
     return
   }
-  if (!['trending', 'snapshot'].includes(command))
+  if (!['trending', 'snapshot', 'token'].includes(command))
     throw new Error(`Unknown market command: ${command}`)
   for (const key of Object.keys(args))
     if (key !== 'chain') throw new Error(`Unknown market option: --${key}`)
@@ -352,6 +389,11 @@ export async function marketCommand(
   }
   const chain = aliases[args.chain?.toLowerCase()]
   if (!chain) throw new Error('Use --chain robinhood, bnb, bsc, or solana')
+  if (command === 'token') {
+    if (positionals.length !== 1) throw new Error('token requires exactly one CA')
+    console.log(JSON.stringify(await marketToken(chain, positionals[0])))
+    return
+  }
   if (command === 'trending' && positionals.length)
     throw new Error('trending accepts no positional arguments')
   console.log(

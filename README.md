@@ -204,3 +204,43 @@ bun run test         # Run tests
 ## License
 
 Private
+
+### Public trending tokens
+
+```bash
+purr market trending --chain robinhood
+purr market trending --chain bnb
+purr market trending --chain solana
+```
+
+Returns JSON with `chain` and up to **five** `candidates`, each containing
+`token` (CA), `name`, `symbol`, and `pool_names` (at most one entry). There is no
+`--top` option. `bnb`/`bnb-chain` normalize to `bsc`; `robinhood-chain` is also accepted.
+No wallet, API key, or Python runtime is required.
+
+BNB/Robinhood discovery uses DexPaprika's first 100 pools ordered by 24-hour
+volume; Solana uses GeckoTerminal's trending pool page and retains its ranking.
+Discovery pools must match DEXScreener's chain, pool and token addresses, have
+at least $100k current liquidity and trades in the last six hours, and have
+nonzero discovery liquidity within 10x of DEXScreener. BNB/Robinhood candidates
+rank by summed accepted-pool volume. Duplicate pool addresses are counted once.
+
+The address exclusions in `packages/cli/src/market-exclusions.json` preserve the
+curated exclusions from the discovery prototype (stablecoins, wrapped assets,
+and other unwanted candidates). Robinhood additionally refreshes its official
+[stock/ETF deployment catalog](https://docs.robinhood.com/chain/stock-token-apis/)
+and excludes all chain-4663 addresses, including inactive assets. Failure to
+retrieve or parse that catalog stops discovery; it does not silently skip stock
+filtering. Provider names containing `Robinhood Token` are also excluded.
+These filters are not a comprehensive meme classification or a safety guarantee,
+and the official catalog does not classify unknown third-party stock wrappers.
+
+After ranking, each candidate is queried independently through DEXScreener's
+`/token-pairs/v1/{chain}/{CA}` endpoint. `pool_names` selects the highest USD
+liquidity among the returned pools with at least $100k liquidity and recent
+six-hour activity, checking either side for the exact CA. It is **not** limited
+to the discovery page. Names preserve provider base/quote order (for example,
+`SPCXB / MarsCoin`); a stock may remain as the counterasset of a meme candidate.
+If no eligible pool is returned, `pool_names` is empty. Provider failures fail
+the command rather than returning an apparently complete result. Each request
+has a 10-second timeout within a 70-second overall retrieval budget.

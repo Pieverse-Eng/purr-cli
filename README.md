@@ -250,3 +250,37 @@ Project links reuse the same per-token DEXScreener response: `website` and
 matches the requested CA and chain are used; quote-side profiles belong to the
 counterasset and are ignored. Links are deduplicated by URL before selecting the first. These are provider-listed project links, not independently
 verified endorsements. No additional requests are made for links.
+
+### Market narratives and snapshots
+
+```sh
+purr market read-pages https://example.com https://example.org/docs
+purr market snapshot --chain solana Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk
+```
+
+Both commands use public HTTP endpoints without wallet credentials or API keys.
+`read-pages` accepts 1–10 URLs and returns `{pages: [...]}` with title, description,
+readable text, related introduction/documentation links, final URL and status.
+It does not execute JavaScript, authenticate, crawl links, or search. HTML/JSON
+responses are limited to 1.5 MB, text to 6,000 characters, requests to 12 seconds,
+and concurrency to three. Page content remains untrusted source material.
+Unsupported, blocked, oversized or failed responses are marked `unavailable` per URL.
+The caller supplies URLs and is responsible for allowing network access to them.
+
+`snapshot` accepts 1–5 CAs with the same chain aliases as `trending`. It returns
+`chain`, `observed_at`, `scope`, and `candidates`. Each successful candidate includes
+pool identity, USD price/liquidity, 1h/6h/24h price changes, volumes and transaction
+counts, creation time and source links. Missing metrics are null; provider failures
+remain per-candidate `unavailable` results. It selects the most-liquid active pool
+with at least $100k liquidity **where the requested token is the base token**.
+This can differ from trending's pool, which may contain the candidate on either
+side. Metrics describe that one pool, not total token or chain volume. New pools
+have incomplete time windows; these snapshots are not candlestick history.
+
+For an explicitly supplied CA, use `purr market token --chain <chain> <ca>`.
+It returns the same `{chain, candidates}` shape as trending, with at most one
+candidate. Exact identity can match either pool side; project links are taken
+only from matching base-token profiles. Discovery ranking and exclusion lists
+are not applied. A known token without an eligible active pool has empty
+`pool_names`; no matching token returns `candidates: []`. Provider errors fail
+the command rather than being reported as an unknown token.

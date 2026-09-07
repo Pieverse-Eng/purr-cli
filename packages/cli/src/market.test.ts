@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { bestPool, marketCommand, projectLinks, stockAddresses, trending } from './market.js'
+import {
+  bestPool,
+  marketToken,
+  marketCommand,
+  projectLinks,
+  stockAddresses,
+  trending,
+} from './market.js'
 
 const address = (n: number) => `0x${n.toString(16).padStart(40, '0')}`
 const makePair = (id: string, base: string, quote: string, liquidity = 200_000, chain = 'bsc') => ({
@@ -195,4 +202,69 @@ it('extracts only exact base-token profile links, deduplicating and ignoring inv
   expect(
     projectLinks([{ ...owned, chainId: 'solana', baseToken: { address: 'AbC' } }], 'solana', 'abc'),
   ).toEqual({ website: null, social: null })
+})
+
+describe('single token lookup', () => {
+  it('returns the trending shape even for an excluded stablecoin and chooses the best pool', async () => {
+    const ca = '0x55d398326f99059ff775485246999027b3197955'
+    const base = {
+      ...makePair(address(1), ca, address(2)),
+      info: { websites: [{ url: 'https://example.com' }] },
+    }
+    const quote = {
+      ...makePair(address(3), address(4), ca, 900_000),
+      info: { socials: [{ url: 'https://wrong.example' }] },
+    }
+    const get = vi.fn(async () => [base, quote])
+    expect(await marketToken('bsc', ca.toUpperCase().replace('0X', '0x'), get)).toEqual({
+      chain: 'bsc',
+      candidates: [
+        {
+          token: ca,
+          name: ca,
+          symbol: 'MEME',
+          pool_names: ['MEME / STOCK'],
+          website: 'https://example.com',
+          social: null,
+        },
+      ],
+    })
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+  it('resolves quote-only identity without borrowing the base project links', async () => {
+    const ca = address(2)
+    const p = {
+      ...makePair(address(1), address(3), ca, 10),
+      info: { websites: [{ url: 'https://wrong.example' }] },
+    }
+    const result = await marketToken('bsc', ca, async () => [p])
+    expect(result.candidates[0]).toEqual({
+      token: ca,
+      name: ca,
+      symbol: 'STOCK',
+      pool_names: [],
+      website: null,
+      social: null,
+    })
+  })
+  it('preserves Solana case, returns empty for no exact match, and propagates provider errors', async () => {
+    const ca = 'AbC' + '1'.repeat(29)
+    expect(
+      (
+        await marketToken('solana', ca, async () => [
+          makePair('pool', ca.toLowerCase(), 'other', 200000, 'solana'),
+        ])
+      ).candidates,
+    ).toEqual([])
+    await expect(
+      marketToken('bsc', address(1), async () => {
+        throw new Error('HTTP 429')
+      }),
+    ).rejects.toThrow('429')
+    await expect(marketToken('bsc', 'bad', async () => [])).rejects.toThrow('Invalid')
+    await expect(marketCommand('token', { chain: 'bnb' }, [])).rejects.toThrow('exactly one')
+    await expect(
+      marketCommand('token', { chain: 'bnb' }, [address(1), address(2)]),
+    ).rejects.toThrow('exactly one')
+  })
 })

@@ -42,8 +42,8 @@ describe('market trending', () => {
         name: address(2),
         symbol: 'MEME',
         pool_names: ['SPCXB / MarsCoin'],
-        websites: [],
-        socials: [],
+        website: null,
+        social: null,
       },
     ])
     expect(urls.some((url) => url.endsWith(`/token-pairs/v1/bsc/${address(2)}`))).toBe(true)
@@ -174,7 +174,11 @@ describe('market trending', () => {
 
 it('extracts only exact base-token profile links, deduplicating and ignoring invalid URLs', () => {
   const profile = {
-    websites: [{ url: 'https://meme.example', label: 'Website' }, { url: 'javascript:alert(1)' }],
+    websites: [
+      { url: 'https://meme.example', label: 'Website' },
+      { url: 'https://second.example' },
+      { url: 'javascript:alert(1)' },
+    ],
     socials: [{ url: 'https://x.com/meme', type: 'twitter' }],
   }
   const owned = { ...makePair(address(1), address(2), address(3)), info: profile }
@@ -184,11 +188,11 @@ it('extracts only exact base-token profile links, deduplicating and ignoring inv
   }
   const otherChain = { ...owned, chainId: 'robinhood' }
   expect(projectLinks([owned, owned, counter, otherChain], 'bsc', address(2))).toEqual({
-    websites: ['https://meme.example'],
-    socials: ['https://x.com/meme'],
+    website: 'https://meme.example',
+    social: 'https://x.com/meme',
   })
-  expect(projectLinks([counter], 'bsc', address(2))).toEqual({ websites: [], socials: [] })
+  expect(projectLinks([counter], 'bsc', address(2))).toEqual({ website: null, social: null })
   expect(
     projectLinks([{ ...owned, chainId: 'solana', baseToken: { address: 'AbC' } }], 'solana', 'abc'),
-  ).toEqual({ websites: [], socials: [] })
+  ).toEqual({ website: null, social: null })
 })

@@ -22,8 +22,8 @@ type Candidate = {
   name: string
   symbol: string
   pool_names: string[]
-  websites: string[]
-  socials: string[]
+  website: string | null
+  social: string | null
 }
 type Row = Candidate & { volume: number; rank: number }
 export type GetJson = (url: string) => Promise<unknown>
@@ -98,7 +98,7 @@ export function projectLinks(
   data: unknown,
   chain: Chain,
   address: string,
-): { websites: string[]; socials: string[] } {
+): { website: string | null; social: string | null } {
   const websites: string[] = [],
     socials: string[] = []
   for (const value of list(data)) {
@@ -126,7 +126,7 @@ export function projectLinks(
       }
     }
   }
-  return { websites, socials }
+  return { website: websites[0] ?? null, social: socials[0] ?? null }
 }
 
 export function bestPool(data: unknown, chain: Chain, address: string): string[] {
@@ -275,8 +275,8 @@ export async function trending(
           name: t.name ?? '',
           symbol: t.symbol ?? '',
           pool_names: [],
-          websites: [],
-          socials: [],
+          website: null,
+          social: null,
           volume: 0,
           rank: ranks.get(ca) ?? Infinity,
         }
@@ -295,13 +295,13 @@ export async function trending(
   }
   return {
     chain,
-    candidates: ranked.map(({ token, name, symbol, pool_names, websites, socials }) => ({
+    candidates: ranked.map(({ token, name, symbol, pool_names, website, social }) => ({
       token,
       name,
       symbol,
       pool_names,
-      websites,
-      socials,
+      website,
+      social,
     })),
   }
 }

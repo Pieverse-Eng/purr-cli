@@ -214,7 +214,7 @@ purr market trending --chain solana
 ```
 
 Returns JSON with `chain` and up to **five** `candidates`, each containing
-`token` (CA), `name`, `symbol`, `pool_names` (at most one entry), `websites`, and `socials`. There is no
+`token` (CA), `name`, `symbol`, `pool_names` (at most one entry), `website`, and `social`. There is no
 `--top` option. `bnb`/`bnb-chain` normalize to `bsc`; `robinhood-chain` is also accepted.
 No wallet, API key, or Python runtime is required.
 
@@ -245,9 +245,8 @@ If no eligible pool is returned, `pool_names` is empty. Provider failures fail
 the command rather than returning an apparently complete result. Each request
 has a 10-second timeout within a 70-second overall retrieval budget.
 
-Project links reuse the same per-token DEXScreener response: `websites` contains
-URL strings and `socials` contains URL strings. Only profiles whose base token
+Project links reuse the same per-token DEXScreener response: `website` and
+`social` each contain the first valid URL string, or `null` when absent. Only profiles whose base token
 matches the requested CA and chain are used; quote-side profiles belong to the
-counterasset and are ignored. Links are deduplicated by URL; absent profiles
-produce empty arrays. These are provider-listed project links, not independently
+counterasset and are ignored. Links are deduplicated by URL before selecting the first. These are provider-listed project links, not independently
 verified endorsements. No additional requests are made for links.

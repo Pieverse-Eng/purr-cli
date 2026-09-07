@@ -1,3 +1,5 @@
+import { readPages } from './market-reader'
+import { snapshot } from './market-snapshot'
 import exclusions from './market-exclusions.json'
 
 type Chain = 'bsc' | 'robinhood' | 'solana'
@@ -307,6 +309,11 @@ export async function trending(
 }
 
 export const marketHelp = `Usage: purr market trending --chain <robinhood|bnb|bsc|solana>
+       purr market read-pages <url...>
+       purr market snapshot --chain <robinhood|bnb|bsc|solana> <ca...>
+
+read-pages: 1–10 URLs, concurrency 3, bounded HTML/JSON extraction.
+snapshot: 1–5 CAs, most-liquid active base-token pool metrics.
 
 Returns up to five filtered candidates and their most liquid active pool.
 Uses public APIs; no API key or wallet is required. Output is JSON.
@@ -315,6 +322,7 @@ Discovery is bounded to provider rankings, not an exhaustive meme or safety clas
 export async function marketCommand(
   command: string | undefined,
   args: Record<string, string>,
+  positionals: string[] = [],
 ): Promise<void> {
   if (
     !command ||
@@ -325,7 +333,13 @@ export async function marketCommand(
     console.log(marketHelp)
     return
   }
-  if (command !== 'trending') throw new Error(`Unknown market command: ${command}`)
+  if (command === 'read-pages') {
+    if (Object.keys(args).length) throw new Error('read-pages accepts only URLs')
+    console.log(JSON.stringify(await readPages(positionals)))
+    return
+  }
+  if (!['trending', 'snapshot'].includes(command))
+    throw new Error(`Unknown market command: ${command}`)
   for (const key of Object.keys(args))
     if (key !== 'chain') throw new Error(`Unknown market option: --${key}`)
   const aliases: Record<string, Chain> = {
@@ -338,5 +352,34 @@ export async function marketCommand(
   }
   const chain = aliases[args.chain?.toLowerCase()]
   if (!chain) throw new Error('Use --chain robinhood, bnb, bsc, or solana')
-  console.log(JSON.stringify(await trending(chain)))
+  if (command === 'trending' && positionals.length)
+    throw new Error('trending accepts no positional arguments')
+  console.log(
+    JSON.stringify(
+      command === 'snapshot' ? await snapshot(chain, positionals) : await trending(chain),
+    ),
+  )
+}
+
+export async function marketArgv(command: string | undefined, argv: string[]) {
+  if (argv.includes('--help') || argv.includes('-h'))
+    return marketCommand(command, { help: 'true' })
+  const options: Record<string, string> = {},
+    values: string[] = []
+  let literal = false
+  for (let i = 0; i < argv.length; i++) {
+    const value = argv[i]
+    if (!literal && value === '--') {
+      literal = true
+      continue
+    }
+    if (!literal && (value === '--chain' || value.startsWith('--chain='))) {
+      if (options.chain !== undefined) throw new Error('Duplicate --chain')
+      const chain = value === '--chain' ? argv[++i] : value.slice(8)
+      if (!chain || chain.startsWith('-')) throw new Error('Missing --chain value')
+      options.chain = chain
+    } else if (!literal && value.startsWith('-')) throw new Error(`Unknown market option: ${value}`)
+    else values.push(value)
+  }
+  return marketCommand(command, options, values)
 }

@@ -1504,12 +1504,16 @@ Examples:
       const chainId = parseChainId(requireArg(args, 'chain-id'))
       switch (command) {
         case 'quote': {
-          if (args.execute !== undefined) throw new Error('pancake quote is read-only; omit --execute')
+          if (args.execute !== undefined)
+            throw new Error('pancake quote is read-only; omit --execute')
           const result = await quotePancakeSwap({
-            path: requireArg(args, 'path').split(',').map((t) => resolveToken(t.trim(), chainId)),
+            path: requireArg(args, 'path')
+              .split(',')
+              .map((t) => resolveToken(t.trim(), chainId)),
             amountInWei: requireArg(args, 'amount-in-wei'),
             chainId,
-            slippageBps: args['slippage-bps'] === undefined ? undefined : Number(args['slippage-bps']),
+            slippageBps:
+              args['slippage-bps'] === undefined ? undefined : Number(args['slippage-bps']),
             router: args.router,
             rpcUrl: args['rpc-url'],
           })

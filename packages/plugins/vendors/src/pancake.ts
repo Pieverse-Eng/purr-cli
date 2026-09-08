@@ -117,17 +117,23 @@ export async function quotePancakeSwap(args: {
     return isNative(value) ? BSC_WBNB : requireAddress(value, 'path token')
   }) as `0x${string}`[]
   const router = requireAddress(args.router ?? DEFAULT_ROUTER, 'router')
-  const rpcUrl = args.rpcUrl || process.env.EVM_RPC_56 || process.env.BNB_RPC_URL ||
-    process.env.EVM_RPC_URL || 'https://bsc-rpc.publicnode.com'
+  const rpcUrl =
+    args.rpcUrl ||
+    process.env.EVM_RPC_56 ||
+    process.env.BNB_RPC_URL ||
+    process.env.EVM_RPC_URL ||
+    'https://bsc-rpc.publicnode.com'
   const client = createPublicClient({
     chain: bsc,
     transport: http(rpcUrl, { timeout: 15000, retryCount: 0 }),
   })
-  if (await client.getChainId() !== BSC_CHAIN_ID) throw new Error('RPC must serve BSC (56)')
+  if ((await client.getChainId()) !== BSC_CHAIN_ID) throw new Error('RPC must serve BSC (56)')
   const blockNumber = await client.getBlockNumber()
   const amounts = await client.readContract({
     address: router,
-    abi: parseAbi(['function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)']),
+    abi: parseAbi([
+      'function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)',
+    ]),
     functionName: 'getAmountsOut',
     args: [amountIn, path],
     blockNumber,
@@ -137,11 +143,17 @@ export async function quotePancakeSwap(args: {
   }
   const amountOut = amounts[amounts.length - 1]
   return {
-    provider: 'pancakeswap', version: 'v2', chainId: BSC_CHAIN_ID,
-    router, path, blockNumber: blockNumber.toString(),
-    amountInWei: amountIn.toString(), amountOutWei: amountOut.toString(),
-    amountOutMinWei: (amountOut * BigInt(10000 - slippageBps) / 10000n).toString(),
-    slippageBps, amounts: amounts.map(String),
+    provider: 'pancakeswap',
+    version: 'v2',
+    chainId: BSC_CHAIN_ID,
+    router,
+    path,
+    blockNumber: blockNumber.toString(),
+    amountInWei: amountIn.toString(),
+    amountOutWei: amountOut.toString(),
+    amountOutMinWei: ((amountOut * BigInt(10000 - slippageBps)) / 10000n).toString(),
+    slippageBps,
+    amounts: amounts.map(String),
   }
 }
 

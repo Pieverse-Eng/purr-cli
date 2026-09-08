@@ -1,4 +1,5 @@
-import { encodeFunctionData, parseAbi } from 'viem'
+import { createPublicClient, encodeFunctionData, http, parseAbi } from 'viem'
+import { bsc } from 'viem/chains'
 import {
   buildApprovalStep,
   isNative,
@@ -92,6 +93,55 @@ export interface PancakeSwapArgs {
 }
 
 const DEFAULT_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E'
+
+/** Read-only V2 quote for an explicit path; does not discover or rank routes. */
+export async function quotePancakeSwap(args: {
+  path: string[]
+  amountInWei: string
+  chainId: number
+  slippageBps?: number
+  router?: string
+  rpcUrl?: string
+}) {
+  if (args.chainId !== BSC_CHAIN_ID) throw new Error('PancakeSwap V2 quotes support BSC (56) only')
+  const amountIn = parseBigInt(args.amountInWei, 'amount-in-wei')
+  if (amountIn <= 0n) throw new Error('amount-in-wei must be positive')
+  const slippageBps = args.slippageBps ?? 100
+  if (!Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps >= 10000) {
+    throw new Error('slippage-bps must be an integer from 0 to 9999')
+  }
+  if (args.path.length < 2) throw new Error('Quote path must have at least 2 tokens')
+  const path = args.path.map((token) => {
+    const value = token.trim()
+    if (!value) throw new Error('path token must not be empty')
+    return isNative(value) ? BSC_WBNB : requireAddress(value, 'path token')
+  }) as `0x${string}`[]
+  const router = requireAddress(args.router ?? DEFAULT_ROUTER, 'router')
+  const client = createPublicClient({
+    chain: bsc,
+    transport: http(args.rpcUrl, { timeout: 15000, retryCount: 0 }),
+  })
+  if (await client.getChainId() !== BSC_CHAIN_ID) throw new Error('RPC must serve BSC (56)')
+  const blockNumber = await client.getBlockNumber()
+  const amounts = await client.readContract({
+    address: router,
+    abi: parseAbi(['function getAmountsOut(uint256 amountIn, address[] path) view returns (uint256[] amounts)']),
+    functionName: 'getAmountsOut',
+    args: [amountIn, path],
+    blockNumber,
+  })
+  if (amounts.length !== path.length || amounts[0] !== amountIn || amounts.some((n) => n <= 0n)) {
+    throw new Error('Router returned an invalid or empty quote')
+  }
+  const amountOut = amounts[amounts.length - 1]
+  return {
+    provider: 'pancakeswap', version: 'v2', chainId: BSC_CHAIN_ID,
+    router, path, blockNumber: blockNumber.toString(),
+    amountInWei: amountIn.toString(), amountOutWei: amountOut.toString(),
+    amountOutMinWei: (amountOut * BigInt(10000 - slippageBps) / 10000n).toString(),
+    slippageBps, amounts: amounts.map(String),
+  }
+}
 
 export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
   if (args.chainId !== BSC_CHAIN_ID) {

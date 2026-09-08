@@ -103,6 +103,7 @@ import {
   buildPancakeFarmSteps,
   buildPancakeRemoveLiquiditySteps,
   buildPancakeSwapSteps,
+  quotePancakeSwap,
   buildPancakeV3FarmSteps,
   buildSyrupStakeSteps,
   buildSyrupUnstakeSteps,
@@ -607,7 +608,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   osero             Osero USDS/sUSDS routes through the platform TEE wallet
   predict-fun       Predict.fun market data and trading through the platform TEE wallet
-  pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
+  pancake           PancakeSwap V2 quotes and calldata builders (swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaigns and PIEVERSE staking
   pns               Pie Name Service and identity lookup helpers
@@ -664,6 +665,7 @@ Examples:
   purr binance-onchain-pay p2p-trading-pairs --fiat USD
   purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
   purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
+  purr pancake quote --path USDT,CAKE --amount-in-wei 1000000000000000000 --chain-id 56 --slippage-bps 100
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -1504,6 +1506,19 @@ Examples:
     case 'pancake': {
       const chainId = parseChainId(requireArg(args, 'chain-id'))
       switch (command) {
+        case 'quote': {
+          if (args.execute !== undefined) throw new Error('pancake quote is read-only; omit --execute')
+          const result = await quotePancakeSwap({
+            path: requireArg(args, 'path').split(',').map((t) => resolveToken(t.trim(), chainId)),
+            amountInWei: requireArg(args, 'amount-in-wei'),
+            chainId,
+            slippageBps: args['slippage-bps'] === undefined ? undefined : Number(args['slippage-bps']),
+            router: args.router,
+            rpcUrl: args['rpc-url'],
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
         case 'swap':
           output = buildPancakeSwapSteps({
             path: requireArg(args, 'path')
@@ -1619,7 +1634,7 @@ Examples:
           break
         default:
           throw new Error(
-            `Unknown pancake command: ${command}. Use: swap, add-liquidity, remove-liquidity, stake, unstake, harvest, v3-mint, v3-increase, v3-decrease, v3-collect, v3-stake, v3-unstake, v3-harvest, syrup-stake, syrup-unstake`,
+            `Unknown pancake command: ${command}. Use: quote, swap, add-liquidity, remove-liquidity, stake, unstake, harvest, v3-mint, v3-increase, v3-decrease, v3-collect, v3-stake, v3-unstake, v3-harvest, syrup-stake, syrup-unstake`,
           )
       }
       break

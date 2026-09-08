@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
 import { handleDepsCommand } from './deps.js'
-import { marketCommand } from './market.js'
+import { marketArgv } from './market.js'
 import { resolveAsterUser } from './aster.js'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
 import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
@@ -788,10 +788,7 @@ Examples:
 
   switch (group) {
     case 'market': {
-      await marketCommand(
-        command,
-        rest.includes('--help') ? { help: 'true' } : parseStrictNamedArgs(rest, 'purr market'),
-      )
+      await marketArgv(command, rest)
       return
     }
 

@@ -255,7 +255,9 @@ verified endorsements. No additional requests are made for links.
 ### Pancake V2 quotes
 
 Pancake V2 quotes use an explicit path and raw token units. `--slippage-bps` defaults
-to 100 (1%). Optional `--rpc-url` and `--router` select the BSC RPC and V2 router.
+to 100 (1%). Optional `--router` selects the V2 router. RPC selection uses
+`--rpc-url`, then `EVM_RPC_56`, `BNB_RPC_URL`, `EVM_RPC_URL`, and finally
+`https://bsc-rpc.publicnode.com`; callers normally need no RPC argument.
 The response includes `amountOutWei`, `amountOutMinWei`, `path`, and `blockNumber`.
 Use the quoted minimum with the same swap inputs when requesting confirmation.
 Quotes do not include gas or transfer taxes, discover routes, or support V3/Infinity.

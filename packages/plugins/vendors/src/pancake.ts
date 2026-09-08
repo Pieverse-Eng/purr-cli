@@ -117,9 +117,11 @@ export async function quotePancakeSwap(args: {
     return isNative(value) ? BSC_WBNB : requireAddress(value, 'path token')
   }) as `0x${string}`[]
   const router = requireAddress(args.router ?? DEFAULT_ROUTER, 'router')
+  const rpcUrl = args.rpcUrl || process.env.EVM_RPC_56 || process.env.BNB_RPC_URL ||
+    process.env.EVM_RPC_URL || 'https://bsc-rpc.publicnode.com'
   const client = createPublicClient({
     chain: bsc,
-    transport: http(args.rpcUrl, { timeout: 15000, retryCount: 0 }),
+    transport: http(rpcUrl, { timeout: 15000, retryCount: 0 }),
   })
   if (await client.getChainId() !== BSC_CHAIN_ID) throw new Error('RPC must serve BSC (56)')
   const blockNumber = await client.getBlockNumber()

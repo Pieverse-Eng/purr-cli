@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { spawn } from 'node:child_process'
 import { decodeFunctionData, encodeAbiParameters, parseAbi } from 'viem'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { quotePancakeSwap } from '../../packages/plugins/vendors/src/pancake'
 
 const A = '0x55d398326f99059fF775485246999027B3197955'
@@ -29,6 +29,17 @@ async function withRpc(run: (url: string, calls: any[]) => Promise<void>, fail =
 }
 
 describe('Pancake V2 quote', () => {
+  afterEach(() => vi.unstubAllEnvs())
+  it('uses configured BSC RPC and gives explicit overrides precedence', async () => {
+    await withRpc(async (rpcUrl) => {
+      vi.stubEnv('EVM_RPC_56', rpcUrl)
+      vi.stubEnv('BNB_RPC_URL', 'http://127.0.0.1:1')
+      vi.stubEnv('EVM_RPC_URL', 'http://127.0.0.1:1')
+      expect((await quotePancakeSwap(base)).amountOutWei).toBe('123456789012345678901')
+      vi.stubEnv('EVM_RPC_56', 'http://127.0.0.1:1')
+      expect((await quotePancakeSwap({ ...base, rpcUrl })).amountOutWei).toBe('123456789012345678901')
+    })
+  })
   it('quotes at one block and floors minimum with bigint precision', async () => {
     await withRpc(async (rpcUrl, calls) => {
       const q = await quotePancakeSwap({ ...base, rpcUrl })

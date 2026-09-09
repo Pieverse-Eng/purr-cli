@@ -27,6 +27,19 @@ interface WalletResponse {
   error?: string
 }
 
+interface WalletStepResult {
+  stepIndex: number
+  label?: string
+  hash?: string
+  status?: string
+}
+
+interface WalletStepsResponse {
+  ok: boolean
+  data?: { results?: WalletStepResult[] }
+  error?: string
+}
+
 interface Identity {
   evmAddress: string
   solanaAddress: string
@@ -43,7 +56,17 @@ const ORDER_TYPES = ['LIMIT', 'MARKET', 'IOC', 'FOK', 'POST_ONLY', 'ASK', 'BID']
 const VAULT_ABI = parseAbi([
   'function getDepositFee(address account, (bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) view returns (uint256)',
 ])
+const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount) returns (bool)'])
+const DEPOSIT_ABI = parseAbi([
+  'function deposit((bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) payable',
+])
 const MAX_UINT128 = (1n << 128n) - 1n
+const ORDERLY_KEY_MAX_LIFETIME_MS = 365 * 24 * 60 * 60 * 1_000
+const ORDERLY_KEY_EXPIRY_BUFFER_MS = 5 * 60 * 1_000
+
+function orderlyKeyExpiration(timestamp: number): number {
+  return timestamp + ORDERLY_KEY_MAX_LIFETIME_MS - ORDERLY_KEY_EXPIRY_BUFFER_MS
+}
 
 export class OrderlyCliError extends Error {
   readonly code?: string | number
@@ -97,7 +120,7 @@ Trading commands:
   leverage set --symbol <symbol> --leverage <n> [--execute true]
   algo create --symbol <symbol> --side <BUY|SELL> --quantity <decimal> [--take-profit <price>] [--stop-loss <price>] [--execute true]
   algo list [--symbol <symbol>]
-  algo cancel --algo-order-id <id> [--execute true]
+  algo cancel --order-id <id> --symbol <symbol> [--execute true]
 
 ORDERLY_BROKER_ID is required for account, network, deposit, and withdrawal commands.
 All commands that change assets or orders are previews until --execute true is supplied.`
@@ -230,7 +253,7 @@ async function orderlyRequest<T = unknown>(
 async function platformWallet(chainType: 'ethereum' | 'solana'): Promise<string> {
   const { instanceId } = resolveCredentials()
   const response = await apiGet<WalletResponse>(
-    `/v1/instances/${encodeURIComponent(instanceId)}/wallet?chainType=${chainType}`,
+    `/v1/instances/${encodeURIComponent(instanceId)}/wallet?chain_type=${chainType}`,
   )
   const address = response.data?.address
   if (!response.ok || !address) {
@@ -296,7 +319,7 @@ async function lookupAccount(
   try {
     const data = await orderlyRequest<JsonRecord>(
       'GET',
-      query('/v1/get_account', { broker_id: brokerId(), address: evmAddress }),
+      query('/v1/get_account', { broker_id: brokerId(), address: evmAddress, chain_type: 'EVM' }),
     )
     return asString(data.account_id) ?? asString(record(data.data ?? {}).account_id)
   } catch (error) {
@@ -336,7 +359,7 @@ async function privateRequest<T = unknown>(
     method,
     headers: {
       Accept: 'application/json',
-      ...(body ? { 'Content-Type': 'application/json' } : {}),
+      'Content-Type': body ? 'application/json' : 'application/x-www-form-urlencoded',
       'orderly-timestamp': timestamp,
       'orderly-account-id': auth.accountId,
       'orderly-key': auth.orderlyKey,
@@ -578,7 +601,7 @@ async function onboard(args: Record<string, string>): Promise<void> {
           orderlyKey,
           scope: 'read,trading,asset',
           timestamp: now,
-          expiration: now + 31_536_000_000,
+          expiration: orderlyKeyExpiration(now),
         }
       : undefined
     return print({
@@ -599,16 +622,7 @@ async function onboard(args: Record<string, string>): Promise<void> {
 
   const solanaAddress = await ensureSolanaWallet()
   const orderlyKey = `ed25519:${solanaAddress}`
-  const addKeyMessage = {
-    brokerId: broker,
-    chainId,
-    orderlyKey,
-    scope: 'read,trading,asset',
-    timestamp: now,
-    expiration: now + 31_536_000_000,
-  }
   const registrationWireMessage = { ...registrationMessage, chainType: 'EVM' }
-  const addKeyWireMessage = { ...addKeyMessage, chainType: 'EVM' }
 
   const domain = {
     name: 'Orderly',
@@ -640,6 +654,16 @@ async function onboard(args: Record<string, string>): Promise<void> {
   }
   if (!accountId)
     throw new OrderlyCliError('Orderly did not return an account ID after registration')
+  const keyTimestamp = Date.now()
+  const addKeyMessage = {
+    brokerId: broker,
+    chainId,
+    orderlyKey,
+    scope: 'read,trading,asset',
+    timestamp: keyTimestamp,
+    expiration: orderlyKeyExpiration(keyTimestamp),
+  }
+  const addKeyWireMessage = { ...addKeyMessage, chainType: 'EVM' }
   const keySignature = await signTypedData(
     domain,
     {
@@ -713,7 +737,14 @@ async function deposit(args: Record<string, string>): Promise<void> {
       to: tokenInfo.address,
       signature: 'approve(address,uint256)',
       args: [vault, amountWei.toString()],
+      value: '0',
       chainId,
+      conditional: {
+        type: 'allowance_lt',
+        token: tokenInfo.address,
+        spender: vault,
+        amount: amountWei.toString(),
+      },
     },
     {
       kind: 'deposit',
@@ -736,37 +767,54 @@ async function deposit(args: Record<string, string>): Promise<void> {
       steps,
     })
   const { instanceId } = resolveCredentials()
-  const approval = await apiPost<WalletResponse>(
+  const approvalData = encodeFunctionData({
+    abi: ERC20_APPROVE_ABI,
+    functionName: 'approve',
+    args: [vault, amountWei],
+  })
+  const depositData = encodeFunctionData({
+    abi: DEPOSIT_ABI,
+    functionName: 'deposit',
+    args: [input],
+  })
+  const result = await apiPost<WalletStepsResponse>(
     `/v1/instances/${encodeURIComponent(instanceId)}/wallet/execute`,
     {
-      to: tokenInfo.address,
-      abi: ['function approve(address spender, uint256 amount) returns (bool)'],
-      functionName: 'approve',
-      args: [vault, amountWei.toString()],
-      chainId,
-    },
-  )
-  if (!approval.ok || !approval.data?.hash)
-    throw new OrderlyCliError(approval.error ?? 'Orderly token approval failed')
-  const deposited = await apiPost<WalletResponse>(
-    `/v1/instances/${encodeURIComponent(instanceId)}/wallet/execute`,
-    {
-      to: vault,
-      abi: [
-        'function deposit((bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) payable',
+      steps: [
+        {
+          label: 'approve',
+          to: tokenInfo.address,
+          data: approvalData,
+          value: '0',
+          chainId,
+          conditional: {
+            type: 'allowance_lt',
+            token: tokenInfo.address,
+            spender: vault,
+            amount: amountWei.toString(),
+          },
+        },
+        {
+          label: 'deposit',
+          to: vault,
+          data: depositData,
+          value: feeWei,
+          chainId,
+        },
       ],
-      functionName: 'deposit',
-      args: [input],
-      value: feeWei,
-      chainId,
+      dedupKey: `${instanceId}:orderly-deposit:${chainId}:${tokenInfo.address.toLowerCase()}:${amountWei.toString()}`,
     },
   )
-  if (!deposited.ok || !deposited.data?.hash)
-    throw new OrderlyCliError(deposited.error ?? 'Orderly deposit transaction failed')
+  const results = result.data?.results
+  const approval = results?.find((step) => step.label === 'approve')
+  const deposited = results?.find((step) => step.label === 'deposit')
+  if (!result.ok || !deposited?.hash)
+    throw new OrderlyCliError(result.error ?? 'Orderly deposit transaction failed')
   print({
     execute: true,
-    approveTxHash: approval.data.hash,
-    depositTxHash: deposited.data.hash,
+    approveTxHash: approval?.status === 'success' ? approval.hash : null,
+    approvalSkipped: approval?.status === 'skipped',
+    depositTxHash: deposited.hash,
     accountId: identityContext.accountId,
   })
 }
@@ -1072,14 +1120,17 @@ export async function orderlyCommand(command: string, args: Record<string, strin
       if (body.leverage === undefined || body.leverage < 1)
         throw new OrderlyCliError('Missing or invalid --leverage')
       if (!execute(args)) return print({ execute: false, leverage: body })
-      return print(await privateRequest('POST', '/v1/client/leverage', body))
+      return print(await privateRequest('POST', '/v1/client/leverages', body))
     }
     case 'algo-create':
       return await createAlgo(args)
     case 'algo-list':
       return print(await privateRequest('GET', query('/v1/algo/orders', { symbol: args.symbol })))
     case 'algo-cancel': {
-      const path = query('/v1/algo/order', { algo_order_id: required(args, 'algo-order-id') })
+      const path = query('/v1/algo/order', {
+        order_id: required(args, 'order-id'),
+        symbol: required(args, 'symbol'),
+      })
       if (!execute(args)) return print({ execute: false, method: 'DELETE', path })
       return print(await privateRequest('DELETE', path))
     }

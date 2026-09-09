@@ -37,8 +37,8 @@ function json(data: unknown, status = 200): Response {
 
 function mockWallets(): void {
   mocks.apiGet.mockImplementation(async (path: string) => {
-    if (path.endsWith('chainType=ethereum')) return { ok: true, data: { address: EVM_ADDRESS } }
-    if (path.endsWith('chainType=solana')) return { ok: true, data: { address: SOLANA_ADDRESS } }
+    if (path.endsWith('chain_type=ethereum')) return { ok: true, data: { address: EVM_ADDRESS } }
+    if (path.endsWith('chain_type=solana')) return { ok: true, data: { address: SOLANA_ADDRESS } }
     throw new Error(`Unexpected wallet request: ${path}`)
   })
 }
@@ -81,9 +81,13 @@ describe('Orderly API contracts', () => {
   it('uses address, rather than user_address, when deriving a private identity', async () => {
     mockWallets()
     mocks.apiPost.mockResolvedValue({ ok: true, data: { signature: 'c2lnbmF0dXJl' } })
-    const fetchMock = vi.fn(async (input: string) => {
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
       if (input.includes('/v1/get_account'))
         return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      if (input.endsWith('/v1/client/holding'))
+        expect(init?.headers).toMatchObject({
+          'Content-Type': 'application/x-www-form-urlencoded',
+        })
       if (input.endsWith('/v1/client/holding'))
         return json({ success: true, data: { holding: [] } })
       throw new Error(`Unexpected Orderly request: ${input}`)
@@ -93,7 +97,7 @@ describe('Orderly API contracts', () => {
     await orderlyCommand('balance', {})
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `https://api.orderly.org/v1/get_account?broker_id=broker-1&address=${EVM_ADDRESS}`,
+      `https://api.orderly.org/v1/get_account?broker_id=broker-1&address=${EVM_ADDRESS}&chain_type=EVM`,
       expect.objectContaining({ method: 'GET' }),
     )
   })
@@ -161,10 +165,150 @@ describe('Orderly API contracts', () => {
       feeWei: '7',
       feeSource: 'vault_rpc',
       steps: [
-        { to: TOKEN_ADDRESS, signature: 'approve(address,uint256)' },
+        {
+          to: TOKEN_ADDRESS,
+          signature: 'approve(address,uint256)',
+          value: '0',
+          conditional: {
+            type: 'allowance_lt',
+            token: TOKEN_ADDRESS,
+            spender: VAULT_ADDRESS,
+            amount: '1500000',
+          },
+        },
         { to: VAULT_ADDRESS, signature: 'deposit((bytes32,bytes32,bytes32,uint128))' },
       ],
     })
+  })
+
+  it('executes a deposit as one conditional, idempotent wallet step request', async () => {
+    mockWallets()
+    let executionBody: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+      if (path.endsWith('/wallet/execute')) {
+        executionBody = body
+        return {
+          ok: true,
+          data: {
+            results: [
+              { stepIndex: 0, label: 'approve', hash: '0xapprove', status: 'skipped' },
+              { stepIndex: 1, label: 'deposit', hash: '0xdeposit', status: 'success' },
+            ],
+          },
+        }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.includes('/v1/get_account'))
+        return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      if (input.includes('/v1/public/chain_info')) {
+        return json({
+          success: true,
+          data: [
+            {
+              chain_id: 42161,
+              vault_address: VAULT_ADDRESS,
+              public_rpc_url: 'https://rpc.example',
+            },
+          ],
+        })
+      }
+      if (input.endsWith('/v1/public/token')) {
+        return json({
+          success: true,
+          data: [
+            {
+              token: 'USDC',
+              decimals: 6,
+              chain_details: [{ chain_id: 42161, contract_address: TOKEN_ADDRESS, decimals: 6 }],
+            },
+          ],
+        })
+      }
+      if (input === 'https://rpc.example') {
+        expect(JSON.parse(String(init?.body))).toMatchObject({ method: 'eth_call' })
+        return json({ result: encodeAbiParameters(parseAbiParameters('uint256'), [7n]) })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('deposit', {
+      'chain-id': '42161',
+      token: 'USDC',
+      amount: '1.5',
+      execute: 'true',
+    })
+
+    expect(executionBody).toMatchObject({
+      dedupKey: `instance-123:orderly-deposit:42161:${TOKEN_ADDRESS}:1500000`,
+      steps: [
+        {
+          label: 'approve',
+          to: TOKEN_ADDRESS,
+          value: '0',
+          conditional: {
+            type: 'allowance_lt',
+            token: TOKEN_ADDRESS,
+            spender: VAULT_ADDRESS,
+            amount: '1500000',
+          },
+        },
+        { label: 'deposit', to: VAULT_ADDRESS, value: '7' },
+      ],
+    })
+    expect(mocks.apiPost).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0]))).toMatchObject({
+      execute: true,
+      approvalSkipped: true,
+      approveTxHash: null,
+      depositTxHash: '0xdeposit',
+    })
+  })
+
+  it('uses the current leverage and algo cancellation endpoint contracts', async () => {
+    mockWallets()
+    mocks.apiPost.mockImplementation(async (path: string) => {
+      if (path.endsWith('/wallet/sign')) return { ok: true, data: { signature: 'c2lnbmF0dXJl' } }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.includes('/v1/get_account'))
+        return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      if (input.endsWith('/v1/client/leverages')) {
+        expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json' })
+        return json({ success: true, data: {} })
+      }
+      if (input.endsWith('/v1/algo/order?order_id=algo-1&symbol=PERP_BTC_USDC')) {
+        expect(init?.headers).toMatchObject({
+          'Content-Type': 'application/x-www-form-urlencoded',
+        })
+        return json({ success: true, data: {} })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('leverage-set', {
+      symbol: 'PERP_BTC_USDC',
+      leverage: '2',
+      execute: 'true',
+    })
+    await orderlyCommand('algo-cancel', {
+      'order-id': 'algo-1',
+      symbol: 'PERP_BTC_USDC',
+      execute: 'true',
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.orderly.org/v1/client/leverages',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.orderly.org/v1/algo/order?order_id=algo-1&symbol=PERP_BTC_USDC',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
   })
 
   it('uses ledger decimals for withdrawals and appends chainType after signing', async () => {
@@ -232,8 +376,8 @@ describe('Orderly API contracts', () => {
 
   it('never creates a Solana wallet while previewing onboarding', async () => {
     mocks.apiGet.mockImplementation(async (path: string) => {
-      if (path.endsWith('chainType=ethereum')) return { ok: true, data: { address: EVM_ADDRESS } }
-      if (path.endsWith('chainType=solana')) return { ok: false, error: 'No Solana wallet' }
+      if (path.endsWith('chain_type=ethereum')) return { ok: true, data: { address: EVM_ADDRESS } }
+      if (path.endsWith('chain_type=solana')) return { ok: false, error: 'No Solana wallet' }
       throw new Error(`Unexpected wallet request: ${path}`)
     })
     const fetchMock = vi.fn(async (input: string) => {
@@ -293,6 +437,10 @@ describe('Orderly API contracts', () => {
     }
     expect(registrationBody).toMatchObject({ message: { chainType: 'EVM' } })
     expect(addKeyBody).toMatchObject({ message: { chainType: 'EVM' } })
+    const addKeyMessage = (addKeyBody?.message ?? {}) as Record<string, unknown>
+    expect(Number(addKeyMessage.expiration) - Number(addKeyMessage.timestamp)).toBe(
+      365 * 24 * 60 * 60 * 1_000 - 5 * 60 * 1_000,
+    )
   })
 })
 

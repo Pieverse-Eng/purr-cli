@@ -41,8 +41,9 @@ const TESTNET_LEDGER = '0x1826B75e2ef249173FC735149AE4B8e9ea10abff'
 const ORDER_TYPES = ['LIMIT', 'MARKET', 'IOC', 'FOK', 'POST_ONLY', 'ASK', 'BID'] as const
 
 const VAULT_ABI = parseAbi([
-  'function getDepositFee(address account, (bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint256 tokenAmount) input) view returns (uint256)',
+  'function getDepositFee(address account, (bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) view returns (uint256)',
 ])
+const MAX_UINT128 = (1n << 128n) - 1n
 
 export class OrderlyCliError extends Error {
   readonly code?: string | number
@@ -295,7 +296,7 @@ async function lookupAccount(
   try {
     const data = await orderlyRequest<JsonRecord>(
       'GET',
-      query('/v1/get_account', { broker_id: brokerId(), user_address: evmAddress }),
+      query('/v1/get_account', { broker_id: brokerId(), address: evmAddress }),
     )
     return asString(data.account_id) ?? asString(record(data.data ?? {}).account_id)
   } catch (error) {
@@ -374,9 +375,11 @@ async function tokenMetadata(
     (item) => asString(item.token)?.toUpperCase() === token.toUpperCase(),
   )
   if (!row) throw new OrderlyCliError(`Orderly does not support token ${token}`)
-  const addresses = record(row.address)
-  const address = asString(addresses[String(chainId)])
-  const decimals = Number(row.decimals)
+  const chain = asRows(row.chain_details).find(
+    (item) => Number(item.chain_id ?? item.chainId) === chainId,
+  )
+  const address = asString(chain?.contract_address ?? chain?.contractAddress)
+  const decimals = Number(chain?.decimals)
   if (!address || !isAddress(address) || !Number.isInteger(decimals)) {
     throw new OrderlyCliError(`${token} is not executable on chain ${chainId}`)
   }
@@ -533,9 +536,7 @@ async function onboard(args: Record<string, string>): Promise<void> {
   const chainId = requiredChainId(args)
   const broker = brokerId()
   const evmAddress = await platformWallet('ethereum')
-  const solanaAddress = await ensureSolanaWallet()
   const existing = await lookupAccount(evmAddress, false)
-  const orderlyKey = `ed25519:${solanaAddress}`
   const now = Date.now()
   const registrationNonce = existing
     ? undefined
@@ -552,6 +553,42 @@ async function onboard(args: Record<string, string>): Promise<void> {
     timestamp: now,
     ...(nonceValue !== undefined ? { registrationNonce: String(nonceValue) } : {}),
   }
+  if (!execute(args)) {
+    let solanaAddress: string | undefined
+    try {
+      solanaAddress = await platformWallet('solana')
+    } catch {
+      // A preview must not create a managed wallet. Creation happens only after --execute true.
+    }
+    const orderlyKey = solanaAddress ? `ed25519:${solanaAddress}` : undefined
+    const addKeyMessage = orderlyKey
+      ? {
+          brokerId: broker,
+          chainId,
+          orderlyKey,
+          scope: 'read,trading,asset',
+          timestamp: now,
+          expiration: now + 31_536_000_000,
+        }
+      : undefined
+    return print({
+      execute: false,
+      evmAddress,
+      solanaAddress: solanaAddress ?? null,
+      solanaWalletCreationRequired: !solanaAddress,
+      existingAccountId: existing ?? null,
+      orderlyKey: orderlyKey ?? null,
+      registration: existing
+        ? { required: false }
+        : { required: true, message: registrationMessage },
+      addOrderlyKey: addKeyMessage
+        ? { required: true, message: addKeyMessage }
+        : { required: true, requiresSolanaWallet: true },
+    })
+  }
+
+  const solanaAddress = await ensureSolanaWallet()
+  const orderlyKey = `ed25519:${solanaAddress}`
   const addKeyMessage = {
     brokerId: broker,
     chainId,
@@ -560,16 +597,6 @@ async function onboard(args: Record<string, string>): Promise<void> {
     timestamp: now,
     expiration: now + 31_536_000_000,
   }
-  const preview = {
-    execute: false,
-    evmAddress,
-    solanaAddress,
-    existingAccountId: existing ?? null,
-    orderlyKey,
-    registration: existing ? { required: false } : { required: true, message: registrationMessage },
-    addOrderlyKey: { required: true, message: addKeyMessage },
-  }
-  if (!execute(args)) return print(preview)
 
   const domain = {
     name: 'Orderly',
@@ -637,6 +664,8 @@ async function deposit(args: Record<string, string>): Promise<void> {
     throw new OrderlyCliError(`Orderly chain ${chainId} has no executable EVM vault`)
   const tokenInfo = await tokenMetadata(token, chainId)
   const amountWei = parseUnits(amount, tokenInfo.decimals)
+  if (amountWei > MAX_UINT128)
+    throw new OrderlyCliError('--amount exceeds the Orderly Vault uint128 tokenAmount limit')
   const input = {
     accountId: identityContext.accountId as `0x${string}`,
     brokerHash: keccak256(stringToHex(brokerId())),
@@ -677,7 +706,7 @@ async function deposit(args: Record<string, string>): Promise<void> {
     {
       kind: 'deposit',
       to: vault,
-      signature: 'deposit((bytes32,bytes32,bytes32,uint256))',
+      signature: 'deposit((bytes32,bytes32,bytes32,uint128))',
       args: [input.accountId, input.brokerHash, input.tokenHash, amountWei.toString()],
       value: feeWei,
       chainId,
@@ -712,7 +741,7 @@ async function deposit(args: Record<string, string>): Promise<void> {
     {
       to: vault,
       abi: [
-        'function deposit((bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint256 tokenAmount) input) payable',
+        'function deposit((bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) payable',
       ],
       functionName: 'deposit',
       args: [input],
@@ -744,6 +773,7 @@ async function withdraw(args: Record<string, string>): Promise<void> {
   const message = {
     brokerId: brokerId(),
     chainId,
+    chainType: 'EVM',
     receiver,
     token,
     amount: parseUnits(amount, tokenInfo.decimals).toString(),
@@ -770,6 +800,7 @@ async function withdraw(args: Record<string, string>): Promise<void> {
       Withdraw: [
         { name: 'brokerId', type: 'string' },
         { name: 'chainId', type: 'uint256' },
+        { name: 'chainType', type: 'string' },
         { name: 'receiver', type: 'address' },
         { name: 'token', type: 'string' },
         { name: 'amount', type: 'uint256' },
@@ -780,7 +811,19 @@ async function withdraw(args: Record<string, string>): Promise<void> {
     'Withdraw',
     message,
   )
-  print(await privateRequest('POST', '/v1/withdraw_request', { message, signature }, context))
+  print(
+    await privateRequest(
+      'POST',
+      '/v1/withdraw_request',
+      {
+        message,
+        signature,
+        userAddress: context.evmAddress,
+        verifyingContract: domain.verifyingContract,
+      },
+      context,
+    ),
+  )
 }
 
 function orderFromArgs(args: Record<string, string>): JsonRecord {

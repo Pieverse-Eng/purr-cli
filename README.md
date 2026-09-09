@@ -58,11 +58,17 @@ purr <group> <command> [options]
 | `execute` | Execute `TxStep[]` JSON from a file through the configured instance wallet |
 | `evm` | Local EVM primitive builders: approve, transfer, raw, and abi-call |
 | `instance` | Instance billing status and trusted-wallet renewal |
+| `agentkey` | Dynamic live-data tool discovery, schemas, single-call execution, and AI Credit receipts through the platform |
 | `store` | Browse and install agent skills from Pieverse + OKX stores |
 | `config` | Manage persistent `api-url`, `api-token`, and `instance-id` credentials |
 | `version` | Print the CLI version |
 
 ### Examples
+
+AgentKey uses the same discover → describe → execute interaction as its MCP
+tools, through the platform's shared account. See [AgentKey commands and agent
+workflow](docs/agentkey.md). No provider catalog or upstream credential is stored
+in the CLI.
 
 ```bash
 purr wallet address --chain-type ethereum

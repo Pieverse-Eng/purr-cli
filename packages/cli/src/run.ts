@@ -164,6 +164,7 @@ import {
   treasureCodeVault,
 } from '@pieverseio/purr-plugin-wallet/treasure-code'
 import { handleInstanceCommand } from './instance.js'
+import { handleAgentKeyCommand, formatAgentKeyError } from './agentkey.js'
 import { pieTransfer } from './pie.js'
 import type { PluginId, PluginRuntimeMap, PurrCliOptions } from './types.js'
 
@@ -506,6 +507,11 @@ function owsBitgetSigner(
 export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
   const [group, command, ...rest] = process.argv.slice(2)
 
+  if (group === 'agentkey') {
+    await handleAgentKeyCommand(command, rest)
+    return
+  }
+
   if (group === 'version' || group === '--version' || group === '-v') {
     console.log(`purr ${currentVersion()}`)
     return
@@ -616,6 +622,7 @@ Groups:
   redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
+  agentkey          Discover, describe, and execute live-data tools using AI Credits
   market            Public trending tokens and their most liquid active pool
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
   lighter           Lighter account, market data, orders, deposits, and withdrawals
@@ -2292,6 +2299,10 @@ Execution:
 }
 
 export async function handleCliError(err: unknown, options: PurrCliOptions = {}): Promise<void> {
+  if (process.argv[2] === 'agentkey') {
+    console.error(formatAgentKeyError(err))
+    process.exit(1)
+  }
   const ows = isPluginEnabled(options, 'ows')
     ? await loadPlugin('ows').catch(() => undefined)
     : undefined

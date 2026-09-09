@@ -71,6 +71,7 @@ export interface ApiCredentials {
 export interface ApiRequestOptions {
   headers?: Record<string, string>
   timeoutMs?: number
+  redirect?: RequestRedirect
 }
 
 export class ApiClientError extends Error {
@@ -80,6 +81,7 @@ export class ApiClientError extends Error {
   readonly bodyText: string
   readonly body: unknown
   readonly retryAfter: string | undefined
+  readonly requestId: string | undefined
 
   constructor({
     status,
@@ -88,6 +90,7 @@ export class ApiClientError extends Error {
     bodyText,
     body,
     retryAfter,
+    requestId,
   }: {
     status: number
     method: string
@@ -95,6 +98,7 @@ export class ApiClientError extends Error {
     bodyText: string
     body: unknown
     retryAfter?: string
+    requestId?: string
   }) {
     super(`API error ${status} ${method} ${path}: ${bodyText}`)
     this.name = 'ApiClientError'
@@ -104,6 +108,7 @@ export class ApiClientError extends Error {
     this.bodyText = bodyText
     this.body = body
     this.retryAfter = retryAfter
+    this.requestId = requestId
   }
 }
 
@@ -209,6 +214,7 @@ export async function apiPost<T = unknown>(
     },
     body: JSON.stringify(body),
     signal: requestSignal(options.timeoutMs),
+    redirect: options.redirect,
   })
 
   if (!res.ok) {
@@ -220,6 +226,7 @@ export async function apiPost<T = unknown>(
       bodyText: respBody,
       body: parseErrorBody(respBody),
       retryAfter: res.headers?.get?.('retry-after') ?? undefined,
+      requestId: res.headers?.get?.('x-agentkey-request-id') ?? undefined,
     })
   }
 

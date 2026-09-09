@@ -276,7 +276,8 @@ describe('Orderly API contracts', () => {
         addKeyBody = JSON.parse(String(init?.body))
         return json({ success: true, data: {} })
       }
-      if (input.endsWith('/v1/client/holding')) return json({ success: true, data: { holding: [] } })
+      if (input.endsWith('/v1/client/holding'))
+        return json({ success: true, data: { holding: [] } })
       throw new Error(`Unexpected Orderly request: ${input}`)
     })
     vi.stubGlobal('fetch', fetchMock)

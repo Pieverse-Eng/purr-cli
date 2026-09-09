@@ -1,3 +1,5 @@
+import { readPages } from './market-reader'
+import { snapshot } from './market-snapshot'
 import exclusions from './market-exclusions.json'
 
 type Chain = 'bsc' | 'robinhood' | 'solana'
@@ -306,7 +308,49 @@ export async function trending(
   }
 }
 
+export async function marketToken(
+  chain: Chain,
+  address: string,
+  get: GetJson = publicClient(),
+): Promise<{ chain: Chain; candidates: Candidate[] }> {
+  if (!(chain === 'solana' ? /^[1-9A-HJ-NP-Za-km-z]{32,44}$/ : /^0x[0-9a-f]{40}$/i).test(address))
+    throw new Error(`Invalid ${chain} token address: ${address}`)
+  const ca = normalize(address, chain)
+  const data = list(await get(`${DEX}/token-pairs/v1/${chain}/${encodeURIComponent(ca)}`))
+  const matches = data
+    .map(pair)
+    .filter(
+      (p) =>
+        p.chainId === chain &&
+        [p.baseToken, p.quoteToken].some((t) => normalize(t.address, chain) === ca),
+    )
+  // Prefer base-side metadata; quote-side matches still resolve exact token identity.
+  const identity =
+    matches.flatMap((p) => [p.baseToken]).find((t) => normalize(t.address, chain) === ca) ??
+    matches.flatMap((p) => [p.quoteToken]).find((t) => normalize(t.address, chain) === ca)
+  if (!identity) return { chain, candidates: [] }
+  return {
+    chain,
+    candidates: [
+      {
+        token: ca,
+        name: identity.name ?? '',
+        symbol: identity.symbol ?? '',
+        pool_names: bestPool(data, chain, ca),
+        ...projectLinks(data, chain, ca),
+      },
+    ],
+  }
+}
+
 export const marketHelp = `Usage: purr market trending --chain <robinhood|bnb|bsc|solana>
+       purr market token --chain <robinhood|bnb|bsc|solana> <ca>
+       purr market read-pages <url...>
+       purr market snapshot --chain <robinhood|bnb|bsc|solana> <ca...>
+
+token: exact CA lookup, same candidate shape as trending; no discovery exclusions.
+read-pages: 1–10 URLs, concurrency 3, bounded HTML/JSON extraction.
+snapshot: 1–5 CAs, most-liquid active base-token pool metrics.
 
 Returns up to five filtered candidates and their most liquid active pool.
 Uses public APIs; no API key or wallet is required. Output is JSON.
@@ -315,6 +359,7 @@ Discovery is bounded to provider rankings, not an exhaustive meme or safety clas
 export async function marketCommand(
   command: string | undefined,
   args: Record<string, string>,
+  positionals: string[] = [],
 ): Promise<void> {
   if (
     !command ||
@@ -325,7 +370,13 @@ export async function marketCommand(
     console.log(marketHelp)
     return
   }
-  if (command !== 'trending') throw new Error(`Unknown market command: ${command}`)
+  if (command === 'read-pages') {
+    if (Object.keys(args).length) throw new Error('read-pages accepts only URLs')
+    console.log(JSON.stringify(await readPages(positionals)))
+    return
+  }
+  if (!['trending', 'snapshot', 'token'].includes(command))
+    throw new Error(`Unknown market command: ${command}`)
   for (const key of Object.keys(args))
     if (key !== 'chain') throw new Error(`Unknown market option: --${key}`)
   const aliases: Record<string, Chain> = {
@@ -338,5 +389,39 @@ export async function marketCommand(
   }
   const chain = aliases[args.chain?.toLowerCase()]
   if (!chain) throw new Error('Use --chain robinhood, bnb, bsc, or solana')
-  console.log(JSON.stringify(await trending(chain)))
+  if (command === 'token') {
+    if (positionals.length !== 1) throw new Error('token requires exactly one CA')
+    console.log(JSON.stringify(await marketToken(chain, positionals[0])))
+    return
+  }
+  if (command === 'trending' && positionals.length)
+    throw new Error('trending accepts no positional arguments')
+  console.log(
+    JSON.stringify(
+      command === 'snapshot' ? await snapshot(chain, positionals) : await trending(chain),
+    ),
+  )
+}
+
+export async function marketArgv(command: string | undefined, argv: string[]) {
+  if (argv.includes('--help') || argv.includes('-h'))
+    return marketCommand(command, { help: 'true' })
+  const options: Record<string, string> = {},
+    values: string[] = []
+  let literal = false
+  for (let i = 0; i < argv.length; i++) {
+    const value = argv[i]
+    if (!literal && value === '--') {
+      literal = true
+      continue
+    }
+    if (!literal && (value === '--chain' || value.startsWith('--chain='))) {
+      if (options.chain !== undefined) throw new Error('Duplicate --chain')
+      const chain = value === '--chain' ? argv[++i] : value.slice(8)
+      if (!chain || chain.startsWith('-')) throw new Error('Missing --chain value')
+      options.chain = chain
+    } else if (!literal && value.startsWith('-')) throw new Error(`Unknown market option: ${value}`)
+    else values.push(value)
+  }
+  return marketCommand(command, options, values)
 }

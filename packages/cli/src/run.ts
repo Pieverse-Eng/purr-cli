@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs'
 import { configGet, configList, configSet } from '@pieverseio/purr-core/api-client'
 import { executeStepsFromFile, executeStepsFromJson } from '@pieverseio/purr-core/executor'
 import { handleDepsCommand } from './deps.js'
-import { marketCommand } from './market.js'
+import { marketArgv } from './market.js'
 import { resolveAsterUser } from './aster.js'
 import { requireArgOrFile } from '@pieverseio/purr-core/file-input'
 import { parseJsonCliArg } from '@pieverseio/purr-core/json-input'
@@ -92,6 +92,7 @@ import {
   hyperliquidHelp,
 } from '@pieverseio/purr-plugin-hyperliquid/index'
 import { LighterCliError, lighterCommand, lighterHelp } from '@pieverseio/purr-plugin-lighter/index'
+import { OrderlyCliError, orderlyCommand, orderlyHelp } from '@pieverseio/purr-plugin-orderly/index'
 import { OseroCliError, oseroCommand, oseroHelp } from '@pieverseio/purr-plugin-vendors/osero'
 import {
   PredictCliError,
@@ -103,6 +104,7 @@ import {
   buildPancakeFarmSteps,
   buildPancakeRemoveLiquiditySteps,
   buildPancakeSwapSteps,
+  quotePancakeSwap,
   buildPancakeV3FarmSteps,
   buildSyrupStakeSteps,
   buildSyrupUnstakeSteps,
@@ -613,7 +615,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   osero             Osero USDS/sUSDS routes through the platform TEE wallet
   predict-fun       Predict.fun market data and trading through the platform TEE wallet
-  pancake           PancakeSwap calldata builder (V2/V3 swap, LP, farm, syrup)
+  pancake           PancakeSwap V2 quotes and calldata builders (swap, LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaigns and PIEVERSE staking
   pns               Pie Name Service and identity lookup helpers
@@ -626,6 +628,7 @@ Groups:
   market            Public trending tokens and their most liquid active pool
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
   lighter           Lighter account, market data, orders, deposits, and withdrawals
+  orderly           Orderly managed-wallet perpetuals: market data, assets, orders, positions, and TP/SL
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -671,6 +674,7 @@ Examples:
   purr binance-onchain-pay p2p-trading-pairs --fiat USD
   purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
   purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
+  purr pancake quote --path USDT,CAKE --amount-in-wei 1000000000000000000 --chain-id 56 --slippage-bps 100
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -793,10 +797,7 @@ Examples:
 
   switch (group) {
     case 'market': {
-      await marketCommand(
-        command,
-        rest.includes('--help') ? { help: 'true' } : parseStrictNamedArgs(rest, 'purr market'),
-      )
+      await marketArgv(command, rest)
       return
     }
 
@@ -820,6 +821,31 @@ Examples:
         return
       }
       await lighterCommand(command, args)
+      return
+    }
+
+    case 'orderly': {
+      if (!command || command === 'help' || command === '--help' || command === '-h') {
+        console.log(orderlyHelp())
+        return
+      }
+      if (
+        ['order', 'position', 'leverage', 'algo'].includes(command) ||
+        (command === 'orders' && rest[0] === 'cancel-all')
+      ) {
+        const [subcommand, ...optionArgv] = rest
+        if (!subcommand || subcommand.startsWith('--')) {
+          throw new Error(
+            `Missing Orderly ${command} action. Use: purr orderly ${command} <action> --options`,
+          )
+        }
+        const nestedArgs = parseStrictNamedArgs(optionArgv, `purr orderly ${command} ${subcommand}`)
+        const mapped = `${command}-${subcommand}`
+        await orderlyCommand(mapped, nestedArgs)
+        return
+      }
+      const orderlyArgs = parseStrictNamedArgs(rest, `purr orderly ${command}`)
+      await orderlyCommand(command, orderlyArgs)
       return
     }
 
@@ -1511,6 +1537,23 @@ Examples:
     case 'pancake': {
       const chainId = parseChainId(requireArg(args, 'chain-id'))
       switch (command) {
+        case 'quote': {
+          if (args.execute !== undefined)
+            throw new Error('pancake quote is read-only; omit --execute')
+          const result = await quotePancakeSwap({
+            path: requireArg(args, 'path')
+              .split(',')
+              .map((t) => resolveToken(t.trim(), chainId)),
+            amountInWei: requireArg(args, 'amount-in-wei'),
+            chainId,
+            slippageBps:
+              args['slippage-bps'] === undefined ? undefined : Number(args['slippage-bps']),
+            router: args.router,
+            rpcUrl: args['rpc-url'],
+          })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
         case 'swap':
           output = buildPancakeSwapSteps({
             path: requireArg(args, 'path')
@@ -1626,7 +1669,7 @@ Examples:
           break
         default:
           throw new Error(
-            `Unknown pancake command: ${command}. Use: swap, add-liquidity, remove-liquidity, stake, unstake, harvest, v3-mint, v3-increase, v3-decrease, v3-collect, v3-stake, v3-unstake, v3-harvest, syrup-stake, syrup-unstake`,
+            `Unknown pancake command: ${command}. Use: quote, swap, add-liquidity, remove-liquidity, stake, unstake, harvest, v3-mint, v3-increase, v3-decrease, v3-collect, v3-stake, v3-unstake, v3-harvest, syrup-stake, syrup-unstake`,
           )
       }
       break
@@ -2268,7 +2311,7 @@ Execution:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: market, aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, execute, config, version, store`,
+        `Unknown group: ${group}. Use: market, aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, orderly, execute, config, version, store`,
       )
   }
 
@@ -2317,6 +2360,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
     process.exit(err.exitCode)
   }
   if (err instanceof LighterCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
+  }
+  if (err instanceof OrderlyCliError) {
     const prefix = err.code ? `error [${err.code}]` : 'error'
     console.error(`${prefix}: ${err.message}`)
     if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))

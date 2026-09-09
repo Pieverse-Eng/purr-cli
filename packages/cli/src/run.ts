@@ -92,6 +92,7 @@ import {
   hyperliquidHelp,
 } from '@pieverseio/purr-plugin-hyperliquid/index'
 import { LighterCliError, lighterCommand, lighterHelp } from '@pieverseio/purr-plugin-lighter/index'
+import { OrderlyCliError, orderlyCommand, orderlyHelp } from '@pieverseio/purr-plugin-orderly/index'
 import { OseroCliError, oseroCommand, oseroHelp } from '@pieverseio/purr-plugin-vendors/osero'
 import {
   PredictCliError,
@@ -620,6 +621,7 @@ Groups:
   market            Public trending tokens and their most liquid active pool
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
   lighter           Lighter account, market data, orders, deposits, and withdrawals
+  orderly           Orderly managed-wallet perpetuals: market data, assets, orders, positions, and TP/SL
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
   config            Manage persistent credentials (set, get, list)
@@ -812,6 +814,31 @@ Examples:
         return
       }
       await lighterCommand(command, args)
+      return
+    }
+
+    case 'orderly': {
+      if (!command || command === 'help' || command === '--help' || command === '-h') {
+        console.log(orderlyHelp())
+        return
+      }
+      if (
+        ['order', 'position', 'leverage', 'algo'].includes(command) ||
+        (command === 'orders' && rest[0] === 'cancel-all')
+      ) {
+        const [subcommand, ...optionArgv] = rest
+        if (!subcommand || subcommand.startsWith('--')) {
+          throw new Error(
+            `Missing Orderly ${command} action. Use: purr orderly ${command} <action> --options`,
+          )
+        }
+        const nestedArgs = parseStrictNamedArgs(optionArgv, `purr orderly ${command} ${subcommand}`)
+        const mapped = `${command}-${subcommand}`
+        await orderlyCommand(mapped, nestedArgs)
+        return
+      }
+      const orderlyArgs = parseStrictNamedArgs(rest, `purr orderly ${command}`)
+      await orderlyCommand(command, orderlyArgs)
       return
     }
 
@@ -2277,7 +2304,7 @@ Execution:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: market, aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, execute, config, version, store`,
+        `Unknown group: ${group}. Use: market, aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, orderly, execute, config, version, store`,
       )
   }
 
@@ -2322,6 +2349,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
     process.exit(err.exitCode)
   }
   if (err instanceof LighterCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
+  }
+  if (err instanceof OrderlyCliError) {
     const prefix = err.code ? `error [${err.code}]` : 'error'
     console.error(`${prefix}: ${err.message}`)
     if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))

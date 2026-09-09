@@ -822,10 +822,15 @@ Examples:
         console.log(orderlyHelp())
         return
       }
-      if (['order', 'position', 'leverage', 'algo'].includes(command) || (command === 'orders' && rest[0] === 'cancel-all')) {
+      if (
+        ['order', 'position', 'leverage', 'algo'].includes(command) ||
+        (command === 'orders' && rest[0] === 'cancel-all')
+      ) {
         const [subcommand, ...optionArgv] = rest
         if (!subcommand || subcommand.startsWith('--')) {
-          throw new Error(`Missing Orderly ${command} action. Use: purr orderly ${command} <action> --options`)
+          throw new Error(
+            `Missing Orderly ${command} action. Use: purr orderly ${command} <action> --options`,
+          )
         }
         const nestedArgs = parseStrictNamedArgs(optionArgv, `purr orderly ${command} ${subcommand}`)
         const mapped = `${command}-${subcommand}`

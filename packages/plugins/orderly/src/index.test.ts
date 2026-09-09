@@ -10,13 +10,12 @@ describe('Orderly request authentication', () => {
         '/v1/order?symbol=PERP_BTC_USDC',
         '{"symbol":"PERP_BTC_USDC","side":"BUY"}',
       ),
-    ).toBe(
-      '1700000000000POST/v1/order?symbol=PERP_BTC_USDC{"symbol":"PERP_BTC_USDC","side":"BUY"}',
-    )
+    ).toBe('1700000000000POST/v1/order?symbol=PERP_BTC_USDC{"symbol":"PERP_BTC_USDC","side":"BUY"}')
   })
 
   it('converts TEE base64 signatures to Orderly unpadded base64url', () => {
     expect(toBase64Url('++//aA==')).toBe('--__aA')
+    expect(toBase64Url('c2lnbmF0dXJl')).toBe('c2lnbmF0dXJl')
   })
 })
 

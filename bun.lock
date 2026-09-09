@@ -24,6 +24,7 @@
         "@pieverseio/purr-plugin-evm": "workspace:*",
         "@pieverseio/purr-plugin-hyperliquid": "workspace:*",
         "@pieverseio/purr-plugin-lighter": "workspace:*",
+        "@pieverseio/purr-plugin-orderly": "workspace:*",
         "@pieverseio/purr-plugin-ows": "workspace:*",
         "@pieverseio/purr-plugin-pieverse-card": "workspace:*",
         "@pieverseio/purr-plugin-pns": "workspace:*",
@@ -67,6 +68,14 @@
       "version": "0.2.50",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
+      },
+    },
+    "packages/plugins/orderly": {
+      "name": "@pieverseio/purr-plugin-orderly",
+      "version": "0.2.50",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
+        "viem": "^2.46.0",
       },
     },
     "packages/plugins/ows": {
@@ -209,6 +218,8 @@
     "@pieverseio/purr-plugin-hyperliquid": ["@pieverseio/purr-plugin-hyperliquid@workspace:packages/plugins/hyperliquid"],
 
     "@pieverseio/purr-plugin-lighter": ["@pieverseio/purr-plugin-lighter@workspace:packages/plugins/lighter"],
+
+    "@pieverseio/purr-plugin-orderly": ["@pieverseio/purr-plugin-orderly@workspace:packages/plugins/orderly"],
 
     "@pieverseio/purr-plugin-ows": ["@pieverseio/purr-plugin-ows@workspace:packages/plugins/ows"],
 

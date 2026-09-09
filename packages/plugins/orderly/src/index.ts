@@ -29,15 +29,15 @@ interface WalletResponse {
 
 interface WalletStepResult {
   stepIndex: number
-  label?: string
-  hash?: string
-  status?: string
+  label: string
+  hash: string
+  status: 'success' | 'skipped'
 }
 
 interface WalletStepsResponse {
   ok: boolean
-  data?: { results?: WalletStepResult[] }
-  error?: string
+  data: { results: WalletStepResult[] } | undefined
+  error: string | undefined
 }
 
 interface Identity {
@@ -255,7 +255,7 @@ async function orderlyRequest<T = unknown>(
 async function platformWallet(chainType: 'ethereum' | 'solana'): Promise<string> {
   const { instanceId } = resolveCredentials()
   const response = await apiGet<WalletResponse>(
-    `/v1/instances/${encodeURIComponent(instanceId)}/wallet?chain_type=${chainType}`,
+    query(`/v1/instances/${encodeURIComponent(instanceId)}/wallet`, { chain_type: chainType }),
   )
   const address = response.data?.address
   if (!response.ok || !address) {
@@ -357,11 +357,13 @@ async function privateRequest<T = unknown>(
   const bodyText = body ? JSON.stringify(body) : ''
   const canonical = orderlyCanonicalMessage(timestamp, method, path, bodyText)
   const signature = await signRawSolana(canonical)
+  let contentType = 'application/x-www-form-urlencoded'
+  if (body !== undefined) contentType = 'application/json'
   const response = await fetch(`${API_URL}${path}`, {
     method,
     headers: {
       Accept: 'application/json',
-      'Content-Type': body ? 'application/json' : 'application/x-www-form-urlencoded',
+      'Content-Type': contentType,
       'orderly-timestamp': timestamp,
       'orderly-account-id': auth.accountId,
       'orderly-key': auth.orderlyKey,
@@ -807,15 +809,25 @@ async function deposit(args: Record<string, string>): Promise<void> {
       dedupKey: `${instanceId}:orderly-deposit:${chainId}:${tokenInfo.address.toLowerCase()}:${amountWei.toString()}`,
     },
   )
-  const results = result.data?.results
-  const approval = results?.find((step) => step.label === 'approve')
-  const deposited = results?.find((step) => step.label === 'deposit')
-  if (!result.ok || !deposited?.hash)
-    throw new OrderlyCliError(result.error ?? 'Orderly deposit transaction failed')
+  let results: WalletStepResult[] = []
+  if (result.data !== undefined) results = result.data.results
+  const approval = results.find((step) => step.label === 'approve')
+  const deposited = results.find((step) => step.label === 'deposit')
+  if (!result.ok || deposited === undefined || deposited.hash.length === 0) {
+    let message = 'Orderly deposit transaction failed'
+    if (result.error !== undefined) message = result.error
+    throw new OrderlyCliError(message)
+  }
+  let approveTxHash: string | null = null
+  let approvalSkipped = false
+  if (approval !== undefined) {
+    approvalSkipped = approval.status === 'skipped'
+    if (approval.status === 'success') approveTxHash = approval.hash
+  }
   print({
     execute: true,
-    approveTxHash: approval?.status === 'success' ? approval.hash : null,
-    approvalSkipped: approval?.status === 'skipped',
+    approveTxHash,
+    approvalSkipped,
     depositTxHash: deposited.hash,
     accountId: identityContext.accountId,
   })
@@ -1122,7 +1134,7 @@ export async function orderlyCommand(command: string, args: Record<string, strin
       if (body.leverage === undefined || body.leverage < 1)
         throw new OrderlyCliError('Missing or invalid --leverage')
       if (!execute(args)) return print({ execute: false, leverage: body })
-      return print(await privateRequest('POST', '/v1/client/leverages', body))
+      return print(await privateRequest('POST', '/v1/client/leverages', body, undefined))
     }
     case 'algo-create':
       return await createAlgo(args)
@@ -1134,7 +1146,7 @@ export async function orderlyCommand(command: string, args: Record<string, strin
         symbol: required(args, 'symbol'),
       })
       if (!execute(args)) return print({ execute: false, method: 'DELETE', path })
-      return print(await privateRequest('DELETE', path))
+      return print(await privateRequest('DELETE', path, undefined, undefined))
     }
     default:
       throw new OrderlyCliError(`Unknown Orderly command: ${command}.\n${ORDERLY_USAGE}`)

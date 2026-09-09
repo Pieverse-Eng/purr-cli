@@ -142,22 +142,22 @@ describe('purr agentkey (real CLI and HTTP client)', () => {
     ])
   })
 
-  it.each([
-    [{ q: 'Robinhood', num: 1 }],
-    [['wallet-123', { limit: 1 }]],
-  ])('refreshes a quote and executes exactly once with params %j', async (params) => {
-    const h = await harness()
-    const r = await h.run(['execute', 'social/future/lookup', '--params', JSON.stringify(params)])
-    expect(r.code).toBe(0)
-    expect(JSON.parse(r.stdout)).toEqual(receipt)
-    expect(h.calls.map((c) => c.path.split('/').at(-1))).toEqual(['describe', 'execute'])
-    expect(h.calls[1].body).toEqual({
-      name: 'FutureProvider/lookup',
-      params,
-      priceVersion: version,
-      maxCredits: '0.051963',
-    })
-  })
+  it.each([[{ q: 'Robinhood', num: 1 }], [['wallet-123', { limit: 1 }]]])(
+    'refreshes a quote and executes exactly once with params %j',
+    async (params) => {
+      const h = await harness()
+      const r = await h.run(['execute', 'social/future/lookup', '--params', JSON.stringify(params)])
+      expect(r.code).toBe(0)
+      expect(JSON.parse(r.stdout)).toEqual(receipt)
+      expect(h.calls.map((c) => c.path.split('/').at(-1))).toEqual(['describe', 'execute'])
+      expect(h.calls[1].body).toEqual({
+        name: 'FutureProvider/lookup',
+        params,
+        priceVersion: version,
+        maxCredits: '0.051963',
+      })
+    },
+  )
 
   it('supports a params file and forwards an explicit ceiling', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'purr-agentkey-'))

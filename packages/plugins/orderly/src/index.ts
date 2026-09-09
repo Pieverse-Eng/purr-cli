@@ -56,7 +56,9 @@ const ORDER_TYPES = ['LIMIT', 'MARKET', 'IOC', 'FOK', 'POST_ONLY', 'ASK', 'BID']
 const VAULT_ABI = parseAbi([
   'function getDepositFee(address account, (bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) view returns (uint256)',
 ])
-const ERC20_APPROVE_ABI = parseAbi(['function approve(address spender, uint256 amount) returns (bool)'])
+const ERC20_APPROVE_ABI = parseAbi([
+  'function approve(address spender, uint256 amount) returns (bool)',
+])
 const DEPOSIT_ABI = parseAbi([
   'function deposit((bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) payable',
 ])

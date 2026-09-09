@@ -300,7 +300,11 @@ async function lookupAccount(
     )
     return asString(data.account_id) ?? asString(record(data.data ?? {}).account_id)
   } catch (error) {
-    if (!requiredAccount && error instanceof OrderlyCliError && error.status === 404)
+    if (
+      !requiredAccount &&
+      error instanceof OrderlyCliError &&
+      (error.status === 404 || String(error.code) === '-1607')
+    )
       return undefined
     throw error
   }
@@ -369,7 +373,7 @@ async function publicInfo(symbol: string): Promise<JsonRecord> {
 async function tokenMetadata(
   token: string,
   chainId: number,
-): Promise<{ address: string; decimals: number }> {
+): Promise<{ address: string; chainDecimals: number; ledgerDecimals: number }> {
   const response = await orderlyRequest<unknown>('GET', '/v1/public/token')
   const row = asRows(response).find(
     (item) => asString(item.token)?.toUpperCase() === token.toUpperCase(),
@@ -379,11 +383,17 @@ async function tokenMetadata(
     (item) => Number(item.chain_id ?? item.chainId) === chainId,
   )
   const address = asString(chain?.contract_address ?? chain?.contractAddress)
-  const decimals = Number(chain?.decimals)
-  if (!address || !isAddress(address) || !Number.isInteger(decimals)) {
+  const chainDecimals = Number(chain?.decimals)
+  const ledgerDecimals = Number(row.decimals)
+  if (
+    !address ||
+    !isAddress(address) ||
+    !Number.isInteger(chainDecimals) ||
+    !Number.isInteger(ledgerDecimals)
+  ) {
     throw new OrderlyCliError(`${token} is not executable on chain ${chainId}`)
   }
-  return { address, decimals }
+  return { address, chainDecimals, ledgerDecimals }
 }
 
 async function chainMetadata(chainId: number): Promise<JsonRecord> {
@@ -399,7 +409,7 @@ async function chainMetadata(chainId: number): Promise<JsonRecord> {
 function chainRpcUrl(chain: JsonRecord, chainId: number): string | undefined {
   const configured = process.env[`ORDERLY_RPC_URL_${chainId}`]
   if (configured) return configured
-  for (const key of ['rpc_url', 'rpcUrl', 'rpc'] as const) {
+  for (const key of ['public_rpc_url', 'rpc_url', 'rpcUrl', 'rpc'] as const) {
     const value = asString(chain[key])
     if (value) return value
   }
@@ -580,9 +590,9 @@ async function onboard(args: Record<string, string>): Promise<void> {
       orderlyKey: orderlyKey ?? null,
       registration: existing
         ? { required: false }
-        : { required: true, message: registrationMessage },
+        : { required: true, message: { ...registrationMessage, chainType: 'EVM' } },
       addOrderlyKey: addKeyMessage
-        ? { required: true, message: addKeyMessage }
+        ? { required: true, message: { ...addKeyMessage, chainType: 'EVM' } }
         : { required: true, requiresSolanaWallet: true },
     })
   }
@@ -597,6 +607,8 @@ async function onboard(args: Record<string, string>): Promise<void> {
     timestamp: now,
     expiration: now + 31_536_000_000,
   }
+  const registrationWireMessage = { ...registrationMessage, chainType: 'EVM' }
+  const addKeyWireMessage = { ...addKeyMessage, chainType: 'EVM' }
 
   const domain = {
     name: 'Orderly',
@@ -620,7 +632,7 @@ async function onboard(args: Record<string, string>): Promise<void> {
       registrationMessage,
     )
     const response = await orderlyRequest<JsonRecord>('POST', '/v1/register_account', {
-      message: registrationMessage,
+      message: registrationWireMessage,
       signature,
       userAddress: evmAddress,
     })
@@ -644,7 +656,7 @@ async function onboard(args: Record<string, string>): Promise<void> {
     addKeyMessage,
   )
   await orderlyRequest('POST', '/v1/orderly_key', {
-    message: addKeyMessage,
+    message: addKeyWireMessage,
     signature: keySignature,
     userAddress: evmAddress,
   })
@@ -663,7 +675,7 @@ async function deposit(args: Record<string, string>): Promise<void> {
   if (!vault || !isAddress(vault))
     throw new OrderlyCliError(`Orderly chain ${chainId} has no executable EVM vault`)
   const tokenInfo = await tokenMetadata(token, chainId)
-  const amountWei = parseUnits(amount, tokenInfo.decimals)
+  const amountWei = parseUnits(amount, tokenInfo.chainDecimals)
   if (amountWei > MAX_UINT128)
     throw new OrderlyCliError('--amount exceeds the Orderly Vault uint128 tokenAmount limit')
   const input = {
@@ -770,15 +782,18 @@ async function withdraw(args: Record<string, string>): Promise<void> {
   const nonce = await privateRequest<JsonRecord>('GET', '/v1/withdraw_nonce', undefined, context)
   const withdrawNonce = asString(nonce.withdraw_nonce) ?? String(nonce.withdraw_nonce ?? '')
   if (!withdrawNonce) throw new OrderlyCliError('Orderly did not return a withdrawal nonce')
-  const message = {
+  const signedMessage = {
     brokerId: brokerId(),
     chainId,
-    chainType: 'EVM',
     receiver,
     token,
-    amount: parseUnits(amount, tokenInfo.decimals).toString(),
+    amount: parseUnits(amount, tokenInfo.ledgerDecimals).toString(),
     withdrawNonce,
     timestamp: Date.now(),
+  }
+  const message = {
+    ...signedMessage,
+    chainType: 'EVM',
     ...(args['allow-cross-chain'] === 'true' ? { allowCrossChainWithdraw: true } : {}),
   }
   const domain = {
@@ -800,7 +815,6 @@ async function withdraw(args: Record<string, string>): Promise<void> {
       Withdraw: [
         { name: 'brokerId', type: 'string' },
         { name: 'chainId', type: 'uint256' },
-        { name: 'chainType', type: 'string' },
         { name: 'receiver', type: 'address' },
         { name: 'token', type: 'string' },
         { name: 'amount', type: 'uint256' },
@@ -809,7 +823,7 @@ async function withdraw(args: Record<string, string>): Promise<void> {
       ],
     },
     'Withdraw',
-    message,
+    signedMessage,
   )
   print(
     await privateRequest(

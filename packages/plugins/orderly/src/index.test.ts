@@ -98,8 +98,7 @@ describe('Orderly API contracts', () => {
     )
   })
 
-  it('reads token chain_details and encodes the Vault fee query with uint128 tokenAmount', async () => {
-    process.env.ORDERLY_RPC_URL_42161 = 'https://rpc.example'
+  it('reads token chain_details and public_rpc_url for the Vault fee query', async () => {
     mockWallets()
     const expectedCallData = encodeFunctionData({
       abi: parseAbi([
@@ -120,7 +119,16 @@ describe('Orderly API contracts', () => {
       if (input.includes('/v1/get_account'))
         return json({ success: true, data: { account_id: ACCOUNT_ID } })
       if (input.includes('/v1/public/chain_info')) {
-        return json({ success: true, data: [{ chain_id: 42161, vault_address: VAULT_ADDRESS }] })
+        return json({
+          success: true,
+          data: [
+            {
+              chain_id: 42161,
+              vault_address: VAULT_ADDRESS,
+              public_rpc_url: 'https://rpc.example',
+            },
+          ],
+        })
       }
       if (input.endsWith('/v1/public/token')) {
         return json({
@@ -128,6 +136,7 @@ describe('Orderly API contracts', () => {
           data: [
             {
               token: 'USDC',
+              decimals: 6,
               chain_details: [{ chain_id: 42161, contract_address: TOKEN_ADDRESS, decimals: 6 }],
             },
           ],
@@ -158,7 +167,7 @@ describe('Orderly API contracts', () => {
     })
   })
 
-  it('sends the complete withdraw request and signs the chain type', async () => {
+  it('uses ledger decimals for withdrawals and appends chainType after signing', async () => {
     mockWallets()
     mocks.apiPost.mockImplementation(async (path: string) => {
       if (path.endsWith('/wallet/sign-typed-data'))
@@ -174,7 +183,8 @@ describe('Orderly API contracts', () => {
           data: [
             {
               token: 'USDC',
-              chain_details: [{ chain_id: 42161, contract_address: TOKEN_ADDRESS, decimals: 6 }],
+              decimals: 6,
+              chain_details: [{ chain_id: 42161, contract_address: TOKEN_ADDRESS, decimals: 18 }],
             },
           ],
         })
@@ -203,9 +213,9 @@ describe('Orderly API contracts', () => {
       '/v1/instances/instance-123/wallet/sign-typed-data',
       expect.objectContaining({
         types: expect.objectContaining({
-          Withdraw: expect.arrayContaining([{ name: 'chainType', type: 'string' }]),
+          Withdraw: expect.not.arrayContaining([{ name: 'chainType', type: 'string' }]),
         }),
-        message: expect.objectContaining({ chainType: 'EVM' }),
+        message: expect.not.objectContaining({ chainType: 'EVM' }),
       }),
     )
     expect(withdrawalBody).toMatchObject({
@@ -242,6 +252,46 @@ describe('Orderly API contracts', () => {
       solanaWalletCreationRequired: true,
       addOrderlyKey: { required: true, requiresSolanaWallet: true },
     })
+  })
+
+  it('treats code -1607 as unregistered and appends chainType to onboarding wire messages', async () => {
+    mockWallets()
+    mocks.apiPost.mockImplementation(async (path: string) => {
+      if (path.endsWith('/wallet/sign-typed-data'))
+        return { ok: true, data: { signature: '0xtyped' } }
+      if (path.endsWith('/wallet/sign')) return { ok: true, data: { signature: 'c2lnbmF0dXJl' } }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    let registrationBody: Record<string, unknown> | undefined
+    let addKeyBody: Record<string, unknown> | undefined
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.includes('/v1/get_account'))
+        return json({ success: false, code: -1607, message: 'Account not found' })
+      if (input.endsWith('/v1/registration_nonce')) return json({ success: true, data: 1 })
+      if (input.endsWith('/v1/register_account')) {
+        registrationBody = JSON.parse(String(init?.body))
+        return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      }
+      if (input.endsWith('/v1/orderly_key')) {
+        addKeyBody = JSON.parse(String(init?.body))
+        return json({ success: true, data: {} })
+      }
+      if (input.endsWith('/v1/client/holding')) return json({ success: true, data: { holding: [] } })
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('onboard', { 'chain-id': '42161', execute: 'true' })
+
+    const typedDataCalls = mocks.apiPost.mock.calls.filter(([path]) =>
+      String(path).endsWith('/wallet/sign-typed-data'),
+    )
+    expect(typedDataCalls).toHaveLength(2)
+    for (const [, request] of typedDataCalls) {
+      expect((request as Record<string, unknown>).message).not.toHaveProperty('chainType')
+    }
+    expect(registrationBody).toMatchObject({ message: { chainType: 'EVM' } })
+    expect(addKeyBody).toMatchObject({ message: { chainType: 'EVM' } })
   })
 })
 

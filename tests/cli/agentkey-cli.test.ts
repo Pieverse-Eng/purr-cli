@@ -231,6 +231,53 @@ describe('purr agentkey (real CLI and HTTP client)', () => {
     expect(h.calls[2].path).toBe(`/v1/instances/${instanceId}/agentkey/requests/${requestId}`)
   })
 
+  it.each([undefined, { message: 'unknown search type: news', code: 400, type: 'validation' }])(
+    'stops polling indeterminate receipts and preserves error details: %j',
+    async (error) => {
+      const uncertain = {
+        ...receipt,
+        state: 'indeterminate',
+        billing: { ...receipt.billing, status: 'held' },
+        result: null,
+        ...(error ? { error } : {}),
+      }
+      const h = await harness((c, _req, res) =>
+        c.path.endsWith('/describe') ? json(res, quote) : json(res, uncertain, 202),
+      )
+      for (const args of [
+        ['execute', 'FutureProvider/lookup', '--params', '{}'],
+        ['request', requestId],
+      ]) {
+        const r = await h.run(args)
+        expect(r.code).toBe(1)
+        expect(JSON.parse(r.stdout)).toEqual(uncertain)
+        expect(r.stderr).toContain('Do not keep polling')
+        expect(r.stderr).not.toContain('purr agentkey request')
+      }
+      expect(h.calls.map((c) => c.method)).toEqual(['POST', 'POST', 'GET'])
+    },
+  )
+  it('preserves sanitized diagnostic fields on HTTP errors', async () => {
+    const h = await harness((_c, _req, res) =>
+      json(
+        res,
+        {
+          code: 'AGENTKEY_UPSTREAM_UNAVAILABLE',
+          error: { message: 'unknown tool', code: 400, type: 'validation', internal: 'private' },
+        },
+        502,
+      ),
+    )
+    const r = await h.run(['describe', 'Unknown/tool'])
+    expect(r.code).toBe(1)
+    expect(JSON.parse(r.stderr).error.upstreamError).toEqual({
+      message: 'unknown tool',
+      code: 400,
+      type: 'validation',
+    })
+    expect(r.stderr).not.toContain('private')
+    expect(h.calls).toHaveLength(1)
+  })
   it('does not retry an execute whose connection is lost', async () => {
     const h = await harness((c, req, res) =>
       c.path.endsWith('/describe') ? json(res, quote) : req.socket.destroy(),

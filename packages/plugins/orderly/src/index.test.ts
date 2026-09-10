@@ -222,7 +222,7 @@ describe('Orderly API contracts', () => {
         {
           to: TOKEN_ADDRESS,
           signature: 'approve(address,uint256)',
-          value: '0',
+          value: '0x0',
           conditional: {
             type: 'allowance_lt',
             token: TOKEN_ADDRESS,
@@ -230,7 +230,11 @@ describe('Orderly API contracts', () => {
             amount: '1500000',
           },
         },
-        { to: VAULT_ADDRESS, signature: 'deposit((bytes32,bytes32,bytes32,uint128))' },
+        {
+          to: VAULT_ADDRESS,
+          signature: 'deposit((bytes32,bytes32,bytes32,uint128))',
+          value: '0x7',
+        },
       ],
     })
   })
@@ -301,7 +305,7 @@ describe('Orderly API contracts', () => {
         {
           label: 'approve',
           to: TOKEN_ADDRESS,
-          value: '0',
+          value: '0x0',
           conditional: {
             type: 'allowance_lt',
             token: TOKEN_ADDRESS,
@@ -309,7 +313,7 @@ describe('Orderly API contracts', () => {
             amount: '1500000',
           },
         },
-        { label: 'deposit', to: VAULT_ADDRESS, value: '7' },
+        { label: 'deposit', to: VAULT_ADDRESS, value: '0x7' },
       ],
     })
     expect(mocks.apiPost).toHaveBeenCalledTimes(1)
@@ -319,6 +323,144 @@ describe('Orderly API contracts', () => {
       approveTxHash: null,
       depositTxHash: '0xdeposit',
     })
+  })
+
+  it('serializes order updates only after validating the supplied market symbol', async () => {
+    mockWallets()
+    mocks.apiPost.mockImplementation(async (path: string) => {
+      if (path.endsWith('/wallet/sign'))
+        return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    let updateBody: Record<string, unknown> | undefined
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith('/v1/public/info/PERP_BTC_USDC')) {
+        return json({
+          success: true,
+          data: { base_tick: '0.001', quote_tick: '0.01', base_min: '0.001', min_notional: '1' },
+        })
+      }
+      if (input.includes('/v1/get_account'))
+        return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      if (input.endsWith('/v1/order')) {
+        expect(init?.method).toBe('PUT')
+        updateBody = JSON.parse(String(init?.body))
+        return json({ success: true, data: {} })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('order-update', {
+      'order-id': 'order-1',
+      symbol: 'PERP_BTC_USDC',
+      quantity: '0.203',
+      price: '100.01',
+      execute: 'true',
+    })
+
+    expect(updateBody).toEqual({
+      order_id: 'order-1',
+      order_quantity: '0.203',
+      order_price: '100.01',
+    })
+  })
+
+  it('rejects order updates whose price is not a market tick multiple', async () => {
+    const fetchMock = vi.fn(async (input: string) => {
+      if (input.endsWith('/v1/public/info/PERP_BTC_USDC')) {
+        return json({
+          success: true,
+          data: { base_tick: '0.001', quote_tick: '0.01', base_min: '0.001', min_notional: '1' },
+        })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      orderlyCommand('order-update', {
+        'order-id': 'order-1',
+        symbol: 'PERP_BTC_USDC',
+        quantity: '0.203',
+        price: '100.001',
+        execute: 'true',
+      }),
+    ).rejects.toThrow('--price must be a multiple of quote_tick 0.01')
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+  })
+
+  it('calculates partial closes exactly and validates the resulting market quantity', async () => {
+    mockWallets()
+    mocks.apiPost.mockImplementation(async (path: string) => {
+      if (path.endsWith('/wallet/sign'))
+        return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    let closeBody: Record<string, unknown> | undefined
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.includes('/v1/get_account'))
+        return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      if (input.endsWith('/v1/position/PERP_BTC_USDC')) {
+        return json({ success: true, data: { position_qty: '0.29' } })
+      }
+      if (input.endsWith('/v1/public/info/PERP_BTC_USDC')) {
+        return json({
+          success: true,
+          data: { base_tick: '0.001', base_min: '0.001', min_notional: '1' },
+        })
+      }
+      if (input.endsWith('/v1/order')) {
+        expect(init?.method).toBe('POST')
+        closeBody = JSON.parse(String(init?.body))
+        return json({ success: true, data: {} })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('position-close', {
+      symbol: 'PERP_BTC_USDC',
+      percentage: '70',
+      execute: 'true',
+    })
+
+    expect(closeBody).toMatchObject({
+      symbol: 'PERP_BTC_USDC',
+      side: 'SELL',
+      order_type: 'MARKET',
+      order_quantity: '0.203',
+      reduce_only: true,
+    })
+  })
+
+  it('rejects partial-close quantities that are not a market tick multiple', async () => {
+    mockWallets()
+    mocks.apiPost.mockImplementation(async (path: string) => {
+      if (path.endsWith('/wallet/sign'))
+        return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    const fetchMock = vi.fn(async (input: string) => {
+      if (input.includes('/v1/get_account'))
+        return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      if (input.endsWith('/v1/position/PERP_BTC_USDC')) {
+        return json({ success: true, data: { position_qty: '0.03' } })
+      }
+      if (input.endsWith('/v1/public/info/PERP_BTC_USDC')) {
+        return json({ success: true, data: { base_tick: '0.01', base_min: '0.01' } })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      orderlyCommand('position-close', {
+        symbol: 'PERP_BTC_USDC',
+        percentage: '50',
+        execute: 'true',
+      }),
+    ).rejects.toThrow('--quantity must be a multiple of base_tick 0.01')
   })
 
   it('uses the current leverage and algo cancellation endpoint contracts', async () => {

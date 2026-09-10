@@ -115,7 +115,7 @@ Account and asset commands:
 
 Trading commands:
   order create --symbol <symbol> --side <BUY|SELL> --type <${ORDER_TYPES.join('|')}> --quantity <decimal> [--price <decimal>] [--reduce-only true] [--client-order-id <id>] [--execute true]
-  order update --order-id <id> --quantity <decimal> [--price <decimal>] [--execute true]
+  order update --order-id <id> --symbol <symbol> --quantity <decimal> [--price <decimal>] [--execute true]
   order cancel --order-id <id> --symbol <symbol> [--execute true]
   orders cancel-all [--symbol <symbol>] [--execute true]
   position close --symbol <symbol> [--percentage <1-100>] [--execute true]
@@ -178,6 +178,40 @@ function positiveDecimal(value: string, name: string): string {
     throw new OrderlyCliError(`Invalid --${name}: "${value}". Expected a positive decimal.`)
   }
   return value
+}
+
+function decimalParts(value: string): { units: bigint; scale: number } {
+  const [whole, fraction = ''] = value.split('.')
+  return { units: BigInt(`${whole}${fraction}`), scale: fraction.length }
+}
+
+function formatDecimal(units: bigint, scale: number): string {
+  if (scale === 0) return units.toString()
+  const digits = units.toString().padStart(scale + 1, '0')
+  const whole = digits.slice(0, -scale)
+  const fraction = digits.slice(-scale).replace(/0+$/, '')
+  return fraction ? `${whole}.${fraction}` : whole
+}
+
+function percentageOfDecimal(value: string, percentage: string): string {
+  const amount = decimalParts(value)
+  const percent = decimalParts(percentage)
+  return formatDecimal(amount.units * percent.units, amount.scale + percent.scale + 2)
+}
+
+function compareDecimals(left: string, right: string): number {
+  const leftAmount = decimalParts(left)
+  const rightAmount = decimalParts(right)
+  const scale = Math.max(leftAmount.scale, rightAmount.scale)
+  const leftUnits = leftAmount.units * 10n ** BigInt(scale - leftAmount.scale)
+  const rightUnits = rightAmount.units * 10n ** BigInt(scale - rightAmount.scale)
+  return leftUnits === rightUnits ? 0 : leftUnits < rightUnits ? -1 : 1
+}
+
+function multiplyDecimals(left: string, right: string): string {
+  const leftAmount = decimalParts(left)
+  const rightAmount = decimalParts(right)
+  return formatDecimal(leftAmount.units * rightAmount.units, leftAmount.scale + rightAmount.scale)
 }
 
 function execute(args: Record<string, string>): boolean {
@@ -505,11 +539,12 @@ function decimalIsMultiple(value: string, tick: unknown): boolean {
   if (typeof tick !== 'number' && typeof tick !== 'string') return true
   const normalizedTick = String(tick)
   if (!/^\d+(?:\.\d+)?$/.test(normalizedTick)) return true
-  const [, fraction = ''] = normalizedTick.split('.')
-  const scale = fraction.length
   try {
-    const units = parseUnits(value, scale)
-    const tickUnits = parseUnits(normalizedTick, scale)
+    const amount = decimalParts(value)
+    const tickAmount = decimalParts(normalizedTick)
+    const scale = Math.max(amount.scale, tickAmount.scale)
+    const units = amount.units * 10n ** BigInt(scale - amount.scale)
+    const tickUnits = tickAmount.units * 10n ** BigInt(scale - tickAmount.scale)
     return tickUnits > 0n && units % tickUnits === 0n
   } catch {
     return false
@@ -530,14 +565,19 @@ async function validateOrder(order: JsonRecord): Promise<void> {
   ) {
     throw new OrderlyCliError(`--price must be a multiple of quote_tick ${String(info.quote_tick)}`)
   }
-  if (Number(quantity) < Number(info.base_min)) {
-    throw new OrderlyCliError(`--quantity is below base_min ${String(info.base_min)}`)
+  const baseMin = String(info.base_min)
+  if (!/^\d+(?:\.\d+)?$/.test(baseMin))
+    throw new OrderlyCliError('Orderly market metadata has an invalid base_min')
+  if (compareDecimals(quantity, baseMin) < 0) {
+    throw new OrderlyCliError(`--quantity is below base_min ${baseMin}`)
   }
-  if (
-    order.order_price !== undefined &&
-    Number(quantity) * Number(order.order_price) < Number(info.min_notional)
-  ) {
-    throw new OrderlyCliError(`Order notional is below min_notional ${String(info.min_notional)}`)
+  if (order.order_price !== undefined) {
+    const minNotional = String(info.min_notional)
+    if (!/^\d+(?:\.\d+)?$/.test(minNotional))
+      throw new OrderlyCliError('Orderly market metadata has an invalid min_notional')
+    if (compareDecimals(multiplyDecimals(quantity, String(order.order_price)), minNotional) < 0) {
+      throw new OrderlyCliError(`Order notional is below min_notional ${minNotional}`)
+    }
   }
 }
 
@@ -751,13 +791,14 @@ async function deposit(args: Record<string, string>): Promise<void> {
     })
   }
   if (!/^\d+$/.test(feeWei)) throw new OrderlyCliError('--fee-wei must be an integer wei amount')
+  const feeValue = `0x${BigInt(feeWei).toString(16)}`
   const steps = [
     {
       kind: 'approve',
       to: tokenInfo.address,
       signature: 'approve(address,uint256)',
       args: [vault, amountWei.toString()],
-      value: '0',
+      value: '0x0',
       chainId,
       conditional: {
         type: 'allowance_lt',
@@ -771,7 +812,7 @@ async function deposit(args: Record<string, string>): Promise<void> {
       to: vault,
       signature: 'deposit((bytes32,bytes32,bytes32,uint128))',
       args: [input.accountId, input.brokerHash, input.tokenHash, amountWei.toString()],
-      value: feeWei,
+      value: feeValue,
       chainId,
     },
   ]
@@ -805,7 +846,7 @@ async function deposit(args: Record<string, string>): Promise<void> {
           label: 'approve',
           to: tokenInfo.address,
           data: approvalData,
-          value: '0',
+          value: '0x0',
           chainId,
           conditional: {
             type: 'allowance_lt',
@@ -818,7 +859,7 @@ async function deposit(args: Record<string, string>): Promise<void> {
           label: 'deposit',
           to: vault,
           data: depositData,
-          value: feeWei,
+          value: feeValue,
           chainId,
         },
       ],
@@ -950,11 +991,17 @@ async function createOrder(args: Record<string, string>): Promise<void> {
 }
 
 async function updateOrder(args: Record<string, string>): Promise<void> {
-  const body: JsonRecord = {
-    order_id: required(args, 'order-id'),
+  const order: JsonRecord = {
+    symbol: required(args, 'symbol'),
     order_quantity: positiveDecimal(required(args, 'quantity'), 'quantity'),
   }
-  if (args.price) body.order_price = positiveDecimal(args.price, 'price')
+  if (args.price) order.order_price = positiveDecimal(args.price, 'price')
+  await validateOrder(order)
+  const body: JsonRecord = {
+    order_id: required(args, 'order-id'),
+    order_quantity: order.order_quantity,
+  }
+  if (order.order_price !== undefined) body.order_price = order.order_price
   if (!execute(args)) return print({ execute: false, order: body })
   print(await privateRequest('PUT', '/v1/order', body))
 }
@@ -984,19 +1031,24 @@ async function closePosition(args: Record<string, string>): Promise<void> {
     context,
   )
   const row = record(position)
-  const qty = Number(row.position_qty)
-  if (!Number.isFinite(qty) || qty === 0)
+  const positionQty = asString(row.position_qty)
+  if (!positionQty || !/^-?\d+(?:\.\d+)?$/.test(positionQty))
+    throw new OrderlyCliError(`Invalid position quantity for ${symbol}`)
+  const isLong = !positionQty.startsWith('-')
+  const quantity = isLong ? positionQty : positionQty.slice(1)
+  if (decimalParts(quantity).units === 0n)
     throw new OrderlyCliError(`No open position for ${symbol}`)
-  const percentage = args.percentage === undefined ? 100 : Number(args.percentage)
-  if (!Number.isFinite(percentage) || percentage <= 0 || percentage > 100)
-    throw new OrderlyCliError('--percentage must be between 1 and 100')
+  const percentage =
+    args.percentage === undefined ? '100' : positiveDecimal(args.percentage, 'percentage')
+  if (Number(percentage) > 100) throw new OrderlyCliError('--percentage must be between 1 and 100')
   const order = {
     symbol,
-    side: qty > 0 ? 'SELL' : 'BUY',
+    side: isLong ? 'SELL' : 'BUY',
     order_type: 'MARKET',
-    order_quantity: ((Math.abs(qty) * percentage) / 100).toString(),
+    order_quantity: percentageOfDecimal(quantity, percentage),
     reduce_only: true,
   }
+  await validateOrder(order)
   if (!execute(args)) return print({ execute: false, position: row, order })
   print(await privateRequest('POST', '/v1/order', order, context))
 }

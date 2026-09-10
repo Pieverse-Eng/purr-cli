@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-cli-internal",
-  "version": "0.2.50",
+  "version": "0.2.55",
   "type": "module",
   "private": true,
   "exports": {
@@ -21,7 +21,6 @@
     "@pieverseio/purr-plugin-pns": "workspace:*",
     "@pieverseio/purr-plugin-store": "workspace:*",
     "@pieverseio/purr-plugin-vendors": "workspace:*",
-    "@pieverseio/purr-plugin-wallet": "workspace:*",
-    "htmlparser2": "^12.0.0"
+    "@pieverseio/purr-plugin-wallet": "workspace:*"
   }
 }

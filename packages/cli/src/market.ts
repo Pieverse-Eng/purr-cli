@@ -1,5 +1,3 @@
-import { readPages } from './market-reader'
-import { snapshot } from './market-snapshot'
 import exclusions from './market-exclusions.json'
 
 type Chain = 'bsc' | 'robinhood' | 'solana'
@@ -345,12 +343,8 @@ export async function marketToken(
 
 export const marketHelp = `Usage: purr market trending --chain <robinhood|bnb|bsc|solana>
        purr market token --chain <robinhood|bnb|bsc|solana> <ca>
-       purr market read-pages <url...>
-       purr market snapshot --chain <robinhood|bnb|bsc|solana> <ca...>
 
 token: exact CA lookup, same candidate shape as trending; no discovery exclusions.
-read-pages: 1–10 URLs, concurrency 3, bounded HTML/JSON extraction.
-snapshot: 1–5 CAs, most-liquid active base-token pool metrics.
 
 Returns up to five filtered candidates and their most liquid active pool.
 Uses public APIs; no API key or wallet is required. Output is JSON.
@@ -370,12 +364,7 @@ export async function marketCommand(
     console.log(marketHelp)
     return
   }
-  if (command === 'read-pages') {
-    if (Object.keys(args).length) throw new Error('read-pages accepts only URLs')
-    console.log(JSON.stringify(await readPages(positionals)))
-    return
-  }
-  if (!['trending', 'snapshot', 'token'].includes(command))
+  if (!['trending', 'token'].includes(command))
     throw new Error(`Unknown market command: ${command}`)
   for (const key of Object.keys(args))
     if (key !== 'chain') throw new Error(`Unknown market option: --${key}`)
@@ -396,11 +385,7 @@ export async function marketCommand(
   }
   if (command === 'trending' && positionals.length)
     throw new Error('trending accepts no positional arguments')
-  console.log(
-    JSON.stringify(
-      command === 'snapshot' ? await snapshot(chain, positionals) : await trending(chain),
-    ),
-  )
+  console.log(JSON.stringify(await trending(chain)))
 }
 
 export async function marketArgv(command: string | undefined, argv: string[]) {

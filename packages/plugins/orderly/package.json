@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-orderly",
-  "version": "0.2.50",
+  "version": "0.2.55",
   "type": "module",
   "private": true,
   "exports": {

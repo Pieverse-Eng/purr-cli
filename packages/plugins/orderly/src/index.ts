@@ -1,4 +1,5 @@
 import { apiGet, apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import bs58 from 'bs58'
 import {
   decodeFunctionResult,
   encodeFunctionData,
@@ -208,8 +209,24 @@ export function orderlyCanonicalMessage(
   return `${timestamp}${method}${path}${bodyText}`
 }
 
-export function toBase64Url(value: string): string {
-  return Buffer.from(value, 'base64').toString('base64url')
+/**
+ * `POST /wallet/sign` with `chainType: 'solana'` and `scheme: 'raw'` returns a
+ * base58-encoded, 64-byte Ed25519 signature. Orderly requires those bytes as
+ * unpadded base64url in the `orderly-signature` header.
+ */
+export function solanaBase58SignatureToBase64Url(value: string): string {
+  let signature: Uint8Array
+  try {
+    signature = bs58.decode(value)
+  } catch {
+    throw new OrderlyCliError('Solana raw signing returned an invalid base58 signature')
+  }
+  if (signature.length !== 64) {
+    throw new OrderlyCliError(
+      `Solana raw signing returned ${signature.length} bytes; expected a 64-byte Ed25519 signature`,
+    )
+  }
+  return Buffer.from(signature).toString('base64url')
 }
 
 async function orderlyRequest<T = unknown>(
@@ -294,8 +311,7 @@ async function signRawSolana(message: string): Promise<string> {
   )
   if (!response.ok || !response.data?.signature)
     throw new OrderlyCliError(response.error ?? 'Solana raw signing failed')
-  const raw = response.data.signature
-  return toBase64Url(raw)
+  return solanaBase58SignatureToBase64Url(response.data.signature)
 }
 
 async function signTypedData(

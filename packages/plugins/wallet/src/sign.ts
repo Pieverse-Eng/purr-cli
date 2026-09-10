@@ -1,5 +1,13 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 
+/**
+ * Wallet signing API encoding contract:
+ *
+ * `POST /wallet/sign` with `chainType: 'solana'` and `scheme: 'raw'` returns a
+ * base58-encoded 64-byte Ed25519 signature. Callers must base58-decode it
+ * before applying any venue-specific signature encoding (for example,
+ * Orderly's unpadded base64url header). It is not base64.
+ */
 interface WalletSignResponse {
   ok: boolean
   data: {

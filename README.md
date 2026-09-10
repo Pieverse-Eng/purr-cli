@@ -160,6 +160,10 @@ purr store install <source>:<slug>
 purr store remove <slug>
 ```
 
+### Solana raw-signature encoding
+
+`POST /wallet/sign` with `chainType=solana` and `scheme=raw` returns a base58-encoded 64-byte Ed25519 signature. Consumers must decode base58 before applying any venue-specific encoding; this value is not base64.
+
 Use the parameterized order commands for limit, stop-loss, take-profit, position protection, and
 order modification workflows. Hyperliquid commands reject missing, duplicate, unknown,
 conflicting, or invalid options before sending a platform request. Raw order and modify payloads

@@ -1,3 +1,5 @@
+import { createPublicKey, verify } from 'node:crypto'
+import bs58 from 'bs58'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   encodeAbiParameters,
@@ -20,13 +22,27 @@ vi.mock('@pieverseio/purr-core/api-client', () => ({
   resolveCredentials: mocks.resolveCredentials,
 }))
 
-import { orderlyCanonicalMessage, orderlyCommand, orderlyHelp, toBase64Url } from './index.js'
+import {
+  orderlyCanonicalMessage,
+  orderlyCommand,
+  orderlyHelp,
+  solanaBase58SignatureToBase64Url,
+} from './index.js'
 
 const EVM_ADDRESS: `0x${string}` = '0x1111111111111111111111111111111111111111'
 const SOLANA_ADDRESS = 'So11111111111111111111111111111111111111112'
 const ACCOUNT_ID = `0x${'22'.repeat(32)}` as `0x${string}`
 const VAULT_ADDRESS = '0x3333333333333333333333333333333333333333'
 const TOKEN_ADDRESS = '0x4444444444444444444444444444444444444444'
+// RFC 8032, test vector 1: an Ed25519 signature for an empty message.
+const ED25519_PUBLIC_KEY_DER = Buffer.from(
+  '302a300506032b6570032100d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a',
+  'hex',
+)
+const TEE_SOLANA_SIGNATURE_BASE58 =
+  '5awYiUvGiDFA33EJjj4TXJG44a5afJc8QjWRpGgQiu6b23jCr7yndW2fmp9ujwqJVe32J456wV3VF78Asb1obnTc'
+const ORDERLY_SIGNATURE_BASE64URL =
+  '5VZDAMNgrHKQhuLMgG6CioSHfx645dl02HPgZSJJAVVfuIIVkKM7rMYeOXAc-bRr0lv18FlbviRlUUFDjnoQCw'
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -55,9 +71,20 @@ describe('Orderly request authentication', () => {
     ).toBe('1700000000000POST/v1/order?symbol=PERP_BTC_USDC{"symbol":"PERP_BTC_USDC","side":"BUY"}')
   })
 
-  it('converts TEE base64 signatures to Orderly unpadded base64url', () => {
-    expect(toBase64Url('++//aA==')).toBe('--__aA')
-    expect(toBase64Url('c2lnbmF0dXJl')).toBe('c2lnbmF0dXJl')
+  it('converts a TEE base58 Ed25519 signature to Orderly unpadded base64url', () => {
+    const signature = bs58.decode(TEE_SOLANA_SIGNATURE_BASE58)
+    expect(signature).toHaveLength(64)
+    expect(
+      verify(
+        null,
+        Buffer.alloc(0),
+        createPublicKey({ key: ED25519_PUBLIC_KEY_DER, format: 'der', type: 'spki' }),
+        signature,
+      ),
+    ).toBe(true)
+    expect(solanaBase58SignatureToBase64Url(TEE_SOLANA_SIGNATURE_BASE58)).toBe(
+      ORDERLY_SIGNATURE_BASE64URL,
+    )
   })
 })
 
@@ -80,7 +107,7 @@ describe('Orderly API contracts', () => {
 
   it('uses address, rather than user_address, when deriving a private identity', async () => {
     mockWallets()
-    mocks.apiPost.mockResolvedValue({ ok: true, data: { signature: 'c2lnbmF0dXJl' } })
+    mocks.apiPost.mockResolvedValue({ ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } })
     const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
       if (input.includes('/v1/get_account'))
         return json({ success: true, data: { account_id: ACCOUNT_ID } })
@@ -100,6 +127,29 @@ describe('Orderly API contracts', () => {
       `https://api.orderly.org/v1/get_account?broker_id=broker-1&address=${EVM_ADDRESS}&chain_type=EVM`,
       expect.objectContaining({ method: 'GET' }),
     )
+  })
+
+  it('sends the base64url form of the TEE base58 signature in orderly-signature', async () => {
+    mockWallets()
+    mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+      if (path.endsWith('/wallet/sign')) {
+        expect(body).toMatchObject({ chainType: 'solana', scheme: 'raw', message: expect.any(String) })
+        return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.includes('/v1/get_account'))
+        return json({ success: true, data: { account_id: ACCOUNT_ID } })
+      if (input.endsWith('/v1/client/holding')) {
+        expect(init?.headers).toMatchObject({ 'orderly-signature': ORDERLY_SIGNATURE_BASE64URL })
+        return json({ success: true, data: { holding: [] } })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('balance', {})
   })
 
   it('reads token chain_details and public_rpc_url for the Vault fee query', async () => {
@@ -270,7 +320,8 @@ describe('Orderly API contracts', () => {
   it('uses the current leverage and algo cancellation endpoint contracts', async () => {
     mockWallets()
     mocks.apiPost.mockImplementation(async (path: string) => {
-      if (path.endsWith('/wallet/sign')) return { ok: true, data: { signature: 'c2lnbmF0dXJl' } }
+      if (path.endsWith('/wallet/sign'))
+        return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
     const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
@@ -316,7 +367,8 @@ describe('Orderly API contracts', () => {
     mocks.apiPost.mockImplementation(async (path: string) => {
       if (path.endsWith('/wallet/sign-typed-data'))
         return { ok: true, data: { signature: '0xtyped' } }
-      if (path.endsWith('/wallet/sign')) return { ok: true, data: { signature: 'c2lnbmF0dXJl' } }
+      if (path.endsWith('/wallet/sign'))
+        return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
     let withdrawalBody: Record<string, unknown> | undefined
@@ -403,7 +455,8 @@ describe('Orderly API contracts', () => {
     mocks.apiPost.mockImplementation(async (path: string) => {
       if (path.endsWith('/wallet/sign-typed-data'))
         return { ok: true, data: { signature: '0xtyped' } }
-      if (path.endsWith('/wallet/sign')) return { ok: true, data: { signature: 'c2lnbmF0dXJl' } }
+      if (path.endsWith('/wallet/sign'))
+        return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
     let registrationBody: Record<string, unknown> | undefined

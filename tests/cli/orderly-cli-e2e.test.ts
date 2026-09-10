@@ -166,8 +166,9 @@ describe('Orderly CLI e2e', () => {
         }
         throw new Error(`Unexpected request: ${req.method} ${url.pathname}${url.search}`)
       } catch (error) {
+        console.error('Orderly CLI e2e test server error:', error)
         res.writeHead(500, { 'Content-Type': 'text/plain' })
-        res.end(error instanceof Error ? error.stack : String(error))
+        res.end('Internal Server Error')
       }
     })
     port = await listen(server)

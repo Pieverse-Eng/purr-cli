@@ -339,6 +339,34 @@ describe('purr agentkey (real CLI and HTTP client)', () => {
     expect(h.calls).toHaveLength(2)
   })
 
+  it.each(['failed', 'indeterminate'])(
+    'handles an uncharged %s receipt without a polling hint',
+    async (state) => {
+      const failed = {
+        ...receipt,
+        state,
+        billing: { credits: '0.000000', status: 'not_charged' },
+        result: null,
+        ...(state === 'failed' ? { error: { message: 'project not found', code: 404 } } : {}),
+      }
+      const h = await harness((c, _req, res) =>
+        c.path.endsWith('/describe') ? json(res, quote) : json(res, failed),
+      )
+      for (const args of [
+        ['execute', 'FutureProvider/lookup', '--params', '{}'],
+        ['request', requestId],
+      ]) {
+        const r = await h.run(args)
+        expect(r.code).toBe(1)
+        expect(JSON.parse(r.stdout)).toEqual(failed)
+        expect(r.stderr).not.toContain('purr agentkey request')
+        expect(r.stderr).not.toContain('Billing remains unresolved')
+        if (state === 'indeterminate') expect(r.stderr).toContain('No AI Credits have been charged')
+      }
+      expect(h.calls.map((c) => c.method)).toEqual(['POST', 'POST', 'GET'])
+    },
+  )
+
   it('reports expired results using GET only and preserves the HTTP status', async () => {
     const h = await harness((_c, _req, res) => json(res, { ...receipt, result: null }, 410))
     const r = await h.run(['request', requestId])

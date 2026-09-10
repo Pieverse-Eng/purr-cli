@@ -240,23 +240,29 @@ export async function handleAgentKeyCommand(
     }
     console.log(JSON.stringify(result, null, 2))
     if (object(result) && result.state === 'indeterminate') {
+      const billingMessage =
+        object(result.billing) && result.billing.status === 'not_charged'
+          ? 'No AI Credits have been charged.'
+          : 'Billing remains unresolved.'
       console.error(
         object(result.error)
-          ? 'Upstream tool failed; use the returned error to correct parameters or choose another tool. Billing remains unresolved. Do not keep polling or repeat the same execute.'
-          : 'Execution outcome is unknown; billing remains unresolved. This is not a background job. Do not keep polling or repeat execute.',
+          ? `Upstream tool failed; use the returned error to correct parameters or choose another tool. ${billingMessage} Do not keep polling or repeat the same execute.`
+          : `Execution outcome is unknown. ${billingMessage} This is not a background job. Do not keep polling or repeat execute.`,
       )
       process.exitCode = 1
     } else if (
       object(result) &&
       typeof result.requestId === 'string' &&
       result.state !== 'completed' &&
+      result.state !== 'failed' &&
       result.state !== 'refunded'
     ) {
       console.error(
         `Query this receipt: purr agentkey request ${result.requestId}. Do not repeat execute.`,
       )
     }
-    if (object(result) && result.state === 'refunded') process.exitCode = 1
+    if (object(result) && (result.state === 'failed' || result.state === 'refunded'))
+      process.exitCode = 1
   } catch (error) {
     throw publicError(error, executing)
   }

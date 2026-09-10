@@ -133,7 +133,11 @@ describe('Orderly API contracts', () => {
     mockWallets()
     mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
       if (path.endsWith('/wallet/sign')) {
-        expect(body).toMatchObject({ chainType: 'solana', scheme: 'raw', message: expect.any(String) })
+        expect(body).toMatchObject({
+          chainType: 'solana',
+          scheme: 'raw',
+          message: expect.any(String),
+        })
         return { ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } }
       }
       throw new Error(`Unexpected wallet write: ${path}`)

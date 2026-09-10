@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",
+    "bs58": "^6.0.0",
     "viem": "^2.46.0"
   }
 }

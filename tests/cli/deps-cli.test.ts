@@ -21,7 +21,7 @@ describe('purr deps catalog', () => {
       ows: '1.4.2',
       'mantle-cli': '0.1.19',
       'bnbchain-mcp': '1.5.1',
-      onchainos: 'v4.0.0',
+      onchainos: 'v4.5.3',
       kraken: 'v0.3.2',
       surf: 'v1.0.9',
       caw: 'v0.2.84',

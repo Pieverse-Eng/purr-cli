@@ -153,7 +153,7 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
   {
     id: 'onchainos',
     bin: 'onchainos',
-    version: 'v4.0.0',
+    version: 'v4.5.3',
     skills: ['okx'],
     kind: 'binary',
     resolve: (host) => {
@@ -161,9 +161,9 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
       const target = linuxGnuTarget(host.arch)
       const file = `onchainos-${target}`
       return {
-        url: `https://github.com/okx/onchainos-skills/releases/download/v4.0.0/${file}`,
+        url: `https://github.com/okx/onchainos-skills/releases/download/v4.5.3/${file}`,
         checksumUrl:
-          'https://github.com/okx/onchainos-skills/releases/download/v4.0.0/checksums.txt',
+          'https://github.com/okx/onchainos-skills/releases/download/v4.5.3/checksums.txt',
       }
     },
   },

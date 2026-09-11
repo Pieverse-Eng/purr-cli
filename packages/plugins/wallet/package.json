@@ -13,6 +13,7 @@
     "./sign-transaction": "./src/sign-transaction.ts",
     "./sign-typed-data": "./src/sign-typed-data.ts",
     "./uniswap": "./src/uniswap.ts",
+    "./pancake": "./src/pancake.ts",
     "./transfer": "./src/transfer.ts",
     "./treasure-code": "./src/treasure-code.ts"
   },

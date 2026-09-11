@@ -440,6 +440,7 @@ describe('buildPancakeSwapSteps', () => {
       amountInWei: '1000000000000000000',
       amountOutMinWei: '500000',
       wallet: WALLET,
+      deadline: 1710000000,
       chainId: 56,
     })
     // No approval needed for native
@@ -462,6 +463,7 @@ describe('buildPancakeSwapSteps', () => {
       amountInWei: '1000000',
       amountOutMinWei: '500000',
       wallet: WALLET,
+      deadline: 1710000000,
       chainId: 56,
     })
     expect(result.steps).toHaveLength(2)
@@ -483,6 +485,7 @@ describe('buildPancakeSwapSteps', () => {
       amountInWei: '1000000',
       amountOutMinWei: '500000',
       wallet: WALLET,
+      deadline: 1710000000,
       chainId: 56,
     })
     expect(result.steps).toHaveLength(2)
@@ -503,6 +506,7 @@ describe('buildPancakeSwapSteps', () => {
         amountInWei: '1000000',
         amountOutMinWei: '500000',
         wallet: WALLET,
+        deadline: 1710000000,
         chainId: 56,
       }),
     ).toThrow('at least 2 tokens')
@@ -514,6 +518,7 @@ describe('buildPancakeSwapSteps', () => {
       amountInWei: '1000000000000000000',
       amountOutMinWei: '500000',
       wallet: WALLET,
+      deadline: 1710000000,
       chainId: 56,
     })
     // Native→token: should be 1 step (no approval for native)
@@ -527,6 +532,7 @@ describe('buildPancakeSwapSteps', () => {
         amountInWei: '1000000000000000000',
         amountOutMinWei: '500000',
         wallet: WALLET,
+        deadline: 1710000000,
         chainId: 1,
       }),
     ).toThrow('only supported on BNB Chain')
@@ -540,6 +546,7 @@ describe('buildPancakeSwapSteps', () => {
         amountInWei: '1000000000000000000',
         amountOutMinWei: '500000',
         wallet: WALLET,
+        deadline: 1710000000,
         chainId: 56,
       }),
     ).toThrow('Invalid router')

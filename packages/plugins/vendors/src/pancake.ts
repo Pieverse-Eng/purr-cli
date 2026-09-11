@@ -1,4 +1,4 @@
-import { createPublicClient, encodeFunctionData, encodePacked, http, parseAbi } from 'viem'
+import { createPublicClient, encodeFunctionData, http, parseAbi } from 'viem'
 import { bsc } from 'viem/chains'
 import {
   buildApprovalStep,
@@ -84,62 +84,26 @@ function resolveDeadline(raw: number | undefined): bigint {
 
 export interface PancakeSwapArgs {
   router?: string // default PancakeSwap V2 router
-  fees?: number[] // selects V3; one fee per path hop
   path: string[] // token addresses in swap path
   amountInWei: string
   amountOutMinWei: string
   wallet: string
+  deadline?: number // unix timestamp or relative seconds; defaults to 20 min
   chainId: number
 }
 
 const DEFAULT_ROUTER = '0x10ED43C718714eb63d5aA57B78B54704E256024E'
-const V3_ROUTER = '0x1b81D678ffb9C0263b24A97847620C99d213eB14'
-const V3_QUOTER = '0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997'
-const V3_QUOTER_ABI = parseAbi([
-  'function quoteExactInput(bytes path, uint256 amountIn) returns (uint256 amountOut, uint160[] sqrtPriceX96AfterList, uint32[] initializedTicksCrossedList, uint256 gasEstimate)',
-])
-const V3_ROUTER_ABI = parseAbi([
-  'function exactInput((bytes path, address recipient, uint256 deadline, uint256 amountIn, uint256 amountOutMinimum) params) payable returns (uint256 amountOut)',
-])
 
-function v3Path(path: string[], fees: number[]): `0x${string}` {
-  if (path.length < 2 || fees.length !== path.length - 1) {
-    throw new Error('V3 requires one fee per path hop')
-  }
-  if (fees.some((fee) => !Number.isInteger(fee) || ![100, 500, 2500, 10000].includes(fee))) {
-    throw new Error('V3 fees must be 100, 500, 2500 or 10000 (millionths)')
-  }
-  const tokens = path.map((token) => {
-    if (isNative(token.trim()))
-      throw new Error('V3 paths require ERC-20 tokens; use WBNB for wrapped BNB')
-    return requireAddress(token.trim(), 'path token')
-  })
-  return `0x${tokens[0].slice(2)}${fees
-    .map((fee, i) => encodePacked(['uint24', 'address'], [fee, tokens[i + 1]]).slice(2))
-    .join('')}`
-}
-
-function v3Router(router?: string) {
-  const address = requireAddress(router ?? V3_ROUTER, 'router')
-  if (address.toLowerCase() !== V3_ROUTER.toLowerCase()) {
-    throw new Error(
-      'V3 uses the PancakeSwap V3 SwapRouter; a V2 or SmartRouter ABI is incompatible',
-    )
-  }
-  return address
-}
-
-/** Read-only V2/V3 quote for an explicit path; does not discover or rank routes. */
+/** Read-only V2 quote for an explicit path; does not discover or rank routes. */
 export async function quotePancakeSwap(args: {
   path: string[]
-  fees?: number[]
   amountInWei: string
   chainId: number
   slippageBps?: number
   router?: string
   rpcUrl?: string
 }) {
-  if (args.chainId !== BSC_CHAIN_ID) throw new Error('PancakeSwap quotes support BSC (56) only')
+  if (args.chainId !== BSC_CHAIN_ID) throw new Error('PancakeSwap V2 quotes support BSC (56) only')
   const amountIn = parseBigInt(args.amountInWei, 'amount-in-wei')
   if (amountIn <= 0n) throw new Error('amount-in-wei must be positive')
   const slippageBps = args.slippageBps ?? 100
@@ -152,10 +116,7 @@ export async function quotePancakeSwap(args: {
     if (!value) throw new Error('path token must not be empty')
     return isNative(value) ? BSC_WBNB : requireAddress(value, 'path token')
   }) as `0x${string}`[]
-  const encodedPath = args.fees === undefined ? undefined : v3Path(args.path, args.fees)
-  const router = encodedPath
-    ? v3Router(args.router)
-    : requireAddress(args.router ?? DEFAULT_ROUTER, 'router')
+  const router = requireAddress(args.router ?? DEFAULT_ROUTER, 'router')
   const rpcUrl =
     args.rpcUrl ||
     process.env.EVM_RPC_56 ||
@@ -168,46 +129,6 @@ export async function quotePancakeSwap(args: {
   })
   if ((await client.getChainId()) !== BSC_CHAIN_ID) throw new Error('RPC must serve BSC (56)')
   const blockNumber = await client.getBlockNumber()
-  // Only validated addresses and integers enter the command. The CLI resolves
-  // the instance wallet and creates a fresh deadline when constructing the swap.
-  const swapCommandTemplate = (amountOutMin: bigint) =>
-    [
-      'purr pancake swap',
-      `--chain-id ${BSC_CHAIN_ID}`,
-      `--path ${args.path.map((token) => (isNative(token.trim()) ? '0x0000000000000000000000000000000000000000' : requireAddress(token.trim(), 'path token'))).join(',')}`,
-      `--router ${router}`,
-      `--amount-in-wei ${amountIn}`,
-      `--amount-out-min-wei ${amountOutMin}`,
-      ...(args.fees ? [`--fees ${args.fees.join(',')}`] : []),
-    ].join(' ')
-  if (encodedPath) {
-    const { result } = await client.simulateContract({
-      address: V3_QUOTER,
-      abi: V3_QUOTER_ABI,
-      functionName: 'quoteExactInput',
-      args: [encodedPath, amountIn],
-      blockNumber,
-    })
-    const [amountOut, , , quoterGas] = result
-    if (amountOut <= 0n || quoterGas <= 0n)
-      throw new Error('Quoter returned an invalid or empty quote')
-    return {
-      provider: 'pancakeswap',
-      version: 'v3',
-      chainId: BSC_CHAIN_ID,
-      router,
-      path,
-      fees: args.fees,
-      encodedPath,
-      blockNumber: blockNumber.toString(),
-      amountInWei: amountIn.toString(),
-      amountOutWei: amountOut.toString(),
-      amountOutMinWei: ((amountOut * BigInt(10000 - slippageBps)) / 10000n).toString(),
-      slippageBps,
-      quoterGas: quoterGas.toString(),
-      swapCommandTemplate: swapCommandTemplate((amountOut * BigInt(10000 - slippageBps)) / 10000n),
-    }
-  }
   const amounts = await client.readContract({
     address: router,
     abi: parseAbi([
@@ -233,45 +154,12 @@ export async function quotePancakeSwap(args: {
     amountOutMinWei: ((amountOut * BigInt(10000 - slippageBps)) / 10000n).toString(),
     slippageBps,
     amounts: amounts.map(String),
-    swapCommandTemplate: swapCommandTemplate((amountOut * BigInt(10000 - slippageBps)) / 10000n),
   }
 }
 
 export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
   if (args.chainId !== BSC_CHAIN_ID) {
-    throw new Error(`PancakeSwap swaps are only supported on BNB Chain (chain ID 56)`)
-  }
-
-  if (args.fees !== undefined) {
-    const path = v3Path(args.path, args.fees)
-    const router = v3Router(args.router)
-    const amountIn = parseBigInt(args.amountInWei, 'amount-in-wei')
-    const amountOutMinimum = parseBigInt(args.amountOutMinWei, 'amount-out-min-wei')
-    if (amountIn <= 0n || amountOutMinimum <= 0n) throw new Error('V3 amounts must be positive')
-    const recipient = requireAddress(args.wallet, 'wallet')
-    const deadline = resolveDeadline(undefined)
-    return {
-      steps: [
-        buildApprovalStep(
-          requireAddress(args.path[0].trim(), 'path token'),
-          router,
-          amountIn.toString(),
-          args.chainId,
-          'Approve token for PancakeSwap V3 router',
-        ),
-        {
-          to: router,
-          data: encodeFunctionData({
-            abi: V3_ROUTER_ABI,
-            functionName: 'exactInput',
-            args: [{ path, recipient, deadline, amountIn, amountOutMinimum }],
-          }),
-          value: '0x0',
-          chainId: args.chainId,
-          label: 'PancakeSwap V3 swap',
-        },
-      ],
-    }
+    throw new Error(`PancakeSwap V2 swaps are only supported on BNB Chain (chain ID 56)`)
   }
 
   if (args.path.length < 2) {
@@ -287,7 +175,7 @@ export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
     return trimmed
   }) as `0x${string}`[]
   const wallet = requireAddress(args.wallet, 'wallet')
-  const deadline = resolveDeadline(undefined)
+  const deadline = resolveDeadline(args.deadline)
 
   const fromToken = inputPath[0]
   const toToken = inputPath[inputPath.length - 1]

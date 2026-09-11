@@ -398,7 +398,7 @@ describe('Orderly API contracts', () => {
       }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
       if (input.endsWith('/v1/public/info/PERP_BTC_USDC')) {
         return json({
           success: true,
@@ -466,7 +466,7 @@ describe('Orderly API contracts', () => {
       }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
       if (input.endsWith('/v1/public/info/PERP_BTC_USDC')) {
         return json({
           success: true,
@@ -519,11 +519,11 @@ describe('Orderly API contracts', () => {
 
   it('uses the current leverage and algo cancellation endpoint contracts', async () => {
     mockWallets()
-    mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+    mocks.apiPost.mockImplementation(async (path: string, _body: Record<string, unknown>) => {
       if (path.endsWith('/orderly/private-request')) return { ok: true, data: {} }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
       throw new Error(`Unexpected Orderly request: ${input}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -545,7 +545,10 @@ describe('Orderly API contracts', () => {
     )
     expect(mocks.apiPost).toHaveBeenCalledWith(
       '/v1/instances/instance-123/orderly/private-request',
-      expect.objectContaining({ method: 'DELETE', path: '/v1/algo/order?order_id=algo-1&symbol=PERP_BTC_USDC' }),
+      expect.objectContaining({
+        method: 'DELETE',
+        path: '/v1/algo/order?order_id=algo-1&symbol=PERP_BTC_USDC',
+      }),
     )
   })
 
@@ -562,7 +565,7 @@ describe('Orderly API contracts', () => {
       }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
       if (input.endsWith('/v1/public/token')) {
         return json({
           success: true,
@@ -613,7 +616,8 @@ describe('Orderly API contracts', () => {
 
   it('never creates a Solana wallet while previewing onboarding', async () => {
     mocks.apiGet.mockImplementation(async (path: string) => {
-      if (path.endsWith('/integrations/orderly-trading')) return { ok: true, data: { enabled: true } }
+      if (path.endsWith('/integrations/orderly-trading'))
+        return { ok: true, data: { enabled: true } }
       if (path.endsWith('chain_type=ethereum')) return { ok: true, data: { address: EVM_ADDRESS } }
       if (path.endsWith('chain_type=solana')) return { ok: false, error: 'No Solana wallet' }
       throw new Error(`Unexpected wallet request: ${path}`)
@@ -656,7 +660,7 @@ describe('Orderly API contracts', () => {
       }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
       if (input.includes('/v1/get_account'))
         return json({ success: false, code: -1607, message: 'Account not found' })
       if (input.endsWith('/v1/registration_nonce')) return json({ success: true, data: 1 })

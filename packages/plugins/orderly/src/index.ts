@@ -954,16 +954,12 @@ async function withdraw(args: Record<string, string>): Promise<void> {
     signedMessage,
   )
   print(
-    await privateRequest(
-      'POST',
-      '/v1/withdraw_request',
-      {
-        message,
-        signature,
-        userAddress: context.evmAddress,
-        verifyingContract: domain.verifyingContract,
-      },
-    ),
+    await privateRequest('POST', '/v1/withdraw_request', {
+      message,
+      signature,
+      userAddress: context.evmAddress,
+      verifyingContract: domain.verifyingContract,
+    }),
   )
 }
 

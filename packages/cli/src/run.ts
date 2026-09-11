@@ -675,6 +675,8 @@ Examples:
   purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
   purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
   purr pancake quote --path USDT,CAKE --amount-in-wei 1000000000000000000 --chain-id 56 --slippage-bps 100
+  purr pancake quote --path USDT,CAKE --fees 2500 --amount-in-wei 1000000000000000000 --chain-id 56
+  V3: pass the same --fees <fee,...> (one per hop) to quote and swap; use ERC-20 paths, including WBNB.
   purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
@@ -1541,6 +1543,7 @@ Examples:
           if (args.execute !== undefined)
             throw new Error('pancake quote is read-only; omit --execute')
           const result = await quotePancakeSwap({
+            fees: args.fees === undefined ? undefined : args.fees.split(',').map(Number),
             path: requireArg(args, 'path')
               .split(',')
               .map((t) => resolveToken(t.trim(), chainId)),
@@ -1556,6 +1559,7 @@ Examples:
         }
         case 'swap':
           output = buildPancakeSwapSteps({
+            fees: args.fees === undefined ? undefined : args.fees.split(',').map(Number),
             path: requireArg(args, 'path')
               .split(',')
               .map((t) => resolveToken(t.trim(), chainId)),

@@ -302,11 +302,11 @@ describe('Orderly API contracts', () => {
     })
   })
 
-  it('executes a deposit as one conditional, idempotent wallet step request', async () => {
+  it('executes a deposit through the Platform Orderly endpoint', async () => {
     mockWallets()
     let executionBody: Record<string, unknown> | undefined
     mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
-      if (path.endsWith('/wallet/execute')) {
+      if (path.endsWith('/orderly/deposit')) {
         executionBody = body
         return {
           ok: true,
@@ -552,15 +552,12 @@ describe('Orderly API contracts', () => {
     )
   })
 
-  it('uses ledger decimals for withdrawals and appends chainType after signing', async () => {
+  it('uses ledger decimals and delegates withdrawal signing to Platform', async () => {
     mockWallets()
     let withdrawalBody: Record<string, unknown> | undefined
     mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
-      if (path.endsWith('/wallet/sign-typed-data'))
-        return { ok: true, data: { signature: '0xtyped' } }
-      if (path.endsWith('/orderly/private-request')) {
-        if (body.path === '/v1/withdraw_nonce') return { ok: true, data: { withdraw_nonce: 9 } }
-        withdrawalBody = body.body as Record<string, unknown>
+      if (path.endsWith('/orderly/withdraw')) {
+        withdrawalBody = body
         return { ok: true, data: { request_id: 'withdrawal-1' } }
       }
       throw new Error(`Unexpected wallet write: ${path}`)
@@ -578,8 +575,6 @@ describe('Orderly API contracts', () => {
           ],
         })
       }
-      if (input.includes('/v1/get_account'))
-        return json({ success: true, data: { account_id: ACCOUNT_ID } })
       throw new Error(`Unexpected Orderly request: ${input}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -592,26 +587,16 @@ describe('Orderly API contracts', () => {
       execute: 'true',
     })
 
-    expect(mocks.apiPost).toHaveBeenCalledWith(
-      '/v1/instances/instance-123/wallet/sign-typed-data',
-      expect.objectContaining({
-        types: expect.objectContaining({
-          Withdraw: expect.not.arrayContaining([{ name: 'chainType', type: 'string' }]),
-        }),
-        message: expect.not.objectContaining({ chainType: 'EVM' }),
-      }),
-      { headers: { 'X-Purr-Integration': 'orderly-trading' } },
-    )
-    expect(withdrawalBody).toMatchObject({
-      signature: '0xtyped',
-      userAddress: EVM_ADDRESS,
-      verifyingContract: '0x6F7a338F2aA472838dEFD3283eB360d4Dff5D203',
-      message: {
-        chainId: 42161,
-        chainType: 'EVM',
-        amount: '1500000',
-      },
+    expect(withdrawalBody).toEqual({
+      chainId: 42161,
+      token: 'USDC',
+      amount: '1500000',
+      receiver: EVM_ADDRESS,
     })
+    expect(mocks.apiPost).not.toHaveBeenCalledWith(
+      expect.stringContaining('/wallet/sign'),
+      expect.anything(),
+    )
   })
 
   it('never creates a Solana wallet while previewing onboarding', async () => {
@@ -640,29 +625,15 @@ describe('Orderly API contracts', () => {
     })
   })
 
-  it('treats code -1607 as unregistered and appends chainType to onboarding wire messages', async () => {
+  it('delegates onboarding signatures and Orderly submissions to Platform', async () => {
     mockWallets()
-    let registrationBody: Record<string, unknown> | undefined
-    let addKeyBody: Record<string, unknown> | undefined
     mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
-      if (path.endsWith('/wallet/sign-typed-data'))
-        return { ok: true, data: { signature: '0xtyped' } }
-      if (path.endsWith('/orderly/private-request')) return { ok: true, data: { holding: [] } }
-      if (path.endsWith('/orderly/gated-request')) {
-        if (body.path === '/v1/register_account') {
-          registrationBody = body.body as Record<string, unknown>
-          return { ok: true, data: { account_id: ACCOUNT_ID } }
-        }
-        if (body.path === '/v1/orderly_key') {
-          addKeyBody = body.body as Record<string, unknown>
-          return { ok: true, data: {} }
-        }
-      }
+      if (path.endsWith('/orderly/onboard'))
+        return { ok: true, data: { accountId: ACCOUNT_ID, orderlyKey: `ed25519:${SOLANA_ADDRESS}` } }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
     const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
-      if (input.includes('/v1/get_account'))
-        return json({ success: false, code: -1607, message: 'Account not found' })
+      if (input.includes('/v1/get_account')) return json({ success: false, code: -1607, message: 'Account not found' })
       if (input.endsWith('/v1/registration_nonce')) return json({ success: true, data: 1 })
       throw new Error(`Unexpected Orderly request: ${input}`)
     })
@@ -670,18 +641,13 @@ describe('Orderly API contracts', () => {
 
     await orderlyCommand('onboard', { 'chain-id': '42161', execute: 'true' })
 
-    const typedDataCalls = mocks.apiPost.mock.calls.filter(([path]) =>
-      String(path).endsWith('/wallet/sign-typed-data'),
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/orderly/onboard',
+      { chainId: 42161 },
     )
-    expect(typedDataCalls).toHaveLength(2)
-    for (const [, request] of typedDataCalls) {
-      expect((request as Record<string, unknown>).message).not.toHaveProperty('chainType')
-    }
-    expect(registrationBody).toMatchObject({ message: { chainType: 'EVM' } })
-    expect(addKeyBody).toMatchObject({ message: { chainType: 'EVM' } })
-    const addKeyMessage = (addKeyBody?.message ?? {}) as Record<string, unknown>
-    expect(Number(addKeyMessage.expiration) - Number(addKeyMessage.timestamp)).toBe(
-      365 * 24 * 60 * 60 * 1_000 - 5 * 60 * 1_000,
+    expect(mocks.apiPost).not.toHaveBeenCalledWith(
+      expect.stringContaining('/wallet/sign'),
+      expect.anything(),
     )
   })
 })

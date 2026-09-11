@@ -105,6 +105,76 @@ describe('Orderly API contracts', () => {
     vi.unstubAllGlobals()
   })
 
+  it('sends max_level rather than max_depth for orderbook queries', async () => {
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith('/v1/public/query')) {
+        expect(init?.method).toBe('POST')
+        const body = JSON.parse(String(init?.body))
+        expect(body).toMatchObject({ type: 'orderbook', symbol: 'PERP_ETH_USDC', max_level: 5 })
+        expect(body).not.toHaveProperty('max_depth')
+        return json({ success: true, data: {} })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('orderbook', { symbol: 'PERP_ETH_USDC', depth: '5' })
+  })
+
+  it('sends start_time and end_time rather than start_t and end_t for candle queries', async () => {
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith('/v1/public/query')) {
+        expect(init?.method).toBe('POST')
+        const body = JSON.parse(String(init?.body))
+        expect(body).toMatchObject({
+          type: 'candles',
+          symbol: 'PERP_ETH_USDC',
+          interval: '1h',
+          start_time: 1_700_000_000_000,
+          end_time: 1_700_003_600_000,
+        })
+        expect(body).not.toHaveProperty('start_t')
+        expect(body).not.toHaveProperty('end_t')
+        return json({ success: true, data: {} })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('candles', {
+      symbol: 'PERP_ETH_USDC',
+      interval: '1h',
+      'start-t': '1700000000000',
+      'end-t': '1700003600000',
+    })
+  })
+
+  it('sends start_time and end_time rather than start_t and end_t for funding queries', async () => {
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.endsWith('/v1/public/query')) {
+        expect(init?.method).toBe('POST')
+        const body = JSON.parse(String(init?.body))
+        expect(body).toMatchObject({
+          type: 'fundingRateHistory',
+          symbol: 'PERP_ETH_USDC',
+          start_time: 1_700_000_000_000,
+          end_time: 1_700_003_600_000,
+        })
+        expect(body).not.toHaveProperty('start_t')
+        expect(body).not.toHaveProperty('end_t')
+        return json({ success: true, data: {} })
+      }
+      throw new Error(`Unexpected Orderly request: ${input}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('funding', {
+      symbol: 'PERP_ETH_USDC',
+      'start-t': '1700000000000',
+      'end-t': '1700003600000',
+    })
+  })
+
   it('uses address, rather than user_address, when deriving a private identity', async () => {
     mockWallets()
     mocks.apiPost.mockResolvedValue({ ok: true, data: { signature: TEE_SOLANA_SIGNATURE_BASE58 } })

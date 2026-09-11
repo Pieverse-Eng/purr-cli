@@ -1093,9 +1093,9 @@ async function publicQuery(type: string, args: Record<string, string>): Promise<
     type,
     ...(args.symbol ? { symbol: args.symbol } : {}),
     ...(args.interval ? { interval: args.interval } : {}),
-    ...(args['start-t'] ? { start_t: Number(args['start-t']) } : {}),
-    ...(args['end-t'] ? { end_t: Number(args['end-t']) } : {}),
-    ...(args.depth ? { max_depth: Number(args.depth) } : {}),
+    ...(args['start-t'] ? { start_time: Number(args['start-t']) } : {}),
+    ...(args['end-t'] ? { end_time: Number(args['end-t']) } : {}),
+    ...(args.depth ? { max_level: Number(args.depth) } : {}),
   }
   print(await orderlyRequest('POST', '/v1/public/query', body))
 }

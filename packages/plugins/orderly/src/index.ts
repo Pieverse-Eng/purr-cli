@@ -369,10 +369,7 @@ async function publicInfo(symbol: string): Promise<JsonRecord> {
   return record(await orderlyRequest('GET', `/v1/public/info/${encodeURIComponent(symbol)}`))
 }
 
-async function tokenMetadata(
-  token: string,
-  chainId: number,
-): Promise<{ address: string; chainDecimals: number; ledgerDecimals: number }> {
+async function tokenMetadata(token: string, chainId: number): Promise<{ ledgerDecimals: number }> {
   const response = await orderlyRequest<unknown>('GET', '/v1/public/token')
   const row = asRows(response).find(
     (item) => asString(item.token)?.toUpperCase() === token.toUpperCase(),
@@ -381,18 +378,11 @@ async function tokenMetadata(
   const chain = asRows(row.chain_details).find(
     (item) => Number(item.chain_id ?? item.chainId) === chainId,
   )
-  const address = asString(chain?.contract_address ?? chain?.contractAddress)
-  const chainDecimals = Number(chain?.decimals)
   const ledgerDecimals = Number(row.decimals)
-  if (
-    !address ||
-    !isAddress(address) ||
-    !Number.isInteger(chainDecimals) ||
-    !Number.isInteger(ledgerDecimals)
-  ) {
+  if (!chain || !Number.isInteger(ledgerDecimals)) {
     throw new OrderlyCliError(`${token} is not executable on chain ${chainId}`)
   }
-  return { address, chainDecimals, ledgerDecimals }
+  return { ledgerDecimals }
 }
 
 function decimalIsMultiple(value: string, tick: unknown): boolean {
@@ -754,13 +744,25 @@ async function createAlgo(args: Record<string, string>): Promise<void> {
       reduce_only: true,
     })
   if (children.length === 0) throw new OrderlyCliError('Specify --take-profit and/or --stop-loss')
-  const body = {
-    symbol,
-    algo_type: children.length === 2 ? 'TP_SL' : children[0].algo_type,
-    quantity,
-    trigger_price_type: 'MARK_PRICE',
-    child_orders: children,
-  }
+  const body: JsonRecord =
+    children.length === 2
+      ? {
+          symbol,
+          algo_type: 'TP_SL',
+          quantity,
+          trigger_price_type: 'MARK_PRICE',
+          child_orders: children,
+        }
+      : {
+          symbol,
+          algo_type: 'STOP',
+          side,
+          type: 'MARKET',
+          quantity,
+          trigger_price_type: 'MARK_PRICE',
+          trigger_price: children[0].trigger_price,
+          reduce_only: true,
+        }
   if (!execute(args)) return print({ execute: false, algoOrder: body })
   print(await privateRequest('POST', '/v1/algo/order', body))
 }
@@ -820,7 +822,14 @@ export async function orderlyCommand(command: string, args: Record<string, strin
         await orderlyRequest('GET', query('/v1/public/chain_info', { broker_id: brokerId() })),
       )
     case 'tokens':
-      return print(await orderlyRequest('GET', '/v1/public/token'))
+      return print(
+        await orderlyRequest(
+          'GET',
+          query('/v1/public/token', {
+            chain_id: args['chain-id'] === undefined ? undefined : requiredChainId(args),
+          }),
+        ),
+      )
     case 'onboard':
       return await onboard(args)
     case 'account':

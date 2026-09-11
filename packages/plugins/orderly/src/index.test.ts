@@ -1,14 +1,6 @@
 import { createPublicKey, verify } from 'node:crypto'
 import bs58 from 'bs58'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  encodeAbiParameters,
-  encodeFunctionData,
-  keccak256,
-  parseAbi,
-  parseAbiParameters,
-  stringToHex,
-} from 'viem'
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
@@ -32,7 +24,6 @@ import {
 const EVM_ADDRESS: `0x${string}` = '0x1111111111111111111111111111111111111111'
 const SOLANA_ADDRESS = 'So11111111111111111111111111111111111111112'
 const ACCOUNT_ID = `0x${'22'.repeat(32)}` as `0x${string}`
-const VAULT_ADDRESS = '0x3333333333333333333333333333333333333333'
 const TOKEN_ADDRESS = '0x4444444444444444444444444444444444444444'
 // RFC 8032, test vector 1: an Ed25519 signature for an empty message.
 const ED25519_PUBLIC_KEY_DER = Buffer.from(
@@ -217,88 +208,20 @@ describe('Orderly API contracts', () => {
     )
   })
 
-  it('reads token chain_details and public_rpc_url for the Vault fee query', async () => {
-    mockWallets()
-    const expectedCallData = encodeFunctionData({
-      abi: parseAbi([
-        'function getDepositFee(address account, (bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) view returns (uint256)',
-      ]),
-      functionName: 'getDepositFee',
-      args: [
-        EVM_ADDRESS,
-        {
-          accountId: ACCOUNT_ID,
-          brokerHash: keccak256(stringToHex('broker-1')),
-          tokenHash: keccak256(stringToHex('USDC')),
-          tokenAmount: 1_500_000n,
-        },
-      ],
-    })
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
-      if (input.includes('/v1/get_account'))
-        return json({ success: true, data: { account_id: ACCOUNT_ID } })
-      if (input.includes('/v1/public/chain_info')) {
-        return json({
-          success: true,
-          data: [
-            {
-              chain_id: 42161,
-              vault_address: VAULT_ADDRESS,
-              public_rpc_url: 'https://rpc.example',
-            },
-          ],
-        })
-      }
-      if (input.endsWith('/v1/public/token')) {
-        return json({
-          success: true,
-          data: [
-            {
-              token: 'USDC',
-              decimals: 6,
-              chain_details: [{ chain_id: 42161, contract_address: TOKEN_ADDRESS, decimals: 6 }],
-            },
-          ],
-        })
-      }
-      if (input === 'https://rpc.example') {
-        const rpc = JSON.parse(String(init?.body))
-        expect(rpc.params[0].data).toBe(expectedCallData)
-        return json({ result: encodeAbiParameters(parseAbiParameters('uint256'), [7n]) })
-      }
-      if (input.includes('/v1/get_account'))
-        return json({ success: true, data: { account_id: ACCOUNT_ID } })
-      throw new Error(`Unexpected Orderly request: ${input}`)
-    })
+  it('keeps deposit previews free of wallet and RPC activity', async () => {
+    mocks.apiGet.mockResolvedValue({ ok: true, data: { enabled: true } })
+    const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
-    await orderlyCommand('deposit', {
-      'chain-id': '42161',
+    await orderlyCommand('deposit', { 'chain-id': '42161', token: 'USDC', amount: '1.5' })
+
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0]))).toMatchObject({
+      execute: false,
+      chainId: 42161,
       token: 'USDC',
       amount: '1.5',
-    })
-
-    expect(JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0]))).toMatchObject({
-      feeWei: '7',
-      feeSource: 'vault_rpc',
-      steps: [
-        {
-          to: TOKEN_ADDRESS,
-          signature: 'approve(address,uint256)',
-          value: '0x0',
-          conditional: {
-            type: 'allowance_lt',
-            token: TOKEN_ADDRESS,
-            spender: VAULT_ADDRESS,
-            amount: '1500000',
-          },
-        },
-        {
-          to: VAULT_ADDRESS,
-          signature: 'deposit((bytes32,bytes32,bytes32,uint128))',
-          value: '0x7',
-        },
-      ],
     })
   })
 
@@ -320,41 +243,6 @@ describe('Orderly API contracts', () => {
       }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
-    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
-      if (input.includes('/v1/get_account'))
-        return json({ success: true, data: { account_id: ACCOUNT_ID } })
-      if (input.includes('/v1/public/chain_info')) {
-        return json({
-          success: true,
-          data: [
-            {
-              chain_id: 42161,
-              vault_address: VAULT_ADDRESS,
-              public_rpc_url: 'https://rpc.example',
-            },
-          ],
-        })
-      }
-      if (input.endsWith('/v1/public/token')) {
-        return json({
-          success: true,
-          data: [
-            {
-              token: 'USDC',
-              decimals: 6,
-              chain_details: [{ chain_id: 42161, contract_address: TOKEN_ADDRESS, decimals: 6 }],
-            },
-          ],
-        })
-      }
-      if (input === 'https://rpc.example') {
-        expect(JSON.parse(String(init?.body))).toMatchObject({ method: 'eth_call' })
-        return json({ result: encodeAbiParameters(parseAbiParameters('uint256'), [7n]) })
-      }
-      throw new Error(`Unexpected Orderly request: ${input}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
     await orderlyCommand('deposit', {
       'chain-id': '42161',
       token: 'USDC',
@@ -362,23 +250,7 @@ describe('Orderly API contracts', () => {
       execute: 'true',
     })
 
-    expect(executionBody).toMatchObject({
-      dedupKey: `instance-123:orderly-deposit:42161:${TOKEN_ADDRESS}:1500000`,
-      steps: [
-        {
-          label: 'approve',
-          to: TOKEN_ADDRESS,
-          value: '0x0',
-          conditional: {
-            type: 'allowance_lt',
-            token: TOKEN_ADDRESS,
-            spender: VAULT_ADDRESS,
-            amount: '1500000',
-          },
-        },
-        { label: 'deposit', to: VAULT_ADDRESS, value: '0x7' },
-      ],
-    })
+    expect(executionBody).toEqual({ chainId: 42161, token: 'USDC', amount: '1.5' })
     expect(mocks.apiPost).toHaveBeenCalledTimes(1)
     expect(JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0]))).toMatchObject({
       execute: true,

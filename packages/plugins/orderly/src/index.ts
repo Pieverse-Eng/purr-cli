@@ -1,14 +1,6 @@
 import { apiGet, apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 import bs58 from 'bs58'
-import {
-  decodeFunctionResult,
-  encodeFunctionData,
-  isAddress,
-  keccak256,
-  parseAbi,
-  parseUnits,
-  stringToHex,
-} from 'viem'
+import { isAddress, parseUnits } from 'viem'
 
 type JsonRecord = Record<string, unknown>
 type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE'
@@ -57,16 +49,6 @@ interface TradingIntegrationResponse {
 const API_URL = (process.env.ORDERLY_API_URL ?? 'https://api.orderly.org').replace(/\/$/, '')
 const ORDER_TYPES = ['LIMIT', 'MARKET', 'IOC', 'FOK', 'POST_ONLY', 'ASK', 'BID'] as const
 
-const VAULT_ABI = parseAbi([
-  'function getDepositFee(address account, (bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) view returns (uint256)',
-])
-const ERC20_APPROVE_ABI = parseAbi([
-  'function approve(address spender, uint256 amount) returns (bool)',
-])
-const DEPOSIT_ABI = parseAbi([
-  'function deposit((bytes32 accountId, bytes32 brokerHash, bytes32 tokenHash, uint128 tokenAmount) input) payable',
-])
-const MAX_UINT128 = (1n << 128n) - 1n
 const ORDERLY_KEY_MAX_LIFETIME_MS = 365 * 24 * 60 * 60 * 1_000
 const ORDERLY_KEY_EXPIRY_BUFFER_MS = 5 * 60 * 1_000
 
@@ -113,7 +95,7 @@ Account and asset commands:
   orders [--status <INCOMPLETE|COMPLETED>] [--symbol <symbol>] [--page <n>] [--size <n>]
   fills [--symbol <symbol>] [--page <n>] [--size <n>]
   asset-history [--token <symbol>] [--side <DEPOSIT|WITHDRAW>] [--page <n>] [--size <n>]
-  deposit --chain-id <id> --token <symbol> --amount <decimal> [--fee-wei <wei>] [--execute true]
+  deposit --chain-id <id> --token <symbol> --amount <decimal> [--execute true]
   withdraw --chain-id <id> --token <symbol> --amount <decimal> --address <0x...> [--allow-cross-chain true] [--execute true]
 
 Trading commands:
@@ -413,68 +395,6 @@ async function tokenMetadata(
   return { address, chainDecimals, ledgerDecimals }
 }
 
-async function chainMetadata(chainId: number): Promise<JsonRecord> {
-  const response = await orderlyRequest<unknown>(
-    'GET',
-    query('/v1/public/chain_info', { broker_id: brokerId() }),
-  )
-  const chain = asRows(response).find((row) => Number(row.chain_id ?? row.chainId) === chainId)
-  if (!chain) throw new OrderlyCliError(`Orderly broker does not support chain ${chainId}`)
-  return chain
-}
-
-function chainRpcUrl(chain: JsonRecord, chainId: number): string | undefined {
-  const configured = process.env[`ORDERLY_RPC_URL_${chainId}`]
-  if (configured) return configured
-  for (const key of ['public_rpc_url', 'rpc_url', 'rpcUrl', 'rpc'] as const) {
-    const value = asString(chain[key])
-    if (value) return value
-  }
-  return undefined
-}
-
-async function queryDepositFee(
-  rpcUrl: string | undefined,
-  vault: string,
-  evmAddress: string,
-  input: {
-    accountId: `0x${string}`
-    brokerHash: `0x${string}`
-    tokenHash: `0x${string}`
-    tokenAmount: bigint
-  },
-): Promise<string | undefined> {
-  if (!rpcUrl) return undefined
-  const data = encodeFunctionData({
-    abi: VAULT_ABI,
-    functionName: 'getDepositFee',
-    args: [evmAddress as `0x${string}`, input],
-  })
-  const response = await fetch(rpcUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'eth_call',
-      params: [{ to: vault, data }, 'latest'],
-    }),
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (!response.ok)
-    throw new OrderlyCliError(`Deposit-fee RPC request failed for chain ${String(vault)}`)
-  const json = record(await response.json())
-  if (json.error)
-    throw new OrderlyCliError('Orderly vault rejected the deposit-fee quote', { data: json.error })
-  const result = asString(json.result)
-  if (!result) throw new OrderlyCliError('Deposit-fee RPC response has no result')
-  return decodeFunctionResult({
-    abi: VAULT_ABI,
-    functionName: 'getDepositFee',
-    data: result as `0x${string}`,
-  }).toString()
-}
-
 function decimalIsMultiple(value: string, tick: unknown): boolean {
   if (typeof tick !== 'number' && typeof tick !== 'string') return true
   const normalizedTick = String(tick)
@@ -648,118 +568,18 @@ async function deposit(args: Record<string, string>): Promise<void> {
   const chainId = requiredChainId(args)
   const token = required(args, 'token').toUpperCase()
   const amount = positiveDecimal(required(args, 'amount'), 'amount')
-  const identityContext = await identity()
-  const chain = await chainMetadata(chainId)
-  const vault = asString(chain.vault_address) ?? asString(chain.vaultAddress)
-  if (!vault || !isAddress(vault))
-    throw new OrderlyCliError(`Orderly chain ${chainId} has no executable EVM vault`)
-  const tokenInfo = await tokenMetadata(token, chainId)
-  const amountWei = parseUnits(amount, tokenInfo.chainDecimals)
-  if (amountWei > MAX_UINT128)
-    throw new OrderlyCliError('--amount exceeds the Orderly Vault uint128 tokenAmount limit')
-  const input = {
-    accountId: identityContext.accountId as `0x${string}`,
-    brokerHash: keccak256(stringToHex(brokerId())),
-    tokenHash: keccak256(stringToHex(token)),
-    tokenAmount: amountWei,
-  }
-  const quotedFeeWei = await queryDepositFee(
-    chainRpcUrl(chain, chainId),
-    vault,
-    identityContext.evmAddress,
-    input,
-  )
-  const feeWei = args['fee-wei'] ?? quotedFeeWei
-  if (!feeWei) {
-    if (execute(args))
-      throw new OrderlyCliError(
-        `No RPC URL is available to quote the deposit fee for chain ${chainId}. Set ORDERLY_RPC_URL_${chainId} or supply the verified --fee-wei quote.`,
-      )
-    return print({
-      execute: false,
-      chainId,
-      token,
-      amount,
-      amountWei: amountWei.toString(),
-      steps: [],
-      requires: `Set ORDERLY_RPC_URL_${chainId} or supply --fee-wei from a verified Vault getDepositFee quote.`,
-    })
-  }
-  if (!/^\d+$/.test(feeWei)) throw new OrderlyCliError('--fee-wei must be an integer wei amount')
-  const feeValue = `0x${BigInt(feeWei).toString(16)}`
-  const steps = [
-    {
-      kind: 'approve',
-      to: tokenInfo.address,
-      signature: 'approve(address,uint256)',
-      args: [vault, amountWei.toString()],
-      value: '0x0',
-      chainId,
-      conditional: {
-        type: 'allowance_lt',
-        token: tokenInfo.address,
-        spender: vault,
-        amount: amountWei.toString(),
-      },
-    },
-    {
-      kind: 'deposit',
-      to: vault,
-      signature: 'deposit((bytes32,bytes32,bytes32,uint128))',
-      args: [input.accountId, input.brokerHash, input.tokenHash, amountWei.toString()],
-      value: feeValue,
-      chainId,
-    },
-  ]
   if (!execute(args))
     return print({
       execute: false,
       chainId,
       token,
       amount,
-      amountWei: amountWei.toString(),
-      feeWei,
-      feeSource: args['fee-wei'] ? 'explicit' : 'vault_rpc',
-      steps,
+      note: 'Platform validates Orderly metadata, quotes the vault fee, and builds the approval and deposit transactions when executed.',
     })
   const { instanceId } = resolveCredentials()
-  const approvalData = encodeFunctionData({
-    abi: ERC20_APPROVE_ABI,
-    functionName: 'approve',
-    args: [vault, amountWei],
-  })
-  const depositData = encodeFunctionData({
-    abi: DEPOSIT_ABI,
-    functionName: 'deposit',
-    args: [input],
-  })
   const result = await apiPost<WalletStepsResponse>(
     `/v1/instances/${encodeURIComponent(instanceId)}/orderly/deposit`,
-    {
-      steps: [
-        {
-          label: 'approve',
-          to: tokenInfo.address,
-          data: approvalData,
-          value: '0x0',
-          chainId,
-          conditional: {
-            type: 'allowance_lt',
-            token: tokenInfo.address,
-            spender: vault,
-            amount: amountWei.toString(),
-          },
-        },
-        {
-          label: 'deposit',
-          to: vault,
-          data: depositData,
-          value: feeValue,
-          chainId,
-        },
-      ],
-      dedupKey: `${instanceId}:orderly-deposit:${chainId}:${tokenInfo.address.toLowerCase()}:${amountWei.toString()}`,
-    },
+    { chainId, token, amount },
   )
   let results: WalletStepResult[] = []
   if (result.data !== undefined) results = result.data.results
@@ -781,7 +601,6 @@ async function deposit(args: Record<string, string>): Promise<void> {
     approveTxHash,
     approvalSkipped,
     depositTxHash: deposited.hash,
-    accountId: identityContext.accountId,
   })
 }
 

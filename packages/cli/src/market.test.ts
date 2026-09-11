@@ -248,7 +248,7 @@ describe('single token lookup', () => {
     })
   })
   it('preserves Solana case, returns empty for no exact match, and propagates provider errors', async () => {
-    const ca = 'AbC' + '1'.repeat(29)
+    const ca = `AbC${'1'.repeat(29)}`
     expect(
       (
         await marketToken('solana', ca, async () => [

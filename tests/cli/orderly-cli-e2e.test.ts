@@ -1,30 +1,14 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
-import { createPrivateKey, createPublicKey, sign, verify } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import bs58 from 'bs58'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const API_TOKEN = 'test-token'
 const INSTANCE_ID = 'instance-123'
-const EVM_ADDRESS = '0x1111111111111111111111111111111111111111'
-const SOLANA_ADDRESS = 'So11111111111111111111111111111111112'
-const ACCOUNT_ID = `0x${'22'.repeat(32)}`
 const BROKER_ID = 'broker-1'
-const ED25519_PKCS8_SEED_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex')
-const ED25519_SEED = Buffer.from(
-  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
-  'hex',
-)
-const ED25519_PRIVATE_KEY = createPrivateKey({
-  key: Buffer.concat([ED25519_PKCS8_SEED_PREFIX, ED25519_SEED]),
-  format: 'der',
-  type: 'pkcs8',
-})
-const ED25519_PUBLIC_KEY = createPublicKey(ED25519_PRIVATE_KEY)
 
 interface CommandResult {
   code: number | null
@@ -101,8 +85,6 @@ describe('Orderly CLI e2e', () => {
   let server: ReturnType<typeof createServer>
   let port = 0
   let home = ''
-  let receivedWalletSignature = false
-  let verifiedOrderlyHeader = false
 
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), 'purr-orderly-e2e-'))
@@ -110,60 +92,23 @@ describe('Orderly CLI e2e', () => {
       try {
         const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
 
-        if (url.pathname === `/v1/instances/${INSTANCE_ID}/wallet`) {
+        if (url.pathname === `/v1/instances/${INSTANCE_ID}/integrations/orderly-trading`) {
           assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
-          const chainType = url.searchParams.get('chain_type')
-          writeJson(res, {
-            ok: true,
-            data: { address: chainType === 'solana' ? SOLANA_ADDRESS : EVM_ADDRESS },
-          })
+          writeJson(res, { ok: true, data: { enabled: true } })
           return
         }
-        if (url.pathname === `/v1/instances/${INSTANCE_ID}/wallet/sign`) {
+
+        if (url.pathname === `/v1/instances/${INSTANCE_ID}/orderly/private-request`) {
           assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
           assert.equal(req.method, 'POST')
-          const body = JSON.parse(await readBody(req)) as Record<string, unknown>
-          assert.equal(body.chainType, 'solana')
-          assert.equal(body.scheme, 'raw')
-          assert.equal(typeof body.message, 'string')
-          receivedWalletSignature = true
-          writeJson(res, {
-            ok: true,
-            data: {
-              signature: bs58.encode(sign(null, Buffer.from(body.message), ED25519_PRIVATE_KEY)),
-            },
+          assert.deepEqual(JSON.parse(await readBody(req)), {
+            method: 'GET',
+            path: '/v1/client/holding',
           })
+          writeJson(res, { ok: true, data: { holding: [] } })
           return
         }
-        if (url.pathname === '/v1/get_account') {
-          assert.equal(url.searchParams.get('broker_id'), BROKER_ID)
-          assert.equal(url.searchParams.get('address'), EVM_ADDRESS)
-          assert.equal(url.searchParams.get('chain_type'), 'EVM')
-          writeJson(res, { success: true, data: { account_id: ACCOUNT_ID } })
-          return
-        }
-        if (url.pathname === '/v1/client/holding') {
-          assert.equal(req.method, 'GET')
-          assert.equal(req.headers['orderly-account-id'], ACCOUNT_ID)
-          assert.equal(req.headers['orderly-key'], `ed25519:${SOLANA_ADDRESS}`)
-          const timestamp = req.headers['orderly-timestamp']
-          const signature = req.headers['orderly-signature']
-          assert.equal(typeof timestamp, 'string')
-          assert.equal(typeof signature, 'string')
-          assert.equal(Buffer.from(signature, 'base64url').length, 64)
-          assert.equal(
-            verify(
-              null,
-              Buffer.from(`${timestamp}GET/v1/client/holding`),
-              ED25519_PUBLIC_KEY,
-              Buffer.from(signature, 'base64url'),
-            ),
-            true,
-          )
-          verifiedOrderlyHeader = true
-          writeJson(res, { success: true, data: { holding: [] } })
-          return
-        }
+
         throw new Error(`Unexpected request: ${req.method} ${url.pathname}${url.search}`)
       } catch (error) {
         console.error('Orderly CLI e2e test server error:', error)
@@ -179,13 +124,11 @@ describe('Orderly CLI e2e', () => {
     rmSync(home, { recursive: true, force: true })
   })
 
-  it('converts the platform raw Base58 signature into a verifiable Orderly header', async () => {
+  it('routes private reads through the platform-enforced Orderly proxy', async () => {
     const result = await runPurr(port, home)
 
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('')
     expect(JSON.parse(result.stdout)).toEqual({ holding: [] })
-    expect(receivedWalletSignature).toBe(true)
-    expect(verifiedOrderlyHeader).toBe(true)
   })
 })

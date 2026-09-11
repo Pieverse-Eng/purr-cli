@@ -146,7 +146,7 @@ import {
 } from '@pieverseio/purr-plugin-store/resolve'
 import { removeFromAgents } from '@pieverseio/purr-plugin-store/skill-dirs'
 import { walletAbiCall } from '@pieverseio/purr-plugin-wallet/abi-call'
-import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
+import { getWalletAddress, walletAddress } from '@pieverseio/purr-plugin-wallet/address'
 import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
 import {
   redpacketClaim,
@@ -677,7 +677,8 @@ Examples:
   purr pancake quote --path USDT,CAKE --amount-in-wei 1000000000000000000 --chain-id 56 --slippage-bps 100
   purr pancake quote --path USDT,CAKE --fees 2500 --amount-in-wei 1000000000000000000 --chain-id 56
   V3: pass the same --fees <fee,...> (one per hop) to quote and swap; use ERC-20 paths, including WBNB.
-  purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
+  purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --chain-id 56
+  Swap uses the configured instance wallet and a deadline 20 minutes from construction.
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake stake --pid 2 --amount-wei 1000 --lp-token 0x... --chain-id 56
@@ -779,7 +780,7 @@ Examples:
   purr wallet abi-call --to 0x... --signature 'register(string)' --args '["https://example.com/agent.json"]' --chain-id 2818
   purr execute --steps-file /tmp/purr_steps.json
   purr execute --steps-file /tmp/purr_steps.json --dedup-key my-swap-123
-  purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
+  purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --chain-id 56 --execute
   purr evm approve --token 0x... --spender 0x... --amount 1000 --chain-id 56
   purr evm raw --to 0x... --data 0xAbcDef --chain-id 56
   purr evm abi-call --to 0x... --signature 'register(string)' --args '["uri"]' --chain-id 2818
@@ -1558,6 +1559,13 @@ Examples:
           return
         }
         case 'swap':
+          if (args.wallet !== undefined || args.deadline !== undefined) {
+            throw new Error(
+              'pancake swap no longer accepts --wallet or --deadline; it uses the instance wallet and a 20-minute deadline',
+            )
+          }
+          if (chainId !== 56)
+            throw new Error('PancakeSwap swaps are only supported on BNB Chain (chain ID 56)')
           output = buildPancakeSwapSteps({
             fees: args.fees === undefined ? undefined : args.fees.split(',').map(Number),
             path: requireArg(args, 'path')
@@ -1565,8 +1573,7 @@ Examples:
               .map((t) => resolveToken(t.trim(), chainId)),
             amountInWei: requireArg(args, 'amount-in-wei'),
             amountOutMinWei: requireArg(args, 'amount-out-min-wei'),
-            wallet: requireArg(args, 'wallet'),
-            deadline: parseDeadline(requireArg(args, 'deadline')),
+            wallet: (await getWalletAddress({ 'chain-id': String(chainId) })).address,
             chainId,
             router: args.router,
           })

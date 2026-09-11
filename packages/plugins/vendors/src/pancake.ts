@@ -89,7 +89,6 @@ export interface PancakeSwapArgs {
   amountInWei: string
   amountOutMinWei: string
   wallet: string
-  deadline?: number // unix timestamp or relative seconds; defaults to 20 min
   chainId: number
 }
 
@@ -169,8 +168,8 @@ export async function quotePancakeSwap(args: {
   })
   if ((await client.getChainId()) !== BSC_CHAIN_ID) throw new Error('RPC must serve BSC (56)')
   const blockNumber = await client.getBlockNumber()
-  // Only validated addresses and integers enter the command. Quoted placeholders
-  // fail validation if copied without replacement, rather than acting as shell redirections.
+  // Only validated addresses and integers enter the command. The CLI resolves
+  // the instance wallet and creates a fresh deadline when constructing the swap.
   const swapCommandTemplate = (amountOutMin: bigint) =>
     [
       'purr pancake swap',
@@ -180,7 +179,6 @@ export async function quotePancakeSwap(args: {
       `--amount-in-wei ${amountIn}`,
       `--amount-out-min-wei ${amountOutMin}`,
       ...(args.fees ? [`--fees ${args.fees.join(',')}`] : []),
-      "--wallet '<wallet-address>' --deadline '<deadline>'",
     ].join(' ')
   if (encodedPath) {
     const { result } = await client.simulateContract({
@@ -251,9 +249,7 @@ export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
     const amountOutMinimum = parseBigInt(args.amountOutMinWei, 'amount-out-min-wei')
     if (amountIn <= 0n || amountOutMinimum <= 0n) throw new Error('V3 amounts must be positive')
     const recipient = requireAddress(args.wallet, 'wallet')
-    const deadline = resolveDeadline(args.deadline)
-    if (deadline <= BigInt(Math.floor(Date.now() / 1000)))
-      throw new Error('deadline must be in the future')
+    const deadline = resolveDeadline(undefined)
     return {
       steps: [
         buildApprovalStep(
@@ -291,7 +287,7 @@ export function buildPancakeSwapSteps(args: PancakeSwapArgs): StepOutput {
     return trimmed
   }) as `0x${string}`[]
   const wallet = requireAddress(args.wallet, 'wallet')
-  const deadline = resolveDeadline(args.deadline)
+  const deadline = resolveDeadline(undefined)
 
   const fromToken = inputPath[0]
   const toToken = inputPath[inputPath.length - 1]

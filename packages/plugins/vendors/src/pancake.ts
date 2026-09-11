@@ -169,6 +169,19 @@ export async function quotePancakeSwap(args: {
   })
   if ((await client.getChainId()) !== BSC_CHAIN_ID) throw new Error('RPC must serve BSC (56)')
   const blockNumber = await client.getBlockNumber()
+  // Only validated addresses and integers enter the command. Quoted placeholders
+  // fail validation if copied without replacement, rather than acting as shell redirections.
+  const swapCommandTemplate = (amountOutMin: bigint) =>
+    [
+      'purr pancake swap',
+      `--chain-id ${BSC_CHAIN_ID}`,
+      `--path ${args.path.map((token) => (isNative(token.trim()) ? '0x0000000000000000000000000000000000000000' : requireAddress(token.trim(), 'path token'))).join(',')}`,
+      `--router ${router}`,
+      `--amount-in-wei ${amountIn}`,
+      `--amount-out-min-wei ${amountOutMin}`,
+      ...(args.fees ? [`--fees ${args.fees.join(',')}`] : []),
+      "--wallet '<wallet-address>' --deadline '<deadline>'",
+    ].join(' ')
   if (encodedPath) {
     const { result } = await client.simulateContract({
       address: V3_QUOTER,
@@ -194,6 +207,7 @@ export async function quotePancakeSwap(args: {
       amountOutMinWei: ((amountOut * BigInt(10000 - slippageBps)) / 10000n).toString(),
       slippageBps,
       quoterGas: quoterGas.toString(),
+      swapCommandTemplate: swapCommandTemplate((amountOut * BigInt(10000 - slippageBps)) / 10000n),
     }
   }
   const amounts = await client.readContract({
@@ -221,6 +235,7 @@ export async function quotePancakeSwap(args: {
     amountOutMinWei: ((amountOut * BigInt(10000 - slippageBps)) / 10000n).toString(),
     slippageBps,
     amounts: amounts.map(String),
+    swapCommandTemplate: swapCommandTemplate((amountOut * BigInt(10000 - slippageBps)) / 10000n),
   }
 }
 

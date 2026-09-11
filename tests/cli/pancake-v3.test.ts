@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { spawnSync } from 'node:child_process'
 import type { AddressInfo } from 'node:net'
 import { decodeFunctionData, encodeAbiParameters, parseAbi } from 'viem'
 import { expect, it } from 'vitest'
@@ -57,7 +58,14 @@ it('quotes V3 at a pinned block and builds the same route with deadline and slip
     })
     expect(quote.version).toBe('v3')
     expect(quote.amountOutMinWei).toBe('990')
-    const { steps } = buildPancakeSwapSteps({ ...base, amountOutMinWei: quote.amountOutMinWei })
+    expect(quote.swapCommandTemplate).not.toContain('--execute')
+    const command = quote.swapCommandTemplate
+      .replace(/^purr /, 'bun run packages/cli/src/linux-macos.ts ')
+      .replace('<wallet-address>', base.wallet)
+      .replace('<deadline>', '1200')
+    const built = spawnSync('bash', ['-c', command], { encoding: 'utf8' })
+    expect(built.status, built.stderr).toBe(0)
+    const { steps } = JSON.parse(built.stdout)
     expect(steps).toHaveLength(2)
     expect(steps[1].to.toLowerCase()).toBe(router.toLowerCase())
     expect(steps[1].value).toBe('0x0')

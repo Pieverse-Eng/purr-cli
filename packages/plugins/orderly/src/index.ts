@@ -48,6 +48,12 @@ interface Identity {
   orderlyKey: string
 }
 
+interface TradingIntegrationResponse {
+  ok: boolean
+  data?: { enabled?: boolean }
+  error?: string
+}
+
 const API_URL = (process.env.ORDERLY_API_URL ?? 'https://api.orderly.org').replace(/\/$/, '')
 const OFFCHAIN_VERIFYING_CONTRACT = '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC'
 const MAINNET_LEDGER = '0x6F7a338F2aA472838dEFD3283eB360d4Dff5D203'
@@ -226,6 +232,23 @@ function brokerId(): string {
   return value
 }
 
+async function orderlyTradingEnabled(): Promise<boolean> {
+  const { instanceId } = resolveCredentials()
+  const response = await apiGet<TradingIntegrationResponse>(
+    `/v1/instances/${encodeURIComponent(instanceId)}/integrations/orderly-trading`,
+  )
+  if (!response.ok || response.data?.enabled !== true) return false
+  return true
+}
+
+async function requireOrderlyTradingEnabled(): Promise<void> {
+  if (await orderlyTradingEnabled()) return
+  throw new OrderlyCliError(
+    'Orderly trading is disabled for this instance. Enable Orderly Trading in the app before using private commands.',
+    { code: 'ORDERLY_TRADING_DISABLED', status: 403 },
+  )
+}
+
 function query(path: string, params: Record<string, string | number | undefined>): string {
   const url = new URL(path, API_URL)
   for (const [key, value] of Object.entries(params)) {
@@ -325,27 +348,13 @@ async function ensureSolanaWallet(): Promise<string> {
       {
         chainType: 'solana',
       },
+      { headers: { 'X-Purr-Integration': 'orderly-trading' } },
     )
     const address = response.data?.address
     if (!response.ok || !address)
       throw new OrderlyCliError(response.error ?? 'Failed to create Solana managed wallet')
     return address
   }
-}
-
-async function signRawSolana(message: string): Promise<string> {
-  const { instanceId } = resolveCredentials()
-  const response = await apiPost<WalletResponse>(
-    `/v1/instances/${encodeURIComponent(instanceId)}/wallet/sign`,
-    {
-      message,
-      chainType: 'solana',
-      scheme: 'raw',
-    },
-  )
-  if (!response.ok || !response.data?.signature)
-    throw new OrderlyCliError(response.error ?? 'Solana raw signing failed')
-  return solanaBase58SignatureToBase64Url(response.data.signature)
 }
 
 async function signTypedData(
@@ -358,6 +367,7 @@ async function signTypedData(
   const response = await apiPost<WalletResponse>(
     `/v1/instances/${encodeURIComponent(instanceId)}/wallet/sign-typed-data`,
     { domain, types, primaryType, message },
+    { headers: { 'X-Purr-Integration': 'orderly-trading' } },
   )
   if (!response.ok || !response.data?.signature)
     throw new OrderlyCliError(response.error ?? 'EIP-712 signing failed')
@@ -400,47 +410,32 @@ async function privateRequest<T = unknown>(
   method: HttpMethod,
   path: string,
   body?: JsonRecord,
-  context?: Identity,
 ): Promise<T> {
-  const auth = context ?? (await identity())
-  const timestamp = String(Date.now())
-  const bodyText = body ? JSON.stringify(body) : ''
-  const canonical = orderlyCanonicalMessage(timestamp, method, path, bodyText)
-  const signature = await signRawSolana(canonical)
-  let contentType = 'application/x-www-form-urlencoded'
-  if (body !== undefined) contentType = 'application/json'
-  const response = await fetch(`${API_URL}${path}`, {
-    method,
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': contentType,
-      'orderly-timestamp': timestamp,
-      'orderly-account-id': auth.accountId,
-      'orderly-key': auth.orderlyKey,
-      'orderly-signature': signature,
-    },
-    ...(body ? { body: bodyText } : {}),
-    signal: AbortSignal.timeout(20_000),
-  })
-  const text = await response.text()
-  let parsed: unknown
-  try {
-    parsed = text.length === 0 ? {} : JSON.parse(text)
-  } catch {
-    parsed = { message: text }
+  const { instanceId } = resolveCredentials()
+  const response = await apiPost<Envelope<T>>(
+    `/v1/instances/${encodeURIComponent(instanceId)}/orderly/private-request`,
+    { method, path, ...(body === undefined ? {} : { body }) },
+  )
+  if (response.ok !== true || response.data === undefined) {
+    throw new OrderlyCliError(response.error ?? `Orderly ${method} ${path} failed`)
   }
-  const envelope = parsed as Envelope<T>
-  if (!response.ok || envelope.success === false || envelope.ok === false) {
-    const data = typeof parsed === 'object' && parsed !== null ? (parsed as JsonRecord) : undefined
-    throw new OrderlyCliError(
-      envelope.message ??
-        envelope.error ??
-        asString(data?.message) ??
-        `Orderly ${method} ${path} failed`,
-      { status: response.status, code: envelope.code, data: parsed },
-    )
+  return response.data
+}
+
+async function gatedOrderlyRequest<T = unknown>(
+  method: HttpMethod,
+  path: string,
+  body?: JsonRecord,
+): Promise<T> {
+  const { instanceId } = resolveCredentials()
+  const response = await apiPost<Envelope<T>>(
+    `/v1/instances/${encodeURIComponent(instanceId)}/orderly/gated-request`,
+    { method, path, ...(body === undefined ? {} : { body }) },
+  )
+  if (response.ok !== true || response.data === undefined) {
+    throw new OrderlyCliError(response.error ?? `Orderly ${method} ${path} failed`)
   }
-  return (envelope.data ?? parsed) as T
+  return response.data
 }
 
 async function publicInfo(symbol: string): Promise<JsonRecord> {
@@ -589,6 +584,7 @@ async function status(): Promise<void> {
   const result: JsonRecord = {
     publicReady: false,
     brokerConfigured: Boolean(process.env.ORDERLY_BROKER_ID),
+    integrationEnabled: false,
     accountReady: false,
     keyReady: false,
     authReady: false,
@@ -606,10 +602,22 @@ async function status(): Promise<void> {
   if (!result.brokerConfigured)
     (result.reasons as string[]).push('ORDERLY_BROKER_ID is not configured')
   try {
+    result.integrationEnabled = await orderlyTradingEnabled()
+  } catch (error) {
+    ;(result.reasons as string[]).push(
+      error instanceof Error ? error.message : 'Orderly integration status unavailable',
+    )
+  }
+  if (result.integrationEnabled !== true) {
+    ;(result.reasons as string[]).push('Orderly trading integration is disabled')
+    print(result)
+    return
+  }
+  try {
     const current = await identity()
     result.accountReady = true
     result.keyReady = Boolean(current.solanaAddress)
-    await privateRequest('GET', '/v1/client/holding', undefined, current)
+    await privateRequest('GET', '/v1/client/holding')
     result.authReady = true
   } catch (error) {
     ;(result.reasons as string[]).push(
@@ -619,6 +627,7 @@ async function status(): Promise<void> {
   result.tradeReady =
     result.publicReady === true &&
     result.brokerConfigured === true &&
+    result.integrationEnabled === true &&
     result.accountReady === true &&
     result.keyReady === true &&
     result.authReady === true
@@ -705,7 +714,7 @@ async function onboard(args: Record<string, string>): Promise<void> {
       'Registration',
       registrationMessage,
     )
-    const response = await orderlyRequest<JsonRecord>('POST', '/v1/register_account', {
+    const response = await gatedOrderlyRequest<JsonRecord>('POST', '/v1/register_account', {
       message: registrationWireMessage,
       signature,
       userAddress: evmAddress,
@@ -739,13 +748,12 @@ async function onboard(args: Record<string, string>): Promise<void> {
     'AddOrderlyKey',
     addKeyMessage,
   )
-  await orderlyRequest('POST', '/v1/orderly_key', {
+  await gatedOrderlyRequest('POST', '/v1/orderly_key', {
     message: addKeyWireMessage,
     signature: keySignature,
     userAddress: evmAddress,
   })
-  const current: Identity = { evmAddress, solanaAddress, accountId, orderlyKey }
-  const holding = await privateRequest('GET', '/v1/client/holding', undefined, current)
+  const holding = await privateRequest('GET', '/v1/client/holding')
   print({ execute: true, accountId, orderlyKey, holding })
 }
 
@@ -865,6 +873,7 @@ async function deposit(args: Record<string, string>): Promise<void> {
       ],
       dedupKey: `${instanceId}:orderly-deposit:${chainId}:${tokenInfo.address.toLowerCase()}:${amountWei.toString()}`,
     },
+    { headers: { 'X-Purr-Integration': 'orderly-trading' } },
   )
   let results: WalletStepResult[] = []
   if (result.data !== undefined) results = result.data.results
@@ -898,7 +907,7 @@ async function withdraw(args: Record<string, string>): Promise<void> {
   if (!isAddress(receiver)) throw new OrderlyCliError('--address must be a valid EVM address')
   const tokenInfo = await tokenMetadata(token, chainId)
   const context = await identity()
-  const nonce = await privateRequest<JsonRecord>('GET', '/v1/withdraw_nonce', undefined, context)
+  const nonce = await privateRequest<JsonRecord>('GET', '/v1/withdraw_nonce')
   const withdrawNonce = asString(nonce.withdraw_nonce) ?? String(nonce.withdraw_nonce ?? '')
   if (!withdrawNonce) throw new OrderlyCliError('Orderly did not return a withdrawal nonce')
   const signedMessage = {
@@ -954,7 +963,6 @@ async function withdraw(args: Record<string, string>): Promise<void> {
         userAddress: context.evmAddress,
         verifyingContract: domain.verifyingContract,
       },
-      context,
     ),
   )
 }
@@ -1023,12 +1031,10 @@ async function cancelAll(args: Record<string, string>): Promise<void> {
 
 async function closePosition(args: Record<string, string>): Promise<void> {
   const symbol = required(args, 'symbol')
-  const context = await identity()
   const position = await privateRequest<unknown>(
     'GET',
     `/v1/position/${encodeURIComponent(symbol)}`,
     undefined,
-    context,
   )
   const row = record(position)
   const positionQty = asString(row.position_qty)
@@ -1050,7 +1056,7 @@ async function closePosition(args: Record<string, string>): Promise<void> {
   }
   await validateOrder(order)
   if (!execute(args)) return print({ execute: false, position: row, order })
-  print(await privateRequest('POST', '/v1/order', order, context))
+  print(await privateRequest('POST', '/v1/order', order))
 }
 
 async function createAlgo(args: Record<string, string>): Promise<void> {
@@ -1105,6 +1111,18 @@ export function orderlyHelp(): string {
 }
 
 export async function orderlyCommand(command: string, args: Record<string, string>): Promise<void> {
+  const publicCommands = new Set([
+    'status',
+    'markets',
+    'market',
+    'orderbook',
+    'candles',
+    'funding',
+    'networks',
+    'tokens',
+  ])
+  if (!publicCommands.has(command)) await requireOrderlyTradingEnabled()
+
   switch (command) {
     case 'status':
       return await status()
@@ -1202,7 +1220,7 @@ export async function orderlyCommand(command: string, args: Record<string, strin
       if (body.leverage === undefined || body.leverage < 1)
         throw new OrderlyCliError('Missing or invalid --leverage')
       if (!execute(args)) return print({ execute: false, leverage: body })
-      return print(await privateRequest('POST', '/v1/client/leverages', body, undefined))
+      return print(await privateRequest('POST', '/v1/client/leverages', body))
     }
     case 'algo-create':
       return await createAlgo(args)
@@ -1214,7 +1232,7 @@ export async function orderlyCommand(command: string, args: Record<string, strin
         symbol: required(args, 'symbol'),
       })
       if (!execute(args)) return print({ execute: false, method: 'DELETE', path })
-      return print(await privateRequest('DELETE', path, undefined, undefined))
+      return print(await privateRequest('DELETE', path))
     }
     default:
       throw new OrderlyCliError(`Unknown Orderly command: ${command}.\n${ORDERLY_USAGE}`)

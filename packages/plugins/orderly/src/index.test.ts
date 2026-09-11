@@ -499,13 +499,17 @@ describe('Orderly API contracts', () => {
 
   it('delegates onboarding signatures and Orderly submissions to Platform', async () => {
     mockWallets()
-    mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+    mocks.apiPost.mockImplementation(async (path: string, _body: Record<string, unknown>) => {
       if (path.endsWith('/orderly/onboard'))
-        return { ok: true, data: { accountId: ACCOUNT_ID, orderlyKey: `ed25519:${SOLANA_ADDRESS}` } }
+        return {
+          ok: true,
+          data: { accountId: ACCOUNT_ID, orderlyKey: `ed25519:${SOLANA_ADDRESS}` },
+        }
       throw new Error(`Unexpected wallet write: ${path}`)
     })
     const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
-      if (input.includes('/v1/get_account')) return json({ success: false, code: -1607, message: 'Account not found' })
+      if (input.includes('/v1/get_account'))
+        return json({ success: false, code: -1607, message: 'Account not found' })
       if (input.endsWith('/v1/registration_nonce')) return json({ success: true, data: 1 })
       throw new Error(`Unexpected Orderly request: ${input}`)
     })
@@ -513,10 +517,9 @@ describe('Orderly API contracts', () => {
 
     await orderlyCommand('onboard', { 'chain-id': '42161', execute: 'true' })
 
-    expect(mocks.apiPost).toHaveBeenCalledWith(
-      '/v1/instances/instance-123/orderly/onboard',
-      { chainId: 42161 },
-    )
+    expect(mocks.apiPost).toHaveBeenCalledWith('/v1/instances/instance-123/orderly/onboard', {
+      chainId: 42161,
+    })
     expect(mocks.apiPost).not.toHaveBeenCalledWith(
       expect.stringContaining('/wallet/sign'),
       expect.anything(),

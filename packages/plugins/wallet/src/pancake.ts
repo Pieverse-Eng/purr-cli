@@ -135,8 +135,7 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
   if (wallet) query.set('recipient', wallet.address)
   const { best } = await request<{ best?: Quote }>(`/quote?${query}`)
   if (
-    !best ||
-    best.chainId !== 56 ||
+    best?.chainId !== 56 ||
     !sameAddress(best.agg?.srcToken, fromToken) ||
     !sameAddress(best.agg?.dstToken, toToken) ||
     !sameAddress(best.agg?.aggregatorAddress, ROUTER) ||

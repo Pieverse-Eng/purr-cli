@@ -27,7 +27,15 @@ const captured = JSON.parse(
 const abi = parseAbi([
   'function swapExactIn(uint256,(address,address,uint256,uint256),uint256[],(uint256[],address[],uint256[],bytes[],address)[][],uint256,address) payable',
 ])
-let best: any
+let best: {
+  chainId: number
+  expiresAt: number
+  inputAmount: string
+  outputAmount: string
+  slippageTolerance: number
+  gasUseEstimateUsd: string
+  agg: { srcToken: string; dstToken: string; aggregatorAddress: string; routes: unknown[] }
+}
 let call: typeof captured
 let output: ReturnType<typeof vi.spyOn>
 beforeEach(() => {

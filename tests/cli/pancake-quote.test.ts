@@ -1,6 +1,5 @@
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { spawn } from 'node:child_process'
 import { decodeFunctionData, encodeAbiParameters, parseAbi } from 'viem'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { quotePancakeSwap } from '../../packages/plugins/vendors/src/pancake'
@@ -109,34 +108,5 @@ describe('Pancake V2 quote', () => {
     await withRpc(async (rpcUrl) => {
       await expect(quotePancakeSwap({ ...base, rpcUrl })).rejects.toThrow()
     }, true)
-  })
-  it('CLI prints quote JSON without wallet credentials', async () => {
-    await withRpc(async (rpcUrl) => {
-      const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>(
-        (resolve) => {
-          const child = spawn('bun', [
-            'packages/cli/src/linux-macos.ts',
-            'pancake',
-            'quote',
-            '--path',
-            `${A},${B}`,
-            '--amount-in-wei',
-            base.amountInWei,
-            '--chain-id',
-            '56',
-            '--rpc-url',
-            rpcUrl,
-          ])
-          let stdout = '',
-            stderr = ''
-          child.stdout.on('data', (s) => (stdout += s))
-          child.stderr.on('data', (s) => (stderr += s))
-          child.on('close', (code) => resolve({ code, stdout, stderr }))
-        },
-      )
-      expect(result.stderr).toBe('')
-      expect(result.code).toBe(0)
-      expect(JSON.parse(result.stdout).amountOutMinWei).toBe('122222221122222222111')
-    })
   })
 })

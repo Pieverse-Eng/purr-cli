@@ -1,4 +1,8 @@
-import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import {
+  apiPost,
+  isResearchQuoteContext,
+  resolveCredentials,
+} from '@pieverseio/purr-core/api-client'
 import { parseChainId } from '@pieverseio/purr-core/shared'
 import { chainNameToId, resolveToken } from '@pieverseio/purr-core/token-registry'
 
@@ -75,8 +79,29 @@ function buildSwapBody(args: Record<string, string>): Record<string, unknown> {
 }
 
 export async function walletUniswap(args: Record<string, string>): Promise<void> {
-  const { instanceId } = resolveCredentials()
   const execute = args.execute === 'true'
+  if (isResearchQuoteContext()) {
+    if (execute) throw new Error('Execution is unavailable in read-only research context')
+    const url = process.env.FX_PLATFORM_UNISWAP_QUOTE_URL?.trim()
+    const token = process.env.FX_PLATFORM_QUOTE_TOKEN?.trim()
+    if (!url || !token) throw new Error('Missing read-only Uniswap quote capability')
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-pieverse-market-quote-capability': token,
+      },
+      body: JSON.stringify(buildSwapBody(args)),
+      redirect: 'error',
+      signal: AbortSignal.timeout(20_000),
+    })
+    if (!response.ok) throw new Error(`Uniswap research quote failed (${response.status})`)
+    const result = (await response.json()) as UniswapSwapResponse
+    if (!result.ok) throw new Error(result.error ?? 'Uniswap quote failed')
+    console.log(JSON.stringify(result.data))
+    return
+  }
+  const { instanceId } = resolveCredentials()
   const body = buildSwapBody(args)
   const endpoint = execute ? 'execute' : 'quote'
   const res = await apiPost<UniswapSwapResponse>(

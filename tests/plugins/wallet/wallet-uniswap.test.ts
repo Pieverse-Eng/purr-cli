@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { walletUniswap } from '@pieverseio/purr-plugin-wallet/uniswap'
+import { resolveApiCredentials } from '@pieverseio/purr-core/api-client'
 import { mockFetch } from '../../helpers.js'
 
 const SPCX = '0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa'
@@ -18,6 +19,48 @@ describe('walletUniswap', () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN
     delete process.env.INSTANCE_ID
+    delete process.env.FX_PLATFORM_QUOTE_TOKEN
+    delete process.env.FX_PLATFORM_UNISWAP_QUOTE_URL
+  })
+
+  it('uses only the research capability even when full wallet credentials exist', async () => {
+    process.env.FX_PLATFORM_QUOTE_TOKEN = 'read-only'
+    process.env.FX_PLATFORM_UNISWAP_QUOTE_URL =
+      'https://api.test/v1/instances/inst-123/wallet/uniswap/quote'
+    const mock = mockFetch({ ok: true, data: { provider: 'uniswap', gasEstimateUsd: '0.02' } })
+    vi.stubGlobal('fetch', mock)
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await walletUniswap({ from: 'USDG', to: 'SPCX', amount: '100' })
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][1].headers).toEqual({
+      'Content-Type': 'application/json',
+      'x-pieverse-market-quote-capability': 'read-only',
+    })
+    expect(mock.mock.calls[0][1].redirect).toBe('error')
+    expect(() => resolveApiCredentials()).toThrow('read-only research context')
+  })
+
+  it('rejects execution and incomplete research credentials without wallet fallback', async () => {
+    process.env.FX_PLATFORM_QUOTE_TOKEN = 'read-only'
+    const mock = vi.fn()
+    vi.stubGlobal('fetch', mock)
+    await expect(
+      walletUniswap({ from: 'USDG', to: 'SPCX', amount: '100', execute: 'true' }),
+    ).rejects.toThrow('Execution is unavailable')
+    await expect(walletUniswap({ from: 'USDG', to: 'SPCX', amount: '100' })).rejects.toThrow(
+      'Missing read-only',
+    )
+    expect(mock).not.toHaveBeenCalled()
+  })
+
+  it('does not retry a rejected research quote with full wallet credentials', async () => {
+    process.env.FX_PLATFORM_QUOTE_TOKEN = 'read-only'
+    process.env.FX_PLATFORM_UNISWAP_QUOTE_URL =
+      'https://api.test/v1/instances/inst-123/wallet/uniswap/quote'
+    const mock = vi.fn().mockResolvedValue({ ok: false, status: 403 })
+    vi.stubGlobal('fetch', mock)
+    await expect(walletUniswap({ from: 'USDG', to: 'SPCX', amount: '100' })).rejects.toThrow('403')
+    expect(mock).toHaveBeenCalledOnce()
   })
 
   it('quotes Robinhood swaps by default', async () => {

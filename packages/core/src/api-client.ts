@@ -122,6 +122,9 @@ function parseErrorBody(bodyText: string): unknown {
 }
 
 export function resolveApiCredentials(): ApiCredentials {
+  if (isResearchQuoteContext()) {
+    throw new Error('Wallet credentials are unavailable in read-only research context')
+  }
   const config = readConfigFile()
 
   const apiUrl = process.env.WALLET_API_URL ?? config['api-url']
@@ -144,8 +147,8 @@ export function resolveApiCredentials(): ApiCredentials {
 }
 
 export function resolveCredentials(): Credentials {
-  const config = readConfigFile()
   const { apiUrl, apiToken } = resolveApiCredentials()
+  const config = readConfigFile()
   const instanceId = process.env.INSTANCE_ID ?? config['instance-id']
 
   if (!instanceId) {
@@ -159,6 +162,14 @@ export function resolveCredentials(): Credentials {
     apiToken,
     instanceId: instanceId as string,
   }
+}
+
+export function isResearchQuoteContext(): boolean {
+  return (
+    process.env.FX_PLATFORM_QUOTE_TOKEN !== undefined ||
+    process.env.FX_PLATFORM_UNISWAP_QUOTE_URL !== undefined ||
+    process.env.FX_PLATFORM_DFLOW_QUOTE_URL !== undefined
+  )
 }
 
 function requestSignal(timeoutMs: number | undefined): AbortSignal | undefined {

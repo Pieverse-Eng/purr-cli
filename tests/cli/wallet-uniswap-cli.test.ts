@@ -50,7 +50,11 @@ async function closeServer(server: ReturnType<typeof createServer>): Promise<voi
   })
 }
 
-async function runPurr(port: number, args: string[]): Promise<CommandResult> {
+async function runPurr(
+  port: number,
+  args: string[],
+  env: NodeJS.ProcessEnv = {},
+): Promise<CommandResult> {
   return await new Promise((resolve, reject) => {
     const { HTTP_PROXY, http_proxy, HTTPS_PROXY, https_proxy, ALL_PROXY, all_proxy, ...cleanEnv } =
       process.env
@@ -63,6 +67,7 @@ async function runPurr(port: number, args: string[]): Promise<CommandResult> {
         WALLET_API_URL: `http://127.0.0.1:${port}`,
         WALLET_API_TOKEN: API_TOKEN,
         INSTANCE_ID,
+        ...env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     })
@@ -83,10 +88,16 @@ async function runPurr(port: number, args: string[]): Promise<CommandResult> {
 async function withApiServer(
   handler: (req: IncomingMessage, res: ServerResponse<IncomingMessage>) => Promise<void>,
   fn: (port: number) => Promise<void>,
+  research = false,
 ): Promise<void> {
   const server = createServer(async (req, res) => {
     try {
-      assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
+      if (research) {
+        assert.equal(req.headers.authorization, undefined)
+        assert.equal(req.headers['x-pieverse-market-quote-capability'], 'read-only')
+      } else {
+        assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
+      }
       await handler(req, res)
     } catch (error) {
       writeJson(res, 500, {
@@ -104,6 +115,35 @@ async function withApiServer(
 }
 
 describe('wallet uniswap CLI', () => {
+  it('quotes with a research capability and blocks execute despite inherited wallet credentials', async () => {
+    let calls = 0
+    await withApiServer(
+      async (req, res) => {
+        calls++
+        assert.equal(req.url, `/v1/instances/${INSTANCE_ID}/wallet/uniswap/quote`)
+        assert.equal((await readJsonBody(req)).fromAmount, '100')
+        writeJson(res, 200, { ok: true, data: { provider: 'uniswap', gasEstimateUsd: '0.02' } })
+      },
+      async (port) => {
+        const env = {
+          FX_PLATFORM_QUOTE_TOKEN: 'read-only',
+          FX_PLATFORM_UNISWAP_QUOTE_URL: `http://127.0.0.1:${port}/v1/instances/${INSTANCE_ID}/wallet/uniswap/quote`,
+        }
+        const args = ['wallet', 'uniswap', '--from', 'USDG', '--to', 'SPCX', '--amount', '100']
+        const quote = await runPurr(port, args, env)
+        expect(quote.code).toBe(0)
+        expect(JSON.parse(quote.stdout)).toMatchObject({
+          provider: 'uniswap',
+          gasEstimateUsd: '0.02',
+        })
+        const execute = await runPurr(port, [...args, '--execute'], env)
+        expect(execute.code).not.toBe(0)
+        expect(execute.stderr).toContain('Execution is unavailable')
+        expect(calls).toBe(1)
+      },
+      true,
+    )
+  })
   it('dispatches quote and execute through the wallet uniswap command', async () => {
     const requests: Array<{ method: string | undefined; url: string | undefined; body: unknown }> =
       []

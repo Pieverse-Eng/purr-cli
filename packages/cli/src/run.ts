@@ -103,8 +103,6 @@ import {
   buildPancakeAddLiquiditySteps,
   buildPancakeFarmSteps,
   buildPancakeRemoveLiquiditySteps,
-  buildPancakeSwapSteps,
-  quotePancakeSwap,
   buildPancakeV3FarmSteps,
   buildSyrupStakeSteps,
   buildSyrupUnstakeSteps,
@@ -147,6 +145,7 @@ import {
 import { removeFromAgents } from '@pieverseio/purr-plugin-store/skill-dirs'
 import { walletAbiCall } from '@pieverseio/purr-plugin-wallet/abi-call'
 import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
+import { walletPancake } from '@pieverseio/purr-plugin-wallet/pancake'
 import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
 import {
   redpacketClaim,
@@ -615,7 +614,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   osero             Osero USDS/sUSDS routes through the platform TEE wallet
   predict-fun       Predict.fun market data and trading through the platform TEE wallet
-  pancake           PancakeSwap V2 quotes and calldata builders (swap, LP, farm, syrup)
+  pancake           PancakeSwap API swaps and calldata builders (LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaigns and PIEVERSE staking
   pns               Pie Name Service and identity lookup helpers
@@ -674,8 +673,8 @@ Examples:
   purr binance-onchain-pay p2p-trading-pairs --fiat USD
   purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
   purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
-  purr pancake quote --path USDT,CAKE --amount-in-wei 1000000000000000000 --chain-id 56 --slippage-bps 100
-  purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56
+  purr pancake swap --from USDT --to CAKE --amount 100 --slippage 0.5
+  Official API selects the route. --execute requotes and submits through the instance wallet.
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake stake --pid 2 --amount-wei 1000 --lp-token 0x... --chain-id 56
@@ -777,7 +776,7 @@ Examples:
   purr wallet abi-call --to 0x... --signature 'register(string)' --args '["https://example.com/agent.json"]' --chain-id 2818
   purr execute --steps-file /tmp/purr_steps.json
   purr execute --steps-file /tmp/purr_steps.json --dedup-key my-swap-123
-  purr pancake swap --path 0xA,0xB --amount-in-wei 1000 --amount-out-min-wei 500 --wallet 0x... --deadline 1710000000 --chain-id 56 --execute
+  purr pancake swap --from USDT --to CAKE --amount 100 --slippage 0.5 --execute
   purr evm approve --token 0x... --spender 0x... --amount 1000 --chain-id 56
   purr evm raw --to 0x... --data 0xAbcDef --chain-id 56
   purr evm abi-call --to 0x... --signature 'register(string)' --args '["uri"]' --chain-id 2818
@@ -1535,38 +1534,14 @@ Examples:
     }
 
     case 'pancake': {
+      if (command === 'swap' || command === 'quote') {
+        if (command === 'quote' && args.execute !== undefined)
+          throw new Error('pancake quote is read-only; omit --execute')
+        await walletPancake(args)
+        return
+      }
       const chainId = parseChainId(requireArg(args, 'chain-id'))
       switch (command) {
-        case 'quote': {
-          if (args.execute !== undefined)
-            throw new Error('pancake quote is read-only; omit --execute')
-          const result = await quotePancakeSwap({
-            path: requireArg(args, 'path')
-              .split(',')
-              .map((t) => resolveToken(t.trim(), chainId)),
-            amountInWei: requireArg(args, 'amount-in-wei'),
-            chainId,
-            slippageBps:
-              args['slippage-bps'] === undefined ? undefined : Number(args['slippage-bps']),
-            router: args.router,
-            rpcUrl: args['rpc-url'],
-          })
-          console.log(JSON.stringify(result, null, 2))
-          return
-        }
-        case 'swap':
-          output = buildPancakeSwapSteps({
-            path: requireArg(args, 'path')
-              .split(',')
-              .map((t) => resolveToken(t.trim(), chainId)),
-            amountInWei: requireArg(args, 'amount-in-wei'),
-            amountOutMinWei: requireArg(args, 'amount-out-min-wei'),
-            wallet: requireArg(args, 'wallet'),
-            deadline: parseDeadline(requireArg(args, 'deadline')),
-            chainId,
-            router: args.router,
-          })
-          break
         case 'add-liquidity':
           output = buildPancakeAddLiquiditySteps({
             tokenA: resolveToken(requireArg(args, 'token-a'), chainId),

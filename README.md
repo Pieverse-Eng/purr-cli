@@ -47,7 +47,7 @@ purr <group> <command> [options]
 | `opensea` | OpenSea buy and sell execution helpers |
 | `osero` | Osero USDS/sUSDS balances, yield reads, previews, plans, and execution |
 | `predict-fun` | Predict.fun market discovery, account data, orders, approvals, position actions, and streaming through the platform TEE wallet |
-| `pancake` | PancakeSwap V2 path quotes and swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
+| `pancake` | PancakeSwap API quotes/swaps and LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
@@ -64,6 +64,11 @@ purr <group> <command> [options]
 | `version` | Print the CLI version |
 
 ### Examples
+
+Hosted research can use `purr wallet uniswap` quotes with
+`FX_PLATFORM_UNISWAP_QUOTE_URL` and `FX_PLATFORM_QUOTE_TOKEN`, supplied by the
+research plugin. This context never falls back to wallet credentials and rejects
+`--execute`; ordinary wallet commands keep their existing instance authentication.
 
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
@@ -89,9 +94,9 @@ purr balancer swap --chain base --from ETH --to USDC --amount 0.001 --min-amount
 purr balancer add-quote --chain base --pool-id 0x... --protocol-version 3 --kind unbalanced --amounts-in ETH:0.001
 purr balancer remove-quote --chain base --pool-id 0x... --protocol-version 3 --kind proportional --bpt-amount-in 0.001
 
-purr pancake quote --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --chain-id 56 --slippage-bps 100
-purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id>
-purr pancake swap --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --amount-out-min-wei <amount-out-min-wei> --wallet <wallet-address> --deadline <unix-timestamp> --chain-id <chain-id> --execute
+purr pancake quote --from USDT --to <token-address> --amount 100 --slippage 0.5
+purr pancake swap --from USDT --to <token-address> --amount 100 --slippage 0.5
+purr pancake swap --from USDT --to <token-address> --amount 100 --slippage 0.5 --execute
 purr fourmeme raised-tokens
 purr fourmeme buy --token <token-address> --wallet <wallet-address> --funds <amount>
 purr fourmeme buy-with-bnb --token <token-address> --wallet <wallet-address> --funds <bnb-amount> --min-amount <min-token-amount>

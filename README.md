@@ -65,6 +65,11 @@ purr <group> <command> [options]
 
 ### Examples
 
+Hosted research can use `purr wallet uniswap` quotes with
+`FX_PLATFORM_UNISWAP_QUOTE_URL` and `FX_PLATFORM_QUOTE_TOKEN`, supplied by the
+research plugin. This context never falls back to wallet credentials and rejects
+`--execute`; ordinary wallet commands keep their existing instance authentication.
+
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
 workflow](docs/agentkey.md). No provider catalog or upstream credential is stored

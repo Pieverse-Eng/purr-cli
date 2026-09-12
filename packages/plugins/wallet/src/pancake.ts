@@ -245,6 +245,9 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
     label: 'PancakeSwap swap',
   })
   console.log(
-    JSON.stringify({ ...quote, execution: await executeStepsFromJson(JSON.stringify({ steps })) }),
+    JSON.stringify({
+      ...quote,
+      execution: await executeStepsFromJson(JSON.stringify({ steps }), args['dedup-key']),
+    }),
   )
 }

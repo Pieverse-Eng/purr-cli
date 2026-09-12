@@ -98,6 +98,15 @@ it('requotes and submits exact approval plus captured API calldata through the g
     100n * 10n ** 18n,
   ])
   expect(steps[1]).toMatchObject({ to: router, data: captured.calldata, value: '0', chainId: 56 })
+  expect(mocks.execute.mock.calls[0][1]).toBeUndefined()
+})
+it('forwards an optional dedup key without retrying a failed execution', async () => {
+  mocks.execute.mockRejectedValue(new Error('Execution response timed out'))
+  await expect(
+    walletPancake({ ...args, execute: 'true', 'dedup-key': 'confirmed-swap-1' }),
+  ).rejects.toThrow('Execution response timed out')
+  expect(mocks.execute).toHaveBeenCalledTimes(1)
+  expect(mocks.execute.mock.calls[0][1]).toBe('confirmed-swap-1')
 })
 it('resets a nonzero insufficient allowance and skips an already sufficient one', async () => {
   mocks.read.mockImplementation(async ({ functionName }) => (functionName === 'decimals' ? 18 : 1n))

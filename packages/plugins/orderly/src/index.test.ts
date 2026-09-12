@@ -471,6 +471,171 @@ describe('Orderly API contracts', () => {
     )
   })
 
+  it('withdraws a native token without requiring a contract address', async () => {
+    mockWallets()
+    let withdrawalBody: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, body: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/withdraw')) {
+        withdrawalBody = body
+        return { ok: true, data: { request_id: 'withdrawal-1' } }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        if (input.endsWith('/v1/public/token')) {
+          return json({
+            success: true,
+            data: [
+              {
+                token: 'ETH',
+                decimals: 18,
+                chain_details: [{ chain_id: 42161, contract_address: '', decimals: 18 }],
+              },
+            ],
+          })
+        }
+        throw new Error(`Unexpected Orderly request: ${input}`)
+      }),
+    )
+
+    await orderlyCommand('withdraw', {
+      'chain-id': '42161',
+      token: 'ETH',
+      amount: '1.5',
+      address: EVM_ADDRESS,
+      execute: 'true',
+    })
+
+    expect(withdrawalBody).toEqual({
+      chainId: 42161,
+      token: 'ETH',
+      amount: '1500000000000000000',
+      receiver: EVM_ADDRESS,
+    })
+  })
+
+  it('passes --chain-id to the public token endpoint', async () => {
+    const fetchMock = vi.fn(async (input: string) => {
+      expect(input).toMatch(/\/v1\/public\/token\?chain_id=42161$/)
+      return json({ success: true, data: [] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await orderlyCommand('tokens', { 'chain-id': '42161' })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('creates a STOP root order for take-profit only', async () => {
+    mockWallets()
+    let body: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/private-request')) {
+        body = request.body as Record<string, unknown>
+        return { ok: true, data: {} }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+
+    await orderlyCommand('algo-create', {
+      symbol: 'PERP_BTC_USDC',
+      side: 'SELL',
+      quantity: '0.1',
+      'take-profit': '70000',
+      execute: 'true',
+    })
+
+    expect(body).toEqual({
+      symbol: 'PERP_BTC_USDC',
+      algo_type: 'STOP',
+      side: 'SELL',
+      type: 'MARKET',
+      quantity: '0.1',
+      trigger_price_type: 'MARK_PRICE',
+      trigger_price: '70000',
+      reduce_only: true,
+    })
+  })
+
+  it('creates a STOP root order for stop-loss only', async () => {
+    mockWallets()
+    let body: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/private-request')) {
+        body = request.body as Record<string, unknown>
+        return { ok: true, data: {} }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+
+    await orderlyCommand('algo-create', {
+      symbol: 'PERP_BTC_USDC',
+      side: 'SELL',
+      quantity: '0.1',
+      'stop-loss': '60000',
+      execute: 'true',
+    })
+
+    expect(body).toEqual({
+      symbol: 'PERP_BTC_USDC',
+      algo_type: 'STOP',
+      side: 'SELL',
+      type: 'MARKET',
+      quantity: '0.1',
+      trigger_price_type: 'MARK_PRICE',
+      trigger_price: '60000',
+      reduce_only: true,
+    })
+  })
+
+  it('keeps TP_SL child orders when both trigger prices are supplied', async () => {
+    mockWallets()
+    let body: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/private-request')) {
+        body = request.body as Record<string, unknown>
+        return { ok: true, data: {} }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+
+    await orderlyCommand('algo-create', {
+      symbol: 'PERP_BTC_USDC',
+      side: 'SELL',
+      quantity: '0.1',
+      'take-profit': '70000',
+      'stop-loss': '60000',
+      execute: 'true',
+    })
+
+    expect(body).toEqual({
+      symbol: 'PERP_BTC_USDC',
+      algo_type: 'TP_SL',
+      quantity: '0.1',
+      trigger_price_type: 'MARK_PRICE',
+      child_orders: [
+        {
+          symbol: 'PERP_BTC_USDC',
+          algo_type: 'TAKE_PROFIT',
+          side: 'SELL',
+          type: 'MARKET',
+          trigger_price: '70000',
+          reduce_only: true,
+        },
+        {
+          symbol: 'PERP_BTC_USDC',
+          algo_type: 'STOP_LOSS',
+          side: 'SELL',
+          type: 'MARKET',
+          trigger_price: '60000',
+          reduce_only: true,
+        },
+      ],
+    })
+  })
+
   it('never creates a Solana wallet while previewing onboarding', async () => {
     mocks.apiGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/integrations/orderly-trading'))

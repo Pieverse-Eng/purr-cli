@@ -89,7 +89,7 @@ purr balancer swap --chain base --from ETH --to USDC --amount 0.001 --min-amount
 purr balancer add-quote --chain base --pool-id 0x... --protocol-version 3 --kind unbalanced --amounts-in ETH:0.001
 purr balancer remove-quote --chain base --pool-id 0x... --protocol-version 3 --kind proportional --bpt-amount-in 0.001
 
-purr pancake quote --path <token-a>,<token-b> --amount-in-wei <amount-in-wei> --chain-id 56 --slippage-bps 100
+purr pancake quote --from USDT --to <token-address> --amount 100 --slippage 0.5
 purr pancake swap --from USDT --to <token-address> --amount 100 --slippage 0.5
 purr pancake swap --from USDT --to <token-address> --amount 100 --slippage 0.5 --execute
 purr fourmeme raised-tokens

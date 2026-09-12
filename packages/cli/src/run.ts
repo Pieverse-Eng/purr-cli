@@ -614,7 +614,7 @@ Groups:
   opensea           OpenSea execution helpers for official OpenSea workflows
   osero             Osero USDS/sUSDS routes through the platform TEE wallet
   predict-fun       Predict.fun market data and trading through the platform TEE wallet
-  pancake           PancakeSwap V2 quotes and calldata builders (swap, LP, farm, syrup)
+  pancake           PancakeSwap API swaps and calldata builders (LP, farm, syrup)
   lista             Lista DAO vault calldata builder
   pieverse          Pieverse campaigns and PIEVERSE staking
   pns               Pie Name Service and identity lookup helpers
@@ -674,7 +674,7 @@ Examples:
   purr binance-onchain-pay estimated-quote --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --pay-method-code BUY_CARD
   purr binance-onchain-pay pre-order --fiat USD --crypto USDT --requested-amount 50 --amount-type 1 --network BSC --address 0x...
   purr pancake swap --from USDT --to CAKE --amount 100 --slippage 0.5
-  Platform selects the V2/V3 route and returns a quote. --execute requotes and executes with the instance wallet.
+  Official API selects the route. --execute requotes and submits through the instance wallet.
   purr pancake add-liquidity --token-a 0x... --token-b 0x... --amount-a-wei 1000 --amount-b-wei 2000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake remove-liquidity --pair-address 0x... --token0 0x... --token1 0x... --lp-amount-wei 5000 --wallet 0x... --deadline 1710000000 --chain-id 56
   purr pancake stake --pid 2 --amount-wei 1000 --lp-token 0x... --chain-id 56

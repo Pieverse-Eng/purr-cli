@@ -47,7 +47,7 @@ purr <group> <command> [options]
 | `opensea` | OpenSea buy and sell execution helpers |
 | `osero` | Osero USDS/sUSDS balances, yield reads, previews, plans, and execution |
 | `predict-fun` | Predict.fun market discovery, account data, orders, approvals, position actions, and streaming through the platform TEE wallet |
-| `pancake` | PancakeSwap V2 path quotes and swap, LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
+| `pancake` | PancakeSwap API quotes/swaps and LP, farm, syrup, mint, increase/decrease, collect, stake, unstake, and harvest builders |
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |

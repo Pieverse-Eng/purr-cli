@@ -143,7 +143,7 @@ Read commands:
   l2 --coin <coin> [--n-sig-figs <2-5>] [--mantissa 2|5]  # --mantissa requires --n-sig-figs 5
   candles --coin <coin> --interval <interval> --start-time <ms> [--end-time <ms>]
   funding --coin <coin> --start-time <ms> [--end-time <ms>]
-  state [--kind perp|spot|both] [--dex <dex>]
+  state [--kind perp|spot|both] [--dex <dex> | --all-dexs]
   orders [--kind open|frontend|historical] [--dex <dex>]
   fills [--start-time <ms>] [--end-time <ms>] [--aggregate-by-time true] [--reversed true]
   order-status --oid <oid-or-cloid>
@@ -231,7 +231,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   l2: ['coin', 'n-sig-figs', 'nSigFigs', 'mantissa'],
   candles: ['coin', 'interval', 'start-time', 'startTime', 'end-time', 'endTime'],
   funding: ['coin', 'start-time', 'startTime', 'end-time', 'endTime'],
-  state: ['kind', 'dex'],
+  state: ['kind', 'dex', 'all-dexs'],
   orders: ['kind', 'dex'],
   fills: [
     'start-time',
@@ -1474,6 +1474,40 @@ export function hyperliquidHelp(): string {
   return HYPERLIQUID_USAGE
 }
 
+// Preserve the per-ledger API payloads: collateral currencies and account modes
+// can differ, so these values must not be blindly summed into a USD total.
+async function getAllDexState(kind: string = 'both'): Promise<unknown> {
+  if (kind !== 'perp' && kind !== 'both') {
+    throw new Error('--all-dexs requires --kind perp or both')
+  }
+  const dexes = await postHyperliquidInfo<Array<PublicPerpDex | null>>({ type: 'perpDexs' })
+  const names = [...new Set(['', ...dexes.flatMap((dex) => (dex?.name ? [dex.name] : []))])]
+  const perps: Array<{ dex: string; state: unknown }> = []
+  const errors: Array<{ dex: string; error: string }> = []
+  for (const dex of names) {
+    try {
+      const state = await getHyperliquid('/state', { kind: 'perp', dex: dex || undefined })
+      perps.push({ dex: dex || 'default', state })
+    } catch {
+      errors.push({ dex: dex || 'default', error: 'Account state query failed' })
+    }
+  }
+  let spot: unknown
+  if (kind === 'both') {
+    try {
+      spot = await getHyperliquid('/state', { kind: 'spot' })
+    } catch {
+      errors.push({ dex: 'spot', error: 'Account state query failed' })
+    }
+  }
+  return {
+    complete: errors.length === 0,
+    perps,
+    ...(kind === 'both' ? { spot: spot ?? null } : {}),
+    errors,
+  }
+}
+
 export async function hyperliquidCommand(
   command: string | undefined,
   args: Record<string, string>,
@@ -1550,6 +1584,13 @@ export async function hyperliquidCommand(
 
   if (command === 'candles') {
     printJson(await getPublicHyperliquidCandles(readQueryArgs(command, args)))
+    return
+  }
+
+  if (command === 'state' && args['all-dexs'] !== undefined) {
+    if (args['all-dexs'] !== 'true') throw new Error('--all-dexs must be true')
+    if (args.dex !== undefined) throw new Error('--all-dexs and --dex are mutually exclusive')
+    printJson(await getAllDexState(args.kind))
     return
   }
 

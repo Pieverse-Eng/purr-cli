@@ -29,29 +29,36 @@ describe('hyperliquid plugin', () => {
     delete process.env.INSTANCE_ID
   })
 
-  it.each([false, true])('reads every DEX and spot once, preserving partial failures: %s', async (failXyz) => {
-    const requests: string[] = []
-    global.fetch = vi.fn(async (input, init) => {
-      const url = new URL(String(input))
-      if (init?.method === 'POST') {
-        expect(JSON.parse(String(init.body))).toEqual({ type: 'perpDexs' })
-        return new Response(JSON.stringify([null, { name: 'xyz' }, { name: 'flx' }]))
-      }
-      const kind = url.searchParams.get('kind')
-      const dex = url.searchParams.get('dex') || 'default'
-      requests.push(`${kind}:${dex}`)
-      if (failXyz && dex === 'xyz') return new Response('{}', { status: 503 })
-      return new Response(JSON.stringify({ ok: true, data: { ledger: `${kind}:${dex}` } }))
-    }) as typeof fetch
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
-    await hyperliquidCommand('state', { 'all-dexs': 'true' })
-    const result = JSON.parse(String(log.mock.calls[0][0]))
-    expect(requests).toEqual(['perp:default', 'perp:xyz', 'perp:flx', 'spot:default'])
-    expect(result.complete).toBe(!failXyz)
-    expect(result.perps.map((entry: { dex: string }) => entry.dex)).toEqual(failXyz ? ['default', 'flx'] : ['default', 'xyz', 'flx'])
-    expect(result.spot).toEqual({ ledger: 'spot:default' })
-    expect(result.errors).toEqual(failXyz ? [{ dex: 'xyz', error: 'Account state query failed' }] : [])
-  })
+  it.each([false, true])(
+    'reads every DEX and spot once, preserving partial failures: %s',
+    async (failXyz) => {
+      const requests: string[] = []
+      global.fetch = vi.fn(async (input, init) => {
+        const url = new URL(String(input))
+        if (init?.method === 'POST') {
+          expect(JSON.parse(String(init.body))).toEqual({ type: 'perpDexs' })
+          return new Response(JSON.stringify([null, { name: 'xyz' }, { name: 'flx' }]))
+        }
+        const kind = url.searchParams.get('kind')
+        const dex = url.searchParams.get('dex') || 'default'
+        requests.push(`${kind}:${dex}`)
+        if (failXyz && dex === 'xyz') return new Response('{}', { status: 503 })
+        return new Response(JSON.stringify({ ok: true, data: { ledger: `${kind}:${dex}` } }))
+      }) as typeof fetch
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+      await hyperliquidCommand('state', { 'all-dexs': 'true' })
+      const result = JSON.parse(String(log.mock.calls[0][0]))
+      expect(requests).toEqual(['perp:default', 'perp:xyz', 'perp:flx', 'spot:default'])
+      expect(result.complete).toBe(!failXyz)
+      expect(result.perps.map((entry: { dex: string }) => entry.dex)).toEqual(
+        failXyz ? ['default', 'flx'] : ['default', 'xyz', 'flx'],
+      )
+      expect(result.spot).toEqual({ ledger: 'spot:default' })
+      expect(result.errors).toEqual(
+        failXyz ? [{ dex: 'xyz', error: 'Account state query failed' }] : [],
+      )
+    },
+  )
 
   it('omits spot for perp-only all-DEX queries', async () => {
     const requests: string[] = []
@@ -64,7 +71,9 @@ describe('hyperliquid plugin', () => {
     await hyperliquidCommand('state', { 'all-dexs': 'true', kind: 'perp' })
     expect(requests).toEqual(['perp'])
     expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
-      complete: true, perps: [{ dex: 'default', state: { assetPositions: [] } }], errors: [],
+      complete: true,
+      perps: [{ dex: 'default', state: { assetPositions: [] } }],
+      errors: [],
     })
   })
 
@@ -78,8 +87,12 @@ describe('hyperliquid plugin', () => {
 
   it('rejects incompatible all-DEX options before querying', async () => {
     const fetch = vi.spyOn(global, 'fetch')
-    await expect(hyperliquidCommand('state', { 'all-dexs': 'true', dex: 'xyz' })).rejects.toThrow('mutually exclusive')
-    await expect(hyperliquidCommand('state', { 'all-dexs': 'true', kind: 'spot' })).rejects.toThrow('--kind perp or both')
+    await expect(hyperliquidCommand('state', { 'all-dexs': 'true', dex: 'xyz' })).rejects.toThrow(
+      'mutually exclusive',
+    )
+    await expect(hyperliquidCommand('state', { 'all-dexs': 'true', kind: 'spot' })).rejects.toThrow(
+      '--kind perp or both',
+    )
     expect(fetch).not.toHaveBeenCalled()
   })
 

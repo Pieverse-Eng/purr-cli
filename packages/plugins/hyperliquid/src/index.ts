@@ -1492,7 +1492,7 @@ async function getAllDexState(kind: string = 'both'): Promise<unknown> {
       errors.push({ dex: dex || 'default', error: 'Account state query failed' })
     }
   }
-  let spot: unknown = undefined
+  let spot: unknown
   if (kind === 'both') {
     try {
       spot = await getHyperliquid('/state', { kind: 'spot' })

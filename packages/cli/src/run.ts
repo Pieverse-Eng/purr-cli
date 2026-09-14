@@ -820,7 +820,11 @@ Examples:
       }
       await hyperliquidCommand(
         command,
-        parseStrictNamedArgs(rest, `purr hyperliquid ${command}`, command === 'state' ? ['all-dexs'] : []),
+        parseStrictNamedArgs(
+          rest,
+          `purr hyperliquid ${command}`,
+          command === 'state' ? ['all-dexs'] : [],
+        ),
       )
       return
     }

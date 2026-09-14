@@ -318,6 +318,17 @@ describe('Hyperliquid CLI e2e', () => {
     rmSync(tmpHome, { recursive: true, force: true })
   })
 
+  it.each([
+    ['--all-dexs', '--dex', 'xyz'],
+    ['--dex', 'xyz', '--all-dexs'],
+    ['--all-dexs=true', '--dex', 'xyz'],
+  ])('parses the all-DEX flag and rejects a conflicting dex: %j', async (...options) => {
+    const result = await runPurr(port, tmpHome, ['hyperliquid', 'state', ...options])
+    expect(result.code).not.toBe(0)
+    expect(result.stderr).toContain('--all-dexs and --dex are mutually exclusive')
+    expect(requestCount).toBe(0)
+  })
+
   it('prints the Hyperliquid account response from the platform route', async () => {
     const result = await runPurr(port, tmpHome, ['hyperliquid', 'account'])
 

@@ -29,6 +29,60 @@ describe('hyperliquid plugin', () => {
     delete process.env.INSTANCE_ID
   })
 
+  it.each([false, true])('reads every DEX and spot once, preserving partial failures: %s', async (failXyz) => {
+    const requests: string[] = []
+    global.fetch = vi.fn(async (input, init) => {
+      const url = new URL(String(input))
+      if (init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ type: 'perpDexs' })
+        return new Response(JSON.stringify([null, { name: 'xyz' }, { name: 'flx' }]))
+      }
+      const kind = url.searchParams.get('kind')
+      const dex = url.searchParams.get('dex') || 'default'
+      requests.push(`${kind}:${dex}`)
+      if (failXyz && dex === 'xyz') return new Response('{}', { status: 503 })
+      return new Response(JSON.stringify({ ok: true, data: { ledger: `${kind}:${dex}` } }))
+    }) as typeof fetch
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await hyperliquidCommand('state', { 'all-dexs': 'true' })
+    const result = JSON.parse(String(log.mock.calls[0][0]))
+    expect(requests).toEqual(['perp:default', 'perp:xyz', 'perp:flx', 'spot:default'])
+    expect(result.complete).toBe(!failXyz)
+    expect(result.perps.map((entry: { dex: string }) => entry.dex)).toEqual(failXyz ? ['default', 'flx'] : ['default', 'xyz', 'flx'])
+    expect(result.spot).toEqual({ ledger: 'spot:default' })
+    expect(result.errors).toEqual(failXyz ? [{ dex: 'xyz', error: 'Account state query failed' }] : [])
+  })
+
+  it('omits spot for perp-only all-DEX queries', async () => {
+    const requests: string[] = []
+    global.fetch = vi.fn(async (input, init) => {
+      if (init?.method === 'POST') return new Response(JSON.stringify([null]))
+      requests.push(new URL(String(input)).searchParams.get('kind')!)
+      return new Response(JSON.stringify({ ok: true, data: { assetPositions: [] } }))
+    }) as typeof fetch
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await hyperliquidCommand('state', { 'all-dexs': 'true', kind: 'perp' })
+    expect(requests).toEqual(['perp'])
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toEqual({
+      complete: true, perps: [{ dex: 'default', state: { assetPositions: [] } }], errors: [],
+    })
+  })
+
+  it('fails rather than inventing a complete inventory when discovery fails', async () => {
+    global.fetch = mockFetch({}, 503)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await expect(hyperliquidCommand('state', { 'all-dexs': 'true' })).rejects.toThrow('HTTP 503')
+    expect(log).not.toHaveBeenCalled()
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects incompatible all-DEX options before querying', async () => {
+    const fetch = vi.spyOn(global, 'fetch')
+    await expect(hyperliquidCommand('state', { 'all-dexs': 'true', dex: 'xyz' })).rejects.toThrow('mutually exclusive')
+    await expect(hyperliquidCommand('state', { 'all-dexs': 'true', kind: 'spot' })).rejects.toThrow('--kind perp or both')
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('searches raw perp tickers and enriches matches with public annotations', async () => {
     delete process.env.WALLET_API_URL
     delete process.env.WALLET_API_TOKEN

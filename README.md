@@ -290,3 +290,14 @@ only from matching base-token profiles. Discovery ranking and exclusion lists
 are not applied. A known token without an eligible active pool has empty
 `pool_names`; no matching token returns `candidates: []`. Provider errors fail
 the command rather than being reported as an unknown token.
+
+### Hyperliquid balances across DEXs
+
+`purr hyperliquid state --all-dexs` discovers all perpetual DEXs and queries
+account state through the configured platform, plus spot once. Use
+`--kind perp` to omit spot; `--dex` and `--all-dexs` are mutually exclusive.
+The result contains `complete`, `perps: [{ dex, state }]`, `spot`, and `errors`.
+Failed ledgers are listed in `errors`, not reported as zero. Discovery failure
+fails the command. Per-ledger API payloads are preserved; no cross-currency
+or account-mode-dependent total is inferred. Existing `state` and `snapshot`
+behavior is unchanged.

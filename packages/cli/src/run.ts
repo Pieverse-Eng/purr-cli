@@ -276,7 +276,11 @@ function parseArgs(argv: string[]): Record<string, string> {
   return result
 }
 
-function parseStrictNamedArgs(argv: string[], commandLabel: string): Record<string, string> {
+function parseStrictNamedArgs(
+  argv: string[],
+  commandLabel: string,
+  booleanOptions: readonly string[] = [],
+): Record<string, string> {
   const result: Record<string, string> = {}
   const setOption = (name: string, value: string): void => {
     if (name.length === 0) throw new Error(`Invalid empty option for ${commandLabel}`)
@@ -309,6 +313,10 @@ function parseStrictNamedArgs(argv: string[], commandLabel: string): Record<stri
     }
 
     const next = argv[i + 1]
+    if (booleanOptions.includes(raw) && (next === undefined || next.startsWith('--'))) {
+      setOption(raw, 'true')
+      continue
+    }
     if (next !== undefined && !next.startsWith('--')) {
       setOption(raw, next)
       i++
@@ -810,7 +818,10 @@ Examples:
         console.log(hyperliquidHelp())
         return
       }
-      await hyperliquidCommand(command, parseStrictNamedArgs(rest, `purr hyperliquid ${command}`))
+      await hyperliquidCommand(
+        command,
+        parseStrictNamedArgs(rest, `purr hyperliquid ${command}`, command === 'state' ? ['all-dexs'] : []),
+      )
       return
     }
 

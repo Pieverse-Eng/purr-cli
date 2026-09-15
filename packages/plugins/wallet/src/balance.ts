@@ -1,4 +1,5 @@
 import { apiGet, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import { isNative } from '@pieverseio/purr-core/shared'
 import {
   SOLANA_CHAIN_ID,
   chainNameToId,
@@ -38,7 +39,10 @@ export async function walletBalance(args: Record<string, string>): Promise<void>
 
   if (args.token) {
     const tokenChainId = chainType === 'solana' ? SOLANA_CHAIN_ID : inferredChainId
-    params.set('token', resolveToken(args.token, tokenChainId))
+    const tokenAddress = resolveToken(args.token, tokenChainId)
+    if (chainType === 'solana' || !isNative(tokenAddress)) {
+      params.set('token', tokenAddress)
+    }
     params.set('chain_type', chainType)
   } else if (args['chain-type'] || args.chain) {
     params.set('chain_type', chainType)

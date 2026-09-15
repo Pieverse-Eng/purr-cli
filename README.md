@@ -200,9 +200,10 @@ uses the ERC-20 path, with decimals resolved by the platform or supplied using
 view uses 6 decimals and shares the native balance; do not add both when reporting
 holdings.
 
-The platform must support Arc; it owns RPC selection (default
-`http://rpc.arc-scan.org`, overridden there with `ARC_RPC_URL`) and broadcasting.
-The explorer is `https://explorer.arc.io`. Existing runtime-guarded on-demand
+The platform must support Arc; it owns RPC selection and broadcasting. Its default
+RPC `https://rpc.arc.invalid` and explorer `https://explorer.arc.invalid` are
+nonfunctional placeholders. Set `ARC_RPC_URL` on the platform to a verified endpoint
+before using Arc; a verified explorer URL remains pending. Existing runtime-guarded on-demand
 sends that require provider-native idempotent broadcasting remain unsupported.
 
 ### Solana raw-signature encoding

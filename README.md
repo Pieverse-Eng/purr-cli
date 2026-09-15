@@ -171,6 +171,32 @@ purr store install <source>:<slug>
 purr store remove <slug>
 ```
 
+### Arc Mainnet wallets
+
+Arc Mainnet uses chain ID `5042` (`--chain arc` / `--chain arc-mainnet` for wallet
+balance and transfer commands). Native USDC uses **18 decimals** and pays gas from
+the same balance. Omit `--token` or use `--token USDC` for native USDC:
+
+```bash
+purr wallet balance --chain-type ethereum --chain-id 5042
+purr wallet balance --chain arc --token USDC
+purr wallet transfer --to <evm-address> --amount 1.25 --chain arc --token USDC
+purr .pie transfer --pie alice.pie --amount 1.25 --chain-id 5042
+purr evm transfer --to <evm-address> --amount-wei 1250000000000000000 --chain-id 5042 --token USDC
+```
+
+`wallet transfer` and `.pie transfer` submit through the platform wallet API;
+`evm transfer` builds transaction steps. An explicit `--token <contract-address>`
+uses the ERC-20 path, with decimals resolved by the platform or supplied using
+`--decimals`. No Arc ERC-20 contract addresses are preconfigured. The USDC ERC-20
+view uses 6 decimals and shares the native balance; do not add both when reporting
+holdings.
+
+The platform must support Arc; it owns RPC selection (default
+`http://rpc.arc-scan.org`, overridden there with `ARC_RPC_URL`) and broadcasting.
+The explorer is `https://explorer.arc.io`. Existing runtime-guarded on-demand
+sends that require provider-native idempotent broadcasting remain unsupported.
+
 ### Solana raw-signature encoding
 
 `POST /wallet/sign` with `chainType=solana` and `scheme=raw` returns a base58-encoded 64-byte Ed25519 signature. Consumers must decode base58 before applying any venue-specific encoding; this value is not base64.

@@ -3,6 +3,13 @@ import { NATIVE_EVM } from '@pieverseio/purr-core/shared'
 import { inferChainId, resolveToken } from '@pieverseio/purr-core/token-registry'
 
 describe('resolveToken', () => {
+  it('resolves Arc USDC to native while preserving explicit contract addresses', () => {
+    expect(resolveToken('usdc', 5042)).toBe(NATIVE_EVM)
+    const contract = '0x1111111111111111111111111111111111111111'
+    expect(resolveToken(contract, 5042)).toBe(contract)
+    expect(() => resolveToken('ETH', 5042)).toThrow('Unknown token')
+    expect(() => resolveToken('USDC', 5042002)).toThrow('No token registry')
+  })
   // --- Address passthrough ---
   it('passes through a valid EVM address unchanged', () => {
     const addr = '0x55d398326f99059fF775485246999027B3197955'
@@ -205,6 +212,10 @@ describe('resolveToken', () => {
 })
 
 describe('inferChainId', () => {
+  it('resolves Arc mainnet aliases', () => {
+    expect(inferChainId({ chain: 'arc' })).toBe(5042)
+    expect(inferChainId({ chain: 'ARC-MAINNET' })).toBe(5042)
+  })
   it('returns chain-id when provided', () => {
     expect(inferChainId({ 'chain-id': '1' })).toBe(1)
     expect(inferChainId({ 'chain-id': '42161' })).toBe(42161)

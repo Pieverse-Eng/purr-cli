@@ -191,6 +191,30 @@ describe('.pie CLI e2e', () => {
     requests.length = 0
   })
 
+  it('routes Arc USDC ticker transfers to a .pie recipient as native', async () => {
+    const result = await runPurr(port, tmpHome, [
+      '.pie',
+      'transfer',
+      '--pie',
+      'alice.pie',
+      '--chain',
+      'arc',
+      '--token',
+      'USDC',
+      '--amount',
+      '1.123456789012345678',
+    ])
+    expect(result.code).toBe(0)
+    const transfer = requests.find((request) => request.url?.endsWith('/wallet/transfer'))
+    expect(transfer?.body).toEqual({
+      to: WALLET_ADDRESS,
+      amount: '1.123456789012345678',
+      chainId: 5042,
+      chainType: 'ethereum',
+      assetType: 'native',
+    })
+  })
+
   afterAll(async () => {
     await closeServer(server)
     rmSync(tmpHome, { recursive: true, force: true })

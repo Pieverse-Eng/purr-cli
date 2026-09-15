@@ -3,6 +3,31 @@ import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
 import { mockFetch } from '../../helpers.js'
 
 describe('walletBalance', () => {
+  it.each([
+    { chain: 'arc', token: 'USDC' },
+    { 'chain-id': '5042', token: 'USDC' },
+    { 'chain-id': '5042', 'chain-type': 'ethereum' },
+  ])('queries Arc native USDC without an ERC-20 token parameter: %j', async (selection) => {
+    const mock = mockFetch({ ok: true, data: { chainId: 5042, decimals: 18 } })
+    vi.stubGlobal('fetch', mock)
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await walletBalance(selection)
+    const url = new URL(String(mock.mock.calls[0][0]))
+    expect(url.searchParams.get('chain_id')).toBe('5042')
+    expect(url.searchParams.get('chain_type')).toBe('ethereum')
+    expect(url.searchParams.has('token')).toBe(false)
+  })
+
+  it('keeps explicit Arc contract balance queries on the ERC-20 path', async () => {
+    const token = '0x1111111111111111111111111111111111111111'
+    const mock = mockFetch({ ok: true, data: { chainId: 5042, decimals: 6 } })
+    vi.stubGlobal('fetch', mock)
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await walletBalance({ chain: 'arc', token })
+    const url = new URL(String(mock.mock.calls[0][0]))
+    expect(url.searchParams.get('chain_id')).toBe('5042')
+    expect(url.searchParams.get('token')).toBe(token)
+  })
   beforeEach(() => {
     process.env.WALLET_API_URL = 'https://api.test'
     process.env.WALLET_API_TOKEN = 'test-token'

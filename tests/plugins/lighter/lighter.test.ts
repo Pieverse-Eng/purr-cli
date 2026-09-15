@@ -16,6 +16,120 @@ describe('lighter plugin', () => {
     delete process.env.INSTANCE_ID
   })
 
+  it('submits a native bracket with one request and a shared expiry intent', async () => {
+    const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.stubGlobal('fetch', mock)
+    await lighterCommand('bracket-order', {
+      'market-id': '0',
+      side: 'buy',
+      size: '0.01',
+      price: '3000',
+      'stop-loss-trigger': '2900',
+      'stop-loss-price': '2890',
+      'take-profit-trigger': '3300',
+      'take-profit-price': '3290',
+      'expires-in': '7d',
+    })
+    expect(mock).toHaveBeenCalledOnce()
+    expect(mock.mock.calls[0][0]).toContain('/lighter/bracket-order')
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+      entry: { marketId: 0, side: 'buy', size: '0.01', price: '3000', expiresIn: '7d' },
+      stopLoss: { triggerPrice: '2900', price: '2890' },
+      takeProfit: { triggerPrice: '3300', price: '3290' },
+    })
+  })
+
+  it.each(['buy', 'sell'])(
+    'submits a market bracket for %s without an entry price',
+    async (side) => {
+      const mock = mockFetch({ ok: true, data: { status: 'succeeded' } })
+      vi.spyOn(console, 'log').mockImplementation(() => undefined)
+      vi.stubGlobal('fetch', mock)
+      await lighterCommand('bracket-order', {
+        'market-id': '0',
+        type: 'market',
+        side,
+        size: '0.01',
+        'slippage-bps': '50',
+        'stop-loss-trigger': '2900',
+        'stop-loss-price': '2890',
+        'take-profit-trigger': '3300',
+        'take-profit-price': '3290',
+        'expires-in': '7d',
+      })
+      expect(mock).toHaveBeenCalledOnce()
+      expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+        entry: {
+          marketId: 0,
+          type: 'market',
+          side,
+          size: '0.01',
+          slippageBps: 50,
+          timeInForce: 'ioc',
+          expiresIn: '7d',
+        },
+        stopLoss: { triggerPrice: '2900', price: '2890' },
+        takeProfit: { triggerPrice: '3300', price: '3290' },
+      })
+    },
+  )
+
+  it.each([
+    { 'slippage-bps': undefined },
+    { 'slippage-bps': '-1' },
+    { 'slippage-bps': '10000' },
+    { 'slippage-bps': '0.5' },
+    { price: '3000' },
+    { 'time-in-force': 'gtt' },
+    { 'expires-in': undefined },
+    { 'reduce-only': 'true' },
+    { 'trigger-price': '2900' },
+  ])('rejects invalid market bracket flags without submitting: %j', async (override) => {
+    const mock = mockFetch({ ok: true })
+    vi.stubGlobal('fetch', mock)
+    await expect(
+      lighterCommand('bracket-order', {
+        'market-id': '0',
+        type: 'market',
+        side: 'buy',
+        size: '0.01',
+        'slippage-bps': '50',
+        'stop-loss-trigger': '2900',
+        'stop-loss-price': '2890',
+        'take-profit-trigger': '3300',
+        'take-profit-price': '3290',
+        'expires-in': '7d',
+        ...override,
+      }),
+    ).rejects.toThrow()
+    expect(mock).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { 'expires-in': undefined },
+    { type: 'market', 'expires-in': '7d' },
+    { 'slippage-bps': '50', 'expires-in': '7d' },
+    { 'reduce-only': 'true', 'expires-in': '7d' },
+  ])('rejects invalid bracket input locally: %j', async (extra) => {
+    const mock = mockFetch({ ok: true })
+    vi.stubGlobal('fetch', mock)
+    await expect(
+      lighterCommand('bracket-order', {
+        'market-id': '0',
+        side: 'buy',
+        size: '0.01',
+        price: '3000',
+        'stop-loss-trigger': '2900',
+        'stop-loss-price': '2890',
+        'take-profit-trigger': '3300',
+        'take-profit-price': '3290',
+        ...extra,
+      } as Record<string, string>),
+    ).rejects.toThrow()
+    expect(mock).not.toHaveBeenCalled()
+  })
+
   it('calls read endpoints with the 20s timeout and without Idempotency-Key', async () => {
     const mock = mockFetch({ ok: true, data: { networks: [] } })
     const timeoutSpy = vi

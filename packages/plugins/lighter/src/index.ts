@@ -103,6 +103,7 @@ Write commands:
   open-account --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
   deposit --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
   order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--reduce-only true|false] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
+  bracket-order (--market-id <id> | --market <symbol> --market-type perp) --side buy|sell --size <amount> --price <entry-limit> --stop-loss-trigger <price> --stop-loss-price <limit> --take-profit-trigger <price> --take-profit-price <limit> (--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>)
   place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--reduce-only true|false] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
   cancel (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id>
   cancel-all [--time-in-force immediate|scheduled|abortScheduled] [--time <unix-ms>]
@@ -121,6 +122,7 @@ const SIDE_EFFECT_WRITE_ENDPOINTS: Record<string, string> = {
   'open-account': '/account/open',
   deposit: '/deposits',
   order: '/order',
+  'bracket-order': '/bracket-order',
   'place-orders': '/orders',
   cancel: '/cancel',
   'cancel-all': '/cancel-all',
@@ -462,6 +464,7 @@ const MARKET_ARGUMENT_COMMANDS = new Set([
   'funding-rates',
   'order',
   'place-orders',
+  'bracket-order',
   'cancel',
   'modify',
   'update-leverage',
@@ -539,7 +542,10 @@ function marketSymbolMatches(candidate: string, requested: string): boolean {
 }
 
 function readMarketType(args: Record<string, string>, command: string): string {
-  if (args.type !== undefined && !['order', 'place-orders', 'trades'].includes(command)) {
+  if (
+    args.type !== undefined &&
+    !['order', 'place-orders', 'bracket-order', 'trades'].includes(command)
+  ) {
     throw new Error(
       'Use --market-type for Lighter market filtering; --type is reserved for order/trade type.',
     )
@@ -751,6 +757,37 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
         sourceChainId: requireInteger(args, 'source-chain-id', 'sourceChainId'),
         routeType: arg(args, 'route-type', 'routeType'),
       })
+    case 'bracket-order': {
+      const entry = writeBody('order', args)
+      if (
+        (entry.type ?? 'limit') !== 'limit' ||
+        (entry.timeInForce ?? 'gtt') !== 'gtt' ||
+        entry.reduceOnly ||
+        entry.triggerPrice !== undefined
+      ) {
+        throw new Error('Bracket entry must be a non-reduce-only GTT limit order without a trigger')
+      }
+      if (
+        entry.expiresIn === undefined &&
+        entry.expiresAt === undefined &&
+        entry.orderExpiry === undefined
+      ) {
+        throw new Error(
+          'Pass an explicit --expires-in, --expires-at, or --order-expiry for the entire bracket',
+        )
+      }
+      return {
+        entry,
+        stopLoss: {
+          triggerPrice: requireArg(args, 'stop-loss-trigger'),
+          price: requireArg(args, 'stop-loss-price'),
+        },
+        takeProfit: {
+          triggerPrice: requireArg(args, 'take-profit-trigger'),
+          price: requireArg(args, 'take-profit-price'),
+        },
+      }
+    }
     case 'order':
     case 'place-orders':
       return compact({

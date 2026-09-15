@@ -103,7 +103,7 @@ Write commands:
   open-account --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
   deposit --amount <amount> --source-chain-id <1|42161|8453|43114|999> [--route-type perps]
   order (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--reduce-only true|false] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
-  bracket-order (--market-id <id> | --market <symbol> --market-type perp) --side buy|sell --size <amount> --price <entry-limit> --stop-loss-trigger <price> --stop-loss-price <limit> --take-profit-trigger <price> --take-profit-price <limit> (--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>)
+  bracket-order (--market-id <id> | --market <symbol> --market-type perp) --side buy|sell --size <amount> [--type limit --price <entry-limit> | --type market --slippage-bps <0..9999>] --stop-loss-trigger <price> --stop-loss-price <limit> --take-profit-trigger <price> --take-profit-price <limit> (--expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>)
   place-orders (--market-id <id> | --market <symbol> [--market-type perp|spot]) --side buy|sell --size <amount> --price <price> [--type <type>] [--time-in-force ioc|gtt|postOnly] [--reduce-only true|false] [non-IOC: --expires-in <duration> | --expires-at <iso> | --order-expiry <unix-ms>]
   cancel (--market-id <id> | --market <symbol> [--market-type perp|spot]) --order-index <id>
   cancel-all [--time-in-force immediate|scheduled|abortScheduled] [--time <unix-ms>]
@@ -739,6 +739,38 @@ function readEndpoint(command: string, args: Record<string, string>): string | u
   }
 }
 
+function explicitOrderExpiryBody(args: Record<string, string>): JsonRecord {
+  const expiresIn = arg(args, 'expires-in', 'expiresIn')
+  const expiresAt = arg(args, 'expires-at', 'expiresAt')
+  const rawOrderExpiry = arg(args, 'order-expiry', 'orderExpiry')
+  const provided = [expiresIn, expiresAt, rawOrderExpiry].filter((value) => value !== undefined)
+  if (provided.length > 1) {
+    throw new Error('--expires-in, --expires-at, and --order-expiry are mutually exclusive')
+  }
+  if (rawOrderExpiry !== undefined) {
+    return {
+      orderExpiry: parseSignedInteger(rawOrderExpiry, 'order-expiry'),
+    }
+  }
+  if (expiresAt !== undefined) {
+    if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(expiresAt)) {
+      throw new Error('--expires-at must include Z or an explicit UTC offset')
+    }
+    const timestamp = Date.parse(expiresAt)
+    if (!Number.isFinite(timestamp)) {
+      throw new Error('--expires-at must be a valid ISO-8601 timestamp')
+    }
+    return { expiresAt: new Date(timestamp).toISOString() }
+  }
+  if (expiresIn !== undefined) {
+    if (!/^(\d+)(ms|s|m|h|d|w)$/.test(expiresIn)) {
+      throw new Error('--expires-in must be an integer duration such as 30m, 24h, or 7d')
+    }
+    return { expiresIn }
+  }
+  return {}
+}
+
 function writeBody(command: string, args: Record<string, string>): JsonRecord {
   if (hasBodyInput(args)) return readBody(args)
 
@@ -758,14 +790,43 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
         routeType: arg(args, 'route-type', 'routeType'),
       })
     case 'bracket-order': {
-      const entry = writeBody('order', args)
+      const market = args.type === 'market'
+      if (market && args.price !== undefined) {
+        throw new Error('Market brackets use --slippage-bps instead of --price')
+      }
+      if (!market && arg(args, 'slippage-bps', 'slippageBps') !== undefined) {
+        throw new Error('--slippage-bps is only supported for market brackets')
+      }
+      const entry = market
+        ? compact({
+            marketId: requireInteger(args, 'market-id', 'marketId'),
+            side: requireArg(args, 'side'),
+            type: 'market',
+            size: requireArg(args, 'size'),
+            slippageBps: requireInteger(args, 'slippage-bps', 'slippageBps'),
+            timeInForce: arg(args, 'time-in-force', 'timeInForce') ?? 'ioc',
+            reduceOnly: parseBoolean(arg(args, 'reduce-only', 'reduceOnly'), 'reduce-only'),
+            triggerPrice: arg(args, 'trigger-price', 'triggerPrice'),
+            clientOrderIndex: parseInteger(
+              arg(args, 'client-order-index', 'clientOrderIndex'),
+              'client-order-index',
+            ),
+            priceProtection,
+            ...explicitOrderExpiryBody(args),
+          })
+        : writeBody('order', args)
+      if (market && (Number(entry.slippageBps) < 0 || Number(entry.slippageBps) > 9999)) {
+        throw new Error('--slippage-bps must be an integer from 0 to 9999')
+      }
       if (
-        (entry.type ?? 'limit') !== 'limit' ||
-        (entry.timeInForce ?? 'gtt') !== 'gtt' ||
+        !['limit', 'market'].includes(String(entry.type ?? 'limit')) ||
+        (entry.timeInForce ?? 'gtt') !== (market ? 'ioc' : 'gtt') ||
         entry.reduceOnly ||
         entry.triggerPrice !== undefined
       ) {
-        throw new Error('Bracket entry must be a non-reduce-only GTT limit order without a trigger')
+        throw new Error(
+          'Bracket entry must be non-reduce-only limit/GTT or market/IOC without a trigger',
+        )
       }
       if (
         entry.expiresIn === undefined &&
@@ -773,7 +834,7 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
         entry.orderExpiry === undefined
       ) {
         throw new Error(
-          'Pass an explicit --expires-in, --expires-at, or --order-expiry for the entire bracket',
+          'Pass an explicit --expires-in, --expires-at, or --order-expiry for bracket protection',
         )
       }
       return {
@@ -789,7 +850,24 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
       }
     }
     case 'order':
-    case 'place-orders':
+    case 'place-orders': {
+      const orderType = args.type ?? 'limit'
+      const timeInForce =
+        arg(args, 'time-in-force', 'timeInForce') ??
+        (['market', 'stopLoss', 'takeProfit'].includes(orderType) ? 'ioc' : 'gtt')
+      if (
+        [
+          arg(args, 'expires-in', 'expiresIn'),
+          arg(args, 'expires-at', 'expiresAt'),
+          arg(args, 'order-expiry', 'orderExpiry'),
+        ].some((v) => v !== undefined) &&
+        (orderType === 'market' || orderType === 'limit') &&
+        timeInForce === 'ioc'
+      ) {
+        throw new Error(
+          'IOC market and limit orders do not accept --expires-in, --expires-at, or --order-expiry',
+        )
+      }
       return compact({
         marketId: requireInteger(args, 'market-id', 'marketId'),
         side: requireArg(args, 'side'),
@@ -803,54 +881,10 @@ function writeBody(command: string, args: Record<string, string>): JsonRecord {
           'client-order-index',
         ),
         triggerPrice: arg(args, 'trigger-price', 'triggerPrice'),
-        ...(() => {
-          const expiresIn = arg(args, 'expires-in', 'expiresIn')
-          const expiresAt = arg(args, 'expires-at', 'expiresAt')
-          const rawOrderExpiry = arg(args, 'order-expiry', 'orderExpiry')
-          const provided = [expiresIn, expiresAt, rawOrderExpiry].filter(
-            (value) => value !== undefined,
-          )
-          if (provided.length > 1) {
-            throw new Error('--expires-in, --expires-at, and --order-expiry are mutually exclusive')
-          }
-          const orderType = args.type ?? 'limit'
-          const timeInForce =
-            arg(args, 'time-in-force', 'timeInForce') ??
-            (['market', 'stopLoss', 'takeProfit'].includes(orderType) ? 'ioc' : 'gtt')
-          if (
-            provided.length > 0 &&
-            (orderType === 'market' || orderType === 'limit') &&
-            timeInForce === 'ioc'
-          ) {
-            throw new Error(
-              'IOC market and limit orders do not accept --expires-in, --expires-at, or --order-expiry',
-            )
-          }
-          if (rawOrderExpiry !== undefined) {
-            return {
-              orderExpiry: parseSignedInteger(rawOrderExpiry, 'order-expiry'),
-            }
-          }
-          if (expiresAt !== undefined) {
-            if (!/(?:Z|[+-]\d{2}:\d{2})$/i.test(expiresAt)) {
-              throw new Error('--expires-at must include Z or an explicit UTC offset')
-            }
-            const timestamp = Date.parse(expiresAt)
-            if (!Number.isFinite(timestamp)) {
-              throw new Error('--expires-at must be a valid ISO-8601 timestamp')
-            }
-            return { expiresAt: new Date(timestamp).toISOString() }
-          }
-          if (expiresIn !== undefined) {
-            if (!/^(\d+)(ms|s|m|h|d|w)$/.test(expiresIn)) {
-              throw new Error('--expires-in must be an integer duration such as 30m, 24h, or 7d')
-            }
-            return { expiresIn }
-          }
-          return {}
-        })(),
+        ...explicitOrderExpiryBody(args),
         priceProtection,
       })
+    }
     case 'cancel':
       return compact({
         marketId: requireInteger(args, 'market-id', 'marketId'),

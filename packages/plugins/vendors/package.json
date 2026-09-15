@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-vendors",
-  "version": "0.2.60",
+  "version": "0.2.61",
   "type": "module",
   "private": true,
   "exports": {

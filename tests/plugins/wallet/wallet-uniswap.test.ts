@@ -6,6 +6,8 @@ import { mockFetch } from '../../helpers.js'
 const SPCX = '0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa'
 const USDG = '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168'
 const NATIVE = '0x0000000000000000000000000000000000000000'
+const ARC_USDC = '0x3600000000000000000000000000000000000000'
+const ARGUS = '0xeCe5cA8bf9220718E5727754026757512212cb3c'
 
 describe('walletUniswap', () => {
   beforeEach(() => {
@@ -186,11 +188,77 @@ describe('walletUniswap', () => {
   it('rejects unsupported or unknown chains', async () => {
     await expect(
       walletUniswap({ from: 'ETH', to: 'SPCX', amount: '0.003', chain: 'base' }),
-    ).rejects.toThrow('Robinhood Chain only')
+    ).rejects.toThrow('Robinhood Chain (4663) and Arc (5042) only')
 
     await expect(
       walletUniswap({ from: 'ETH', to: 'SPCX', amount: '0.003', chain: 'wat' }),
     ).rejects.toThrow('Unknown --chain: wat')
+  })
+
+  it.each([
+    {
+      from: 'USDC',
+      to: ARGUS,
+      chain: 'arc',
+      execute: 'false',
+      fromToken: ARC_USDC,
+      toToken: ARGUS,
+    },
+    {
+      from: ARGUS,
+      to: 'USDC',
+      'chain-id': '5042',
+      execute: 'true',
+      fromToken: ARGUS,
+      toToken: ARC_USDC,
+    },
+    {
+      from: ARC_USDC,
+      to: ARGUS,
+      chain: 'arc-mainnet',
+      execute: 'false',
+      fromToken: ARC_USDC,
+      toToken: ARGUS,
+    },
+  ])('resolves Arc swap assets for $from -> $to', async ({ fromToken, toToken, ...args }) => {
+    const mock = mockFetch({ ok: true, data: { chainId: 5042 } })
+    vi.stubGlobal('fetch', mock)
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await walletUniswap({ ...args, amount: '1' } as Record<string, string>)
+    expect(mock.mock.calls[0][0]).toBe(
+      `https://api.test/v1/instances/inst-123/wallet/uniswap/${args.execute === 'true' ? 'execute' : 'quote'}`,
+    )
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+      fromToken,
+      toToken,
+      fromAmount: '1',
+      chainId: 5042,
+    })
+  })
+
+  it('passes Arc chain and ERC-20 USDC through read-only research credentials', async () => {
+    process.env.FX_PLATFORM_QUOTE_TOKEN = 'read-only'
+    process.env.FX_PLATFORM_UNISWAP_QUOTE_URL = 'https://api.test/quote'
+    const mock = mockFetch({ ok: true, data: { chainId: 5042 } })
+    vi.stubGlobal('fetch', mock)
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    await walletUniswap({ from: 'USDC', to: ARGUS, amount: '1', chain: 'arc' })
+    expect(JSON.parse(mock.mock.calls[0][1].body)).toEqual({
+      fromToken: ARC_USDC,
+      toToken: ARGUS,
+      fromAmount: '1',
+      chainId: 5042,
+    })
+    expect(mock.mock.calls[0][1].headers).not.toHaveProperty('Authorization')
+  })
+
+  it.each(['from', 'to'])('rejects an Arc native sentinel in --%s', async (field) => {
+    const mock = vi.fn()
+    vi.stubGlobal('fetch', mock)
+    await expect(
+      walletUniswap({ from: 'USDC', to: ARGUS, amount: '1', chain: 'arc', [field]: NATIVE }),
+    ).rejects.toThrow('USDC ERC-20 address')
+    expect(mock).not.toHaveBeenCalled()
   })
 
   it('throws API errors', async () => {

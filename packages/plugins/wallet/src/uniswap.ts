@@ -7,6 +7,8 @@ import { parseChainId } from '@pieverseio/purr-core/shared'
 import { chainNameToId, resolveToken } from '@pieverseio/purr-core/token-registry'
 
 const ROBINHOOD_CHAIN_ID = 4663
+const ARC_CHAIN_ID = 5042
+const ARC_USDC = '0x3600000000000000000000000000000000000000'
 
 type UniswapSwapData = Record<string, unknown>
 
@@ -43,8 +45,8 @@ function resolveChainId(args: Record<string, string>): number {
   const chainId = args['chain-id']
     ? parseChainId(args['chain-id'])
     : (chainNameId ?? ROBINHOOD_CHAIN_ID)
-  if (chainId !== ROBINHOOD_CHAIN_ID) {
-    throw new Error('purr wallet uniswap currently supports Robinhood Chain only')
+  if (chainId !== ROBINHOOD_CHAIN_ID && chainId !== ARC_CHAIN_ID) {
+    throw new Error('purr wallet uniswap supports Robinhood Chain (4663) and Arc (5042) only')
   }
   return chainId
 }
@@ -58,11 +60,21 @@ function parseProtocols(value: string | undefined): string[] | undefined {
   return protocols.length > 0 ? protocols : undefined
 }
 
+function resolveSwapToken(token: string, chainId: number): string {
+  // Arc swaps use USDC's 6-decimal ERC-20 view; wallet transfers remain native.
+  if (chainId === ARC_CHAIN_ID && token.trim().toUpperCase() === 'USDC') return ARC_USDC
+  const address = resolveToken(token, chainId)
+  if (chainId === ARC_CHAIN_ID && address === '0x0000000000000000000000000000000000000000') {
+    throw new Error('Arc swaps require the USDC ERC-20 address, not a native token sentinel')
+  }
+  return address
+}
+
 function buildSwapBody(args: Record<string, string>): Record<string, unknown> {
   const chainId = resolveChainId(args)
   const body: Record<string, unknown> = {
-    fromToken: resolveToken(requiredArg(args, 'from'), chainId),
-    toToken: resolveToken(requiredArg(args, 'to'), chainId),
+    fromToken: resolveSwapToken(requiredArg(args, 'from'), chainId),
+    toToken: resolveSwapToken(requiredArg(args, 'to'), chainId),
     fromAmount: requiredArg(args, 'amount'),
     chainId,
   }

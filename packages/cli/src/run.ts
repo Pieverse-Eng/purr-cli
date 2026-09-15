@@ -739,6 +739,7 @@ Examples:
   purr wallet balance --chain robinhood --token USDG
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
+  purr wallet uniswap --from USDC --to <TOKEN_CA> --amount 1 --chain arc
   purr balancer pools --chain base --tokens WETH,USDC --protocol-version 3
   purr balancer quote --chain base --from ETH --to USDC --amount 0.001 --kind exact-in
   purr balancer swap --chain base --from ETH --to USDC --amount 0.001 --min-amount-out <raw> --execute

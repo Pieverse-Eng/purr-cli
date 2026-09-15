@@ -52,7 +52,7 @@ purr <group> <command> [options]
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
-| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
+| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood/Arc Uniswap operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
 | `execute` | Execute `TxStep[]` JSON from a file through the configured instance wallet |
@@ -70,6 +70,13 @@ Hosted research can use `purr wallet uniswap` quotes with
 research plugin. This context never falls back to wallet credentials and rejects
 `--execute`; ordinary wallet commands keep their existing instance authentication.
 
+Uniswap supports Robinhood (`4663`, default) and Arc (`5042`). On Arc,
+`--from USDC` / `--to USDC` selects the 6-decimal ERC-20 interface at
+`0x3600000000000000000000000000000000000000`; native sentinels are rejected
+for swaps. Wallet balances and transfers still use native USDC with 18 decimals.
+Both views share funds, including gas. Arc execution through runtime-guarded
+on-demand routes remains unsupported; normal execution uses platform broadcasting.
+
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
 workflow](docs/agentkey.md). No provider catalog or upstream credential is stored
@@ -83,6 +90,7 @@ purr wallet transfer --to <recipient-address> --amount <amount> --chain-id <chai
 purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-type solana
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
+purr wallet uniswap --from USDC --to 0xeCe5cA8bf9220718E5727754026757512212cb3c --amount 1 --chain arc
 
 # Balancer pool discovery and swap
 purr balancer pools --chain base --tokens WETH,USDC --protocol-version 3

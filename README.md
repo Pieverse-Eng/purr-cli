@@ -77,6 +77,34 @@ for swaps. Wallet balances and transfers still use native USDC with 18 decimals.
 Both views share funds, including gas. Arc execution through runtime-guarded
 on-demand routes remains unsupported; normal execution uses platform broadcasting.
 
+`purr wallet uniswap --execute` automatically checks the receipt after submission,
+with a 60-second budget. The hash is written to stderr immediately; stdout remains
+one JSON object with the original execution fields plus `receipt`. No extra flag
+or Platform endpoint is required. Quote-only behavior is unchanged.
+
+- `receipt.status`: `success` (included onchain), `reverted`, `pending` (no receipt
+  before the deadline), or `unknown` (RPC unavailable/mismatched). Inclusion is
+  not a finality guarantee. A pending/unknown result retains the submitted hash;
+  never repeat `--execute` merely to query its status.
+- `receipt.actualInput` / `actualOutput`: net transfer amounts for the sender and
+  recipient, with exact `amountBaseUnits`, `amountFormatted`, `decimals`, and token
+  address. These are receipt-derived; existing `estimatedToAmount*` fields remain
+  quotes. Missing transfer evidence gives `null`; missing decimals preserves raw
+  amounts and gives `amountFormatted: null`. See `receipt.warnings` for gaps.
+- Arc USDC native system logs (18 decimals) and matching ERC-20 interface logs
+  (6 decimals) are counted once. Actual native USDC is labeled `tokenAddress:
+  "native"` with 18 decimals. Same-symbol tokens retain their contract addresses.
+  Native fills require system transfer logs; on Robinhood, an unavailable native
+  ETH amount is reported as such, without substituting a quote or gross `tx.value`.
+- `receipt.gas` reports `gasUsed * effectiveGasPrice` separately, in native units.
+  Its scope is `execution_fee`, excluding separate rollup fees and approval gas.
+
+Receipt reads use `EVM_RPC_4663` / `EVM_RPC_5042`, then `ROBINHOOD_RPC_URL` /
+`ARC_RPC_URL`, then the chains' mainnet RPC defaults. The RPC chain ID is verified
+and wallet API credentials are never forwarded. Permissioned Arc access may
+require a reachable RPC override. Hosted agents need a released CLI and an updated
+tenant image before this behavior is available.
+
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
 workflow](docs/agentkey.md). No provider catalog or upstream credential is stored

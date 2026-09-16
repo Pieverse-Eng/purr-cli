@@ -92,7 +92,9 @@ async function withApiServer(
 ): Promise<void> {
   const server = createServer(async (req, res) => {
     try {
-      if (research) {
+      if (req.url === '/rpc') {
+        assert.equal(req.headers.authorization, undefined)
+      } else if (research) {
         assert.equal(req.headers.authorization, undefined)
         assert.equal(req.headers['x-pieverse-market-quote-capability'], 'read-only')
       } else {
@@ -115,6 +117,93 @@ async function withApiServer(
 }
 
 describe('wallet uniswap CLI', () => {
+  it('automatically confirms execute through RPC and prints one JSON result without a wait flag', async () => {
+    const hash = `0x${'12'.repeat(32)}`
+    const owner = `0x${'34'.repeat(20)}`
+    let submissions = 0
+    await withApiServer(
+      async (req, res) => {
+        const body = await readJsonBody(req)
+        if (req.url?.endsWith('/uniswap/execute')) {
+          submissions++
+          writeJson(res, 200, {
+            ok: true,
+            data: {
+              mode: 'transaction',
+              hash,
+              chainId: 4663,
+              from: owner,
+              fromToken: NATIVE,
+              toToken: SPCX,
+              estimatedToAmountFormatted: '0.031',
+            },
+          })
+          return
+        }
+        assert.equal(req.url, '/rpc')
+        let result: unknown
+        if (body.method === 'eth_chainId') result = '0x1237'
+        else if (body.method === 'eth_getTransactionReceipt')
+          result = {
+            transactionHash: hash,
+            from: owner,
+            to: SPCX,
+            status: '0x1',
+            blockNumber: '0x1',
+            gasUsed: '0x5208',
+            effectiveGasPrice: '0x1',
+            logs: [
+              {
+                address: SPCX,
+                topics: [
+                  '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+                  `0x${'0'.repeat(24)}${SPCX.slice(2)}`,
+                  `0x${'0'.repeat(24)}${owner.slice(2)}`,
+                ],
+                data: `0x${1234567890123456789n.toString(16).padStart(64, '0')}`,
+              },
+            ],
+          }
+        else if (body.method === 'eth_call') result = `0x${'12'.padStart(64, '0')}`
+        else throw new Error(`Unexpected RPC: ${body.method}`)
+        writeJson(res, 200, { jsonrpc: '2.0', id: body.id, result })
+      },
+      async (port) => {
+        const result = await runPurr(
+          port,
+          [
+            'wallet',
+            'uniswap',
+            '--from',
+            'ETH',
+            '--to',
+            'SPCX',
+            '--amount',
+            '0.003',
+            '--chain',
+            'robinhood',
+            '--execute',
+          ],
+          {
+            EVM_RPC_4663: `http://127.0.0.1:${port}/rpc`,
+          },
+        )
+        expect(result.code).toBe(0)
+        expect(result.stderr).toContain(hash)
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          hash,
+          receipt: {
+            status: 'success',
+            actualInput: null,
+            actualOutput: { amountFormatted: '1.234567890123456789' },
+            explorerUrl: `https://robinhoodchain.blockscout.com/tx/${hash}`,
+          },
+        })
+        expect(submissions).toBe(1)
+      },
+    )
+  })
+
   it('quotes with a research capability and blocks execute despite inherited wallet credentials', async () => {
     let calls = 0
     await withApiServer(

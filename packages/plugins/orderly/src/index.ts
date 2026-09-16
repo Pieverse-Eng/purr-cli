@@ -1,4 +1,10 @@
-import { apiGet, apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import {
+  ApiClientError,
+  apiGet,
+  apiPost,
+  apiPut,
+  resolveCredentials,
+} from '@pieverseio/purr-core/api-client'
 import bs58 from 'bs58'
 import { isAddress, parseUnits } from 'viem'
 
@@ -48,6 +54,8 @@ interface TradingIntegrationResponse {
 
 const API_URL = (process.env.ORDERLY_API_URL ?? 'https://api.orderly.org').replace(/\/$/, '')
 const ORDER_TYPES = ['LIMIT', 'MARKET', 'IOC', 'FOK', 'POST_ONLY', 'ASK', 'BID'] as const
+const MARGIN_MODES = ['CROSS', 'ISOLATED'] as const
+type MarginMode = (typeof MARGIN_MODES)[number]
 
 const ORDERLY_KEY_MAX_LIFETIME_MS = 365 * 24 * 60 * 60 * 1_000
 const ORDERLY_KEY_EXPIRY_BUFFER_MS = 5 * 60 * 1_000
@@ -87,6 +95,10 @@ Public read commands (no wallet credentials):
   networks
   tokens [--chain-id <id>]
 
+Trading integration switch (Platform owns the durable state):
+  enable
+  disable
+
 Account and asset commands:
   onboard --chain-id <id> [--execute true]
   account
@@ -99,19 +111,25 @@ Account and asset commands:
   withdraw --chain-id <id> --token <symbol> --amount <decimal> --address <0x...> [--allow-cross-chain true] [--execute true]
 
 Trading commands:
-  order create --symbol <symbol> --side <BUY|SELL> --type <${ORDER_TYPES.join('|')}> --quantity <decimal> [--price <decimal>] [--reduce-only true] [--client-order-id <id>] [--execute true]
+  order create --symbol <symbol> --side <BUY|SELL> --type <${ORDER_TYPES.join('|')}> --quantity <decimal> [--price <decimal>] [--reduce-only true] [--client-order-id <id>] [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
   order update --order-id <id> --symbol <symbol> --quantity <decimal> [--price <decimal>] [--execute true]
   order cancel --order-id <id> --symbol <symbol> [--execute true]
   orders cancel-all [--symbol <symbol>] [--execute true]
-  position close --symbol <symbol> [--percentage <1-100>] [--execute true]
-  leverage get --symbol <symbol>
-  leverage set --symbol <symbol> --leverage <n> [--execute true]
-  algo create --symbol <symbol> --side <BUY|SELL> --quantity <decimal> [--take-profit <price>] [--stop-loss <price>] [--execute true]
+  position close --symbol <symbol> [--percentage <1-100>] [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
+  leverage get --symbol <symbol> [--margin-mode <${MARGIN_MODES.join('|')}>]
+  leverage set --symbol <symbol> --leverage <n> [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
+  bracket-order --symbol <symbol> --side <BUY|SELL> --type <LIMIT|MARKET> --quantity <decimal> [--price <decimal>] --take-profit <trigger> --stop-loss <trigger> [--client-order-id <id>] [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
+  algo create --symbol <symbol> --side <BUY|SELL> --quantity <decimal> [--take-profit <price>] [--stop-loss <price>] [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
   algo list [--symbol <symbol>]
   algo cancel --order-id <id> --symbol <symbol> [--execute true]
 
 ORDERLY_BROKER_ID is required for account, network, deposit, and withdrawal commands.
-All commands that change assets or orders are previews until --execute true is supplied.`
+All commands that change assets or orders are previews until --execute true is supplied.
+Leverage is tracked per symbol and per margin mode, and markets listed by a
+broker support ISOLATED only. Unsupported options are refused rather than
+ignored, so a preview always matches what execution submits.
+bracket-order submits an entry with protection linked to it and sized from its
+fill. algo create builds standalone TP/SL for a position that already exists.`
 
 function record(value: unknown): JsonRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -211,11 +229,13 @@ function brokerId(): string {
   return value
 }
 
-async function orderlyTradingEnabled(): Promise<boolean> {
+function tradingIntegrationPath(): string {
   const { instanceId } = resolveCredentials()
-  const response = await apiGet<TradingIntegrationResponse>(
-    `/v1/instances/${encodeURIComponent(instanceId)}/integrations/orderly-trading`,
-  )
+  return `/v1/instances/${encodeURIComponent(instanceId)}/integrations/orderly-trading`
+}
+
+async function orderlyTradingEnabled(): Promise<boolean> {
+  const response = await apiGet<TradingIntegrationResponse>(tradingIntegrationPath())
   if (!response.ok || response.data?.enabled !== true) return false
   return true
 }
@@ -223,9 +243,51 @@ async function orderlyTradingEnabled(): Promise<boolean> {
 async function requireOrderlyTradingEnabled(): Promise<void> {
   if (await orderlyTradingEnabled()) return
   throw new OrderlyCliError(
-    'Orderly trading is disabled for this instance. Enable Orderly Trading in the app before using private commands.',
+    'Orderly trading is disabled for this instance. Run purr orderly enable, or enable Orderly Trading in the app, before using private commands.',
     { code: 'ORDERLY_TRADING_DISABLED', status: 403 },
   )
+}
+
+/**
+ * Platform owns the durable switch. A blocked disable answers 409 with the
+ * positions, orders, balances, and asset operations that still have to be
+ * resolved, so that body is surfaced instead of the bare HTTP failure.
+ */
+function tradingIntegrationError(error: unknown, enabled: boolean): Error {
+  if (!(error instanceof ApiClientError)) {
+    return error instanceof Error ? error : new Error(String(error))
+  }
+  const body =
+    typeof error.body === 'object' && error.body !== null && !Array.isArray(error.body)
+      ? (error.body as JsonRecord)
+      : {}
+  const code = body.code
+  return new OrderlyCliError(
+    asString(body.error) ??
+      asString(body.message) ??
+      `Orderly trading could not be ${enabled ? 'enabled' : 'disabled'}`,
+    {
+      code: typeof code === 'string' || typeof code === 'number' ? code : undefined,
+      status: error.status,
+      data: body.data,
+    },
+  )
+}
+
+async function setOrderlyTradingIntegration(enabled: boolean): Promise<void> {
+  let response: Envelope<JsonRecord>
+  try {
+    response = await apiPut<Envelope<JsonRecord>>(tradingIntegrationPath(), { enabled })
+  } catch (error) {
+    throw tradingIntegrationError(error, enabled)
+  }
+  if (response.ok !== true || response.data === undefined) {
+    throw new OrderlyCliError(
+      response.error ?? `Orderly trading could not be ${enabled ? 'enabled' : 'disabled'}`,
+      { code: response.code, data: response.data },
+    )
+  }
+  print(response.data)
 }
 
 function query(path: string, params: Record<string, string | number | undefined>): string {
@@ -369,6 +431,42 @@ async function publicInfo(symbol: string): Promise<JsonRecord> {
   return record(await orderlyRequest('GET', `/v1/public/info/${encodeURIComponent(symbol)}`))
 }
 
+function marginModeArg(args: Record<string, string>): MarginMode | undefined {
+  const value = args['margin-mode']
+  if (value === undefined) return undefined
+  const normalized = value.toUpperCase()
+  if (!(MARGIN_MODES as readonly string[]).includes(normalized)) {
+    throw new OrderlyCliError(
+      `Invalid --margin-mode: "${value}". Expected ${MARGIN_MODES.join(' or ')}.`,
+    )
+  }
+  return normalized as MarginMode
+}
+
+/**
+ * Orderly selects the margin mode per order and no endpoint reports which modes
+ * a market accepts: `/v1/public/info` carries no margin field, and a leverage
+ * update succeeds even for a mode the market rejects at order submission.
+ * Builder markets (Perp Anything, listed with a non-null `broker_id`) are
+ * documented as isolated only, so that is the one signal available before an
+ * order exists. Resolving the mode here keeps a preview and its execution
+ * identical and fails before collateral is moved rather than after.
+ */
+async function resolveMarginMode(
+  symbol: string,
+  requested: MarginMode | undefined,
+): Promise<MarginMode | undefined> {
+  if (requested === 'ISOLATED') return requested
+  const isolatedOnly = asString((await publicInfo(symbol)).broker_id) !== undefined
+  if (!isolatedOnly) return requested
+  if (requested === 'CROSS') {
+    throw new OrderlyCliError(
+      `${symbol} supports ISOLATED margin only. Re-run with --margin-mode isolated; the account needs no mode conversion and no second account.`,
+    )
+  }
+  return 'ISOLATED'
+}
+
 async function tokenMetadata(token: string, chainId: number): Promise<{ ledgerDecimals: number }> {
   const response = await orderlyRequest<unknown>('GET', '/v1/public/token')
   const row = asRows(response).find(
@@ -443,6 +541,7 @@ async function status(): Promise<void> {
     accountReady: false,
     keyReady: false,
     authReady: false,
+    fundedReady: false,
     tradeReady: false,
     reasons: [] as string[],
   }
@@ -472,8 +571,14 @@ async function status(): Promise<void> {
     const current = await identity()
     result.accountReady = true
     result.keyReady = Boolean(current.solanaAddress)
-    await privateRequest('GET', '/v1/client/holding')
+    const holdings = record(await privateRequest('GET', '/v1/client/holding'))
     result.authReady = true
+    // Collateral is reported on its own: an enabled, authenticated account can
+    // still hold nothing, and only a funded one can back an order.
+    result.fundedReady = asRows(holdings.holding).some((row) => Number(row.holding) > 0)
+    if (result.fundedReady !== true) {
+      ;(result.reasons as string[]).push('Orderly account holds no collateral')
+    }
   } catch (error) {
     ;(result.reasons as string[]).push(
       error instanceof Error ? error.message : 'Managed wallet authentication unavailable',
@@ -649,7 +754,10 @@ function orderFromArgs(args: Record<string, string>): JsonRecord {
 
 async function createOrder(args: Record<string, string>): Promise<void> {
   const order = orderFromArgs(args)
+  const requested = marginModeArg(args)
   await validateOrder(order)
+  const marginMode = await resolveMarginMode(String(order.symbol), requested)
+  if (marginMode) order.margin_mode = marginMode
   if (!execute(args))
     return print({
       execute: false,
@@ -692,6 +800,7 @@ async function cancelAll(args: Record<string, string>): Promise<void> {
 
 async function closePosition(args: Record<string, string>): Promise<void> {
   const symbol = required(args, 'symbol')
+  const requested = marginModeArg(args)
   const position = await privateRequest<unknown>(
     'GET',
     `/v1/position/${encodeURIComponent(symbol)}`,
@@ -708,7 +817,7 @@ async function closePosition(args: Record<string, string>): Promise<void> {
   const percentage =
     args.percentage === undefined ? '100' : positiveDecimal(args.percentage, 'percentage')
   if (Number(percentage) > 100) throw new OrderlyCliError('--percentage must be between 1 and 100')
-  const order = {
+  const order: JsonRecord = {
     symbol,
     side: isLong ? 'SELL' : 'BUY',
     order_type: 'MARKET',
@@ -716,12 +825,15 @@ async function closePosition(args: Record<string, string>): Promise<void> {
     reduce_only: true,
   }
   await validateOrder(order)
+  const marginMode = await resolveMarginMode(symbol, requested)
+  if (marginMode) order.margin_mode = marginMode
   if (!execute(args)) return print({ execute: false, position: row, order })
   print(await privateRequest('POST', '/v1/order', order))
 }
 
 async function createAlgo(args: Record<string, string>): Promise<void> {
   const symbol = required(args, 'symbol')
+  const requested = marginModeArg(args)
   const side = required(args, 'side').toUpperCase()
   const quantity = positiveDecimal(required(args, 'quantity'), 'quantity')
   const children: JsonRecord[] = []
@@ -763,8 +875,93 @@ async function createAlgo(args: Record<string, string>): Promise<void> {
           trigger_price: children[0].trigger_price,
           reduce_only: true,
         }
+  const marginMode = await resolveMarginMode(symbol, requested)
+  if (marginMode) body.margin_mode = marginMode
   if (!execute(args)) return print({ execute: false, algoOrder: body })
   print(await privateRequest('POST', '/v1/algo/order', body))
+}
+
+/**
+ * A native bracket: Orderly links the protection to this entry, sizes it from
+ * the entry's executed quantity, and cancels it with the entry. Calling `order
+ * create` and then `algo create` produces two unlinked orders instead, and
+ * leaves the entry unprotected in between. `TP_SL` is used rather than
+ * `POSITIONAL_TP_SL`, which would instead target whatever position exists when
+ * the trigger fires.
+ *
+ * The protection legs are MARKET because Orderly's own SDK resolves a `TP_SL`
+ * child without an exit limit price to exactly that (`resolveTPSLOrderType`:
+ * limit price wins, else `CLOSE_POSITION` for a full-position group, else
+ * `MARKET`). `CLOSE_POSITION` belongs to `POSITIONAL_TP_SL` and would silently
+ * resize the protection to the whole position, and a LIMIT leg can trigger
+ * without filling.
+ */
+async function createBracketOrder(args: Record<string, string>): Promise<void> {
+  const symbol = required(args, 'symbol')
+  const requested = marginModeArg(args)
+  const side = required(args, 'side').toUpperCase()
+  if (side !== 'BUY' && side !== 'SELL') throw new OrderlyCliError('--side must be BUY or SELL')
+  const type = required(args, 'type').toUpperCase()
+  if (type !== 'LIMIT' && type !== 'MARKET')
+    throw new OrderlyCliError('--type must be LIMIT or MARKET for a bracket entry')
+  if (type === 'MARKET' && args.price !== undefined)
+    throw new OrderlyCliError('--price is not supported for a MARKET bracket entry')
+  const quantity = positiveDecimal(required(args, 'quantity'), 'quantity')
+  const takeProfit = positiveDecimal(required(args, 'take-profit'), 'take-profit')
+  const stopLoss = positiveDecimal(required(args, 'stop-loss'), 'stop-loss')
+  // Protection is submitted with the entry or not at all, so a swapped pair has
+  // to fail here rather than arm a stop above the target.
+  const profitAbove = side === 'BUY'
+  if (compareDecimals(takeProfit, stopLoss) !== (profitAbove ? 1 : -1)) {
+    throw new OrderlyCliError(
+      `--take-profit must be ${profitAbove ? 'above' : 'below'} --stop-loss for a ${side} entry`,
+    )
+  }
+  const entry: JsonRecord = { symbol, order_quantity: quantity }
+  if (type === 'LIMIT') entry.order_price = positiveDecimal(required(args, 'price'), 'price')
+  await validateOrder(entry)
+  const marginMode = await resolveMarginMode(symbol, requested)
+  const exit = profitAbove ? 'SELL' : 'BUY'
+  const protection = (algoType: 'TAKE_PROFIT' | 'STOP_LOSS', triggerPrice: string): JsonRecord => ({
+    symbol,
+    algo_type: algoType,
+    side: exit,
+    type: 'MARKET',
+    trigger_price: triggerPrice,
+    reduce_only: true,
+  })
+  const body: JsonRecord = {
+    symbol,
+    algo_type: 'BRACKET',
+    side,
+    type,
+    quantity,
+    ...(entry.order_price === undefined ? {} : { price: entry.order_price }),
+    ...(args['client-order-id'] ? { client_order_id: args['client-order-id'] } : {}),
+    ...(marginMode === undefined ? {} : { margin_mode: marginMode }),
+    child_orders: [
+      {
+        symbol,
+        algo_type: 'TP_SL',
+        child_orders: [protection('TAKE_PROFIT', takeProfit), protection('STOP_LOSS', stopLoss)],
+      },
+    ],
+  }
+  if (!execute(args))
+    return print({
+      execute: false,
+      bracketOrder: body,
+      note: 'Protection is sized from the entry fill and is submitted with it. Reuse the same --client-order-id when executing this preview.',
+    })
+  const result = record(await privateRequest('POST', '/v1/algo/order', body))
+  const entryRow = asRows(result)[0]
+  if (!entryRow || entryRow.order_id === undefined) {
+    throw new OrderlyCliError(
+      'Orderly did not return a bracket entry order ID. Check algo list before resubmitting; the entry may already be live.',
+      { data: result },
+    )
+  }
+  print(result)
 }
 
 async function publicQuery(type: string, args: Record<string, string>): Promise<void> {
@@ -783,7 +980,111 @@ export function orderlyHelp(): string {
   return ORDERLY_USAGE
 }
 
+const INTEGRATION_WRITE_COMMANDS: Record<string, boolean> = { enable: true, disable: false }
+
+const COMMAND_OPTIONS: Record<string, readonly string[]> = {
+  status: [],
+  markets: ['query'],
+  market: ['symbol'],
+  orderbook: ['symbol', 'depth'],
+  candles: ['symbol', 'interval', 'start-t', 'end-t'],
+  funding: ['symbol', 'start-t', 'end-t'],
+  networks: [],
+  tokens: ['chain-id'],
+  enable: [],
+  disable: [],
+  onboard: ['chain-id', 'execute'],
+  account: [],
+  balance: [],
+  positions: ['symbol'],
+  orders: ['status', 'symbol', 'page', 'size'],
+  fills: ['symbol', 'page', 'size'],
+  'asset-history': ['token', 'side', 'page', 'size'],
+  deposit: ['chain-id', 'token', 'amount', 'execute'],
+  withdraw: ['chain-id', 'token', 'amount', 'address', 'allow-cross-chain', 'execute'],
+  'order-create': [
+    'symbol',
+    'side',
+    'type',
+    'quantity',
+    'price',
+    'reduce-only',
+    'client-order-id',
+    'margin-mode',
+    'execute',
+  ],
+  'order-update': ['order-id', 'symbol', 'quantity', 'price', 'execute'],
+  'order-cancel': ['order-id', 'symbol', 'execute'],
+  'orders-cancel-all': ['symbol', 'execute'],
+  'position-close': ['symbol', 'percentage', 'margin-mode', 'execute'],
+  'leverage-get': ['symbol', 'margin-mode'],
+  'leverage-set': ['symbol', 'leverage', 'margin-mode', 'execute'],
+  'bracket-order': [
+    'symbol',
+    'side',
+    'type',
+    'quantity',
+    'price',
+    'take-profit',
+    'stop-loss',
+    'client-order-id',
+    'margin-mode',
+    'execute',
+  ],
+  'algo-create': [
+    'symbol',
+    'side',
+    'quantity',
+    'take-profit',
+    'stop-loss',
+    'margin-mode',
+    'execute',
+  ],
+  'algo-list': ['symbol'],
+  'algo-cancel': ['order-id', 'symbol', 'execute'],
+}
+
+const NESTED_COMMAND_PREFIXES = ['order', 'orders', 'position', 'leverage', 'algo']
+
+function commandLabel(command: string): string {
+  const separator = command.indexOf('-')
+  const prefix = separator > 0 ? command.slice(0, separator) : ''
+  return NESTED_COMMAND_PREFIXES.includes(prefix)
+    ? `${prefix} ${command.slice(separator + 1)}`
+    : command
+}
+
+/**
+ * An option the command never reads used to be dropped in silence, so a
+ * misspelled or unsupported flag produced a preview that looked like it had
+ * been applied. Refuse the command instead, while the preview is still the
+ * only thing at stake.
+ */
+function assertKnownOptions(command: string, args: Record<string, string>): void {
+  const allowed = COMMAND_OPTIONS[command]
+  if (!allowed) return
+  const allowedSet = new Set([...allowed, 'h'])
+  const unknown = Object.keys(args)
+    .filter((name) => !allowedSet.has(name))
+    .sort()
+  if (unknown.length === 0) return
+  const rendered = unknown.map((name) => `--${name}`).join(', ')
+  throw new OrderlyCliError(
+    `Unknown option${unknown.length === 1 ? '' : 's'} for purr orderly ${commandLabel(command)}: ${rendered}.${
+      allowed.length === 0
+        ? ' This command does not accept options.'
+        : ` Allowed options: ${allowed.map((name) => `--${name}`).join(', ')}`
+    }`,
+  )
+}
+
 export async function orderlyCommand(command: string, args: Record<string, string>): Promise<void> {
+  assertKnownOptions(command, args)
+
+  // The switch commands own the gate below, so they have to run before it.
+  const integrationWrite = INTEGRATION_WRITE_COMMANDS[command]
+  if (integrationWrite !== undefined) return await setOrderlyTradingIntegration(integrationWrite)
+
   const publicCommands = new Set([
     'status',
     'markets',
@@ -888,20 +1189,45 @@ export async function orderlyCommand(command: string, args: Record<string, strin
       return await cancelAll(args)
     case 'position-close':
       return await closePosition(args)
-    case 'leverage-get':
+    case 'leverage-get': {
+      // Orderly defaults this read to CROSS, so an unqualified query reports the
+      // cross setting even for a market that only accepts isolated orders.
+      const symbol = required(args, 'symbol')
+      const marginMode = await resolveMarginMode(symbol, marginModeArg(args))
       return print(
         await privateRequest(
           'GET',
-          query('/v1/client/leverage', { symbol: required(args, 'symbol') }),
+          query('/v1/client/leverage', { symbol, margin_mode: marginMode }),
         ),
       )
-    case 'leverage-set': {
-      const body = { symbol: required(args, 'symbol'), leverage: optionalInt(args, 'leverage') }
-      if (body.leverage === undefined || body.leverage < 1)
-        throw new OrderlyCliError('Missing or invalid --leverage')
-      if (!execute(args)) return print({ execute: false, leverage: body })
-      return print(await privateRequest('POST', '/v1/client/leverages', body))
     }
+    case 'leverage-set': {
+      const symbol = required(args, 'symbol')
+      const leverage = optionalInt(args, 'leverage')
+      if (leverage === undefined || leverage < 1)
+        throw new OrderlyCliError('Missing or invalid --leverage')
+      const marginMode = await resolveMarginMode(symbol, marginModeArg(args))
+      const body: JsonRecord = {
+        symbol,
+        leverage,
+        ...(marginMode === undefined ? {} : { margin_mode: marginMode }),
+      }
+      if (!execute(args)) return print({ execute: false, leverage: body })
+      const result = record(await privateRequest('POST', '/v1/client/leverages', body))
+      // Leverage updates succeed per mode, so a mismatched echo means the
+      // requested mode never took effect. Only an order would reveal that, and
+      // only after collateral had already been moved.
+      const applied = asString(result.margin_mode)?.toUpperCase()
+      if (marginMode !== undefined && applied !== marginMode) {
+        throw new OrderlyCliError(
+          `Orderly applied ${applied ?? 'an unreported'} margin mode for ${symbol} instead of ${marginMode}`,
+          { data: result },
+        )
+      }
+      return print(result)
+    }
+    case 'bracket-order':
+      return await createBracketOrder(args)
     case 'algo-create':
       return await createAlgo(args)
     case 'algo-list':

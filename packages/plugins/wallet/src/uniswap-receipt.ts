@@ -93,6 +93,7 @@ export async function confirmUniswapSwap(
     hash: data.hash,
     chainId,
     explorerUrl: chain ? `${chain.explorer}/tx/${data.hash}` : undefined,
+    ...(recipient ? { recipient } : {}),
   }
   const unavailable = (reason: string) => ({ ...identity, status: 'unknown', reason })
   if (!chain || typeof data.hash !== 'string' || !/^0x[0-9a-f]{64}$/i.test(data.hash)) {
@@ -147,18 +148,12 @@ export async function confirmUniswapSwap(
     const result = {
       ...identity,
       status: receipt.status,
-      blockNumber: receipt.blockNumber.toString(),
       gas: {
-        amountBaseUnits: fee.toString(),
-        amountFormatted: formatUnits(fee, 18),
-        decimals: 18,
+        amount: formatUnits(fee, 18),
         symbol: chain.symbol,
-        scope: 'execution_fee',
-        gasUsed: receipt.gasUsed.toString(),
-        effectiveGasPrice: receipt.effectiveGasPrice.toString(),
       },
     }
-    if (receipt.status === 'reverted') return { ...result, actualInput: null, actualOutput: null }
+    if (receipt.status === 'reverted') return { ...result, input: null, output: null }
     const { events, nativeLogs } = transfers(receipt, chainId)
     const blockNumber = receipt.blockNumber
     const warnings: string[] = []
@@ -168,7 +163,7 @@ export async function confirmUniswapSwap(
       // tx.value is gross funding, not a net fill: routers may refund native funds.
       if (asset === NATIVE && !nativeLogs) {
         warnings.push(
-          `Native ${chain.symbol} ${direction} amount unavailable: this receipt lacks system transfer logs. Do not substitute the quote or tx.value.`,
+          `Native ${chain.symbol} ${direction} amount unavailable: no system transfer logs.`,
         )
         return null
       }
@@ -206,24 +201,20 @@ export async function confirmUniswapSwap(
             blockNumber,
           })
         } catch {
-          warnings.push(
-            `Decimals unavailable for ${token}; only the raw actual amount is available.`,
-          )
+          warnings.push(`Amount unavailable for ${token}: decimals could not be read.`)
         }
       }
       return {
         tokenAddress: asset === NATIVE ? 'native' : asset,
-        owner,
-        decimals,
-        amountBaseUnits: amount.toString(),
-        amountFormatted: decimals === null ? null : formatUnits(amount, decimals),
+        ...(asset === NATIVE ? { symbol: chain.symbol } : {}),
+        amount: decimals === null ? null : formatUnits(amount, decimals),
       }
     }
-    const [actualInput, actualOutput] = await Promise.all([
+    const [input, output] = await Promise.all([
       actualAmount(data.fromToken, receipt.from, 'sent'),
       actualAmount(data.toToken, recipient ?? receipt.from, 'received'),
     ])
-    return { ...result, actualInput, actualOutput, warnings }
+    return { ...result, input, output, ...(warnings.length ? { warnings } : {}) }
   } catch {
     // Never leak RPC URLs/credentials or turn a read failure into a failed submission.
     return unavailable(

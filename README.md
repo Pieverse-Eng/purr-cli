@@ -79,25 +79,27 @@ on-demand routes remains unsupported; normal execution uses platform broadcastin
 
 `purr wallet uniswap --execute` automatically checks the receipt after submission,
 with a 60-second budget. The hash is written to stderr immediately; stdout remains
-one JSON object with the original execution fields plus `receipt`. No extra flag
-or Platform endpoint is required. Quote-only behavior is unchanged.
+one compact JSON object: `status`, `chainId`, `hash`, `explorerUrl`, actual `input`
+and `output`, and `gas`. Execution no longer echoes the quote payload or raw
+receipt details. Quote-only output is unchanged; no extra flag is required.
 
-- `receipt.status`: `success` (included onchain), `reverted`, `pending` (no receipt
+- `status`: `success` (included onchain), `reverted`, `pending` (no receipt
   before the deadline), or `unknown` (RPC unavailable/mismatched). Inclusion is
   not a finality guarantee. A pending/unknown result retains the submitted hash;
   never repeat `--execute` merely to query its status.
-- `receipt.actualInput` / `actualOutput`: net transfer amounts for the sender and
-  recipient, with exact `amountBaseUnits`, `amountFormatted`, `decimals`, and token
-  address. These are receipt-derived; existing `estimatedToAmount*` fields remain
-  quotes. Missing transfer evidence gives `null`; missing decimals preserves raw
-  amounts and gives `amountFormatted: null`. See `receipt.warnings` for gaps.
+- `input` / `output`: actual net transfers as `{ tokenAddress, amount }`, with
+  `amount` an exact human-readable decimal string. Native assets also include
+  `symbol`. Missing transfer evidence gives `null`; missing decimals gives
+  `amount: null`. `warnings` appears only when information is missing, and
+  `reason` explains pending/unknown status. An explicit `recipient` is retained.
 - Arc USDC native system logs (18 decimals) and matching ERC-20 interface logs
   (6 decimals) are counted once. Actual native USDC is labeled `tokenAddress:
-  "native"` with 18 decimals. Same-symbol tokens retain their contract addresses.
+  "native"`; precision conversion stays inside the CLI. Same-symbol tokens
+  retain their contract addresses.
   Native fills require system transfer logs; on Robinhood, an unavailable native
   ETH amount is reported as such, without substituting a quote or gross `tx.value`.
-- `receipt.gas` reports `gasUsed * effectiveGasPrice` separately, in native units.
-  Its scope is `execution_fee`, excluding separate rollup fees and approval gas.
+- `gas: { amount, symbol }` reports `gasUsed * effectiveGasPrice` separately in
+  native units, excluding separate rollup fees and approval gas.
 
 Receipt reads use `EVM_RPC_4663` / `EVM_RPC_5042`, then `ROBINHOOD_RPC_URL` /
 `ARC_RPC_URL`, then the chains' mainnet RPC defaults. The RPC chain ID is verified

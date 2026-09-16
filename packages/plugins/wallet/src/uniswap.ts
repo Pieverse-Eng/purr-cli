@@ -129,8 +129,9 @@ export async function walletUniswap(args: Record<string, string>): Promise<void>
   if (execute) {
     // Keep the accepted hash visible even if the caller interrupts receipt polling.
     if (res.data.hash) console.error(`Submitted: ${res.data.hash}. Checking receipt...`)
-    const receipt = await confirmUniswapSwap(res.data, Number(body.chainId), args.recipient)
-    console.log(JSON.stringify({ ...res.data, receipt }))
+    console.log(
+      JSON.stringify(await confirmUniswapSwap(res.data, Number(body.chainId), args.recipient)),
+    )
   } else {
     console.log(JSON.stringify(res.data))
   }

@@ -192,12 +192,10 @@ describe('wallet uniswap CLI', () => {
         expect(result.stderr).toContain(hash)
         expect(JSON.parse(result.stdout)).toMatchObject({
           hash,
-          receipt: {
-            status: 'success',
-            actualInput: null,
-            actualOutput: { amountFormatted: '1.234567890123456789' },
-            explorerUrl: `https://robinhoodchain.blockscout.com/tx/${hash}`,
-          },
+          status: 'success',
+          input: null,
+          output: { amount: '1.234567890123456789' },
+          explorerUrl: `https://robinhoodchain.blockscout.com/tx/${hash}`,
         })
         expect(submissions).toBe(1)
       },
@@ -314,7 +312,7 @@ describe('wallet uniswap CLI', () => {
         ])
         expect(execute.code).toBe(0)
         expect(JSON.parse(execute.stdout)).toMatchObject({
-          mode: 'transaction',
+          status: 'unknown',
           hash: '0xabc',
         })
       },

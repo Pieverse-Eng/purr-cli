@@ -131,14 +131,15 @@ describe('Uniswap automatic receipt confirmation', () => {
       ]),
     )
     await execute()
-    expect(output().receipt).toMatchObject({
+    expect(output()).toEqual({
       status: 'success',
       hash: HASH,
-      actualInput: { tokenAddress: 'native', decimals: 18, amountFormatted: '10' },
-      actualOutput: { tokenAddress: OUTPUT, amountFormatted: '2556.514112279151428756' },
-      gas: { amountFormatted: '0.01314176776818675', symbol: 'USDC', scope: 'execution_fee' },
+      chainId: 5042,
+      explorerUrl: `https://explorer.arc.io/tx/${HASH}`,
+      input: { tokenAddress: 'native', symbol: 'USDC', amount: '10' },
+      output: { tokenAddress: OUTPUT, amount: '2556.514112279151428756' },
+      gas: { amount: '0.01314176776818675', symbol: 'USDC' },
     })
-    expect(output().estimatedToAmountFormatted).toBe('1700')
     expect(submissions(mock)).toHaveLength(1)
   })
 
@@ -155,40 +156,41 @@ describe('Uniswap automatic receipt confirmation', () => {
       ]),
     )
     await execute(4663, { recipient: USDC })
-    expect(output().receipt).toMatchObject({
+    expect(output()).toMatchObject({
       status: 'success',
-      actualInput: { amountFormatted: '9', decimals: 6 },
-      actualOutput: { owner: USDC, amountFormatted: '2.222222222222222222' },
+      recipient: USDC,
+      input: { amount: '9' },
+      output: { amount: '2.222222222222222222' },
     })
   })
 
   it('reports missing native ETH evidence instead of treating a quote as a fill', async () => {
     mockRpc(4663, () => receipt(), { fromToken: NATIVE })
     await execute(4663)
-    expect(output().receipt).toMatchObject({ status: 'success', actualInput: null })
-    expect(output().receipt.warnings.join()).toContain('system transfer logs')
+    expect(output()).toMatchObject({ status: 'success', input: null })
+    expect(output().warnings.join()).toContain('system transfer logs')
   })
 
-  it('keeps successful receipt and raw fill when token metadata is unavailable', async () => {
+  it('keeps success but reports an unavailable amount when token metadata cannot be read', async () => {
     mockRpc(5042, () => receipt(), { metadataError: true })
     await execute()
-    expect(output().receipt).toMatchObject({
+    expect(output()).toMatchObject({
       status: 'success',
-      actualOutput: {
-        decimals: null,
-        amountFormatted: null,
-        amountBaseUnits: '2556514112279151428756',
+      output: {
+        tokenAddress: OUTPUT,
+        amount: null,
       },
     })
+    expect(output().warnings.join()).toContain('decimals could not be read')
   })
 
   it('reports a reverted transaction with gas and no fills, without retrying execute', async () => {
     const mock = mockRpc(5042, () => ({ ...receipt(), status: '0x0' }))
     await execute()
-    expect(output().receipt).toMatchObject({
+    expect(output()).toMatchObject({
       status: 'reverted',
-      actualInput: null,
-      actualOutput: null,
+      input: null,
+      output: null,
     })
     expect(submissions(mock)).toHaveLength(1)
   })
@@ -200,7 +202,7 @@ describe('Uniswap automatic receipt confirmation', () => {
     const task = execute()
     await vi.advanceTimersByTimeAsync(2_001)
     await task
-    expect(output().receipt.status).toBe('success')
+    expect(output().status).toBe('success')
     expect(next).toHaveBeenCalledTimes(2)
     expect(submissions(mock)).toHaveLength(1)
   })
@@ -211,7 +213,7 @@ describe('Uniswap automatic receipt confirmation', () => {
     const task = execute()
     await vi.advanceTimersByTimeAsync(60_001)
     await task
-    expect(output().receipt).toMatchObject({ hash: HASH, status: 'pending' })
+    expect(output()).toMatchObject({ hash: HASH, status: 'pending' })
     expect(submissions(mock)).toHaveLength(1)
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining(HASH))
     expect(vi.getTimerCount()).toBe(0)
@@ -222,7 +224,7 @@ describe('Uniswap automatic receipt confirmation', () => {
       throw new Error('https://secret-rpc?key=private')
     })
     await execute()
-    expect(output().receipt).toMatchObject({ hash: HASH, status: 'unknown' })
+    expect(output()).toMatchObject({ hash: HASH, status: 'unknown' })
     expect(JSON.stringify(output())).not.toContain('secret-rpc')
     expect(submissions(mock)).toHaveLength(1)
   })
@@ -230,7 +232,7 @@ describe('Uniswap automatic receipt confirmation', () => {
   it('rejects a misconfigured RPC chain without reporting success', async () => {
     mockRpc(5042, () => receipt(), { rpcChain: 4663 })
     await execute()
-    expect(output().receipt).toMatchObject({
+    expect(output()).toMatchObject({
       status: 'unknown',
       reason: expect.stringContaining('chain ID mismatch'),
     })
@@ -248,13 +250,12 @@ describe('Uniswap automatic receipt confirmation', () => {
       { fromToken: OUTPUT, toToken: USDC },
     )
     await execute()
-    expect(output().receipt).toMatchObject({
-      actualInput: { tokenAddress: OUTPUT, amountFormatted: '3' },
-      actualOutput: {
+    expect(output()).toMatchObject({
+      input: { tokenAddress: OUTPUT, amount: '3' },
+      output: {
         tokenAddress: 'native',
-        amountBaseUnits: '1500000000000000000',
-        amountFormatted: '1.5',
-        decimals: 18,
+        amount: '1.5',
+        symbol: 'USDC',
       },
     })
   })
@@ -262,8 +263,8 @@ describe('Uniswap automatic receipt confirmation', () => {
   it('rejects a receipt belonging to another transaction', async () => {
     mockRpc(5042, () => ({ ...receipt(), transactionHash: `0x${'34'.repeat(32)}` }))
     await execute()
-    expect(output().receipt).toMatchObject({ status: 'unknown', hash: HASH })
-    expect(output().receipt.actualOutput).toBeUndefined()
+    expect(output()).toMatchObject({ status: 'unknown', hash: HASH })
+    expect(output().output).toBeUndefined()
   })
 
   it('aborts a stalled RPC read and keeps the accepted hash', async () => {
@@ -272,7 +273,7 @@ describe('Uniswap automatic receipt confirmation', () => {
     const task = execute()
     await vi.advanceTimersByTimeAsync(10_001)
     await task
-    expect(output().receipt).toMatchObject({ status: 'unknown', hash: HASH })
+    expect(output()).toMatchObject({ status: 'unknown', hash: HASH })
     expect(submissions(mock)).toHaveLength(1)
     expect(vi.getTimerCount()).toBe(0)
   })

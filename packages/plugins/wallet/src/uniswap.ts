@@ -5,6 +5,7 @@ import {
 } from '@pieverseio/purr-core/api-client'
 import { parseChainId } from '@pieverseio/purr-core/shared'
 import { chainNameToId, resolveToken } from '@pieverseio/purr-core/token-registry'
+import { confirmUniswapSwap } from './uniswap-receipt.js'
 
 const ROBINHOOD_CHAIN_ID = 4663
 const ARC_CHAIN_ID = 5042
@@ -125,5 +126,13 @@ export async function walletUniswap(args: Record<string, string>): Promise<void>
     throw new Error(res.error ?? `Uniswap ${endpoint} failed`)
   }
 
-  console.log(JSON.stringify(res.data))
+  if (execute) {
+    // Keep the accepted hash visible even if the caller interrupts receipt polling.
+    if (res.data.hash) console.error(`Submitted: ${res.data.hash}. Checking receipt...`)
+    console.log(
+      JSON.stringify(await confirmUniswapSwap(res.data, Number(body.chainId), args.recipient)),
+    )
+  } else {
+    console.log(JSON.stringify(res.data))
+  }
 }

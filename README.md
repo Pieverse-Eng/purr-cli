@@ -77,6 +77,38 @@ for swaps. Wallet balances and transfers still use native USDC with 18 decimals.
 Both views share funds, including gas. Arc execution through runtime-guarded
 on-demand routes remains unsupported; normal execution uses platform broadcasting.
 
+`purr wallet uniswap --execute` automatically checks the receipt after submission,
+with a 60-second budget. The hash is written to stderr immediately; stdout remains
+one compact JSON object: `status`, `chainId`, `hash`, `explorerUrl`, and, when
+available, actual `input` / `output` and `gas`. Execution no longer echoes the
+quote payload or raw receipt details. Quote-only output is unchanged; no extra
+flag is required.
+
+- `status`: `success` (included onchain), `reverted`, `pending` (no receipt
+  before the deadline), or `unknown` (RPC unavailable/mismatched). Inclusion is
+  not a finality guarantee. A pending/unknown result retains the submitted hash;
+  never repeat `--execute` merely to query its status.
+- `input` / `output`: actual net transfers as `{ tokenAddress, amount }`, with
+  `amount` an exact human-readable decimal string. Native assets also include
+  `symbol`. Missing transfer evidence or decimals silently omits that entire
+  `input` / `output` field. Reverted transactions omit both fields.
+  `warnings` reports unexpected transfer directions, and
+  `reason` explains pending/unknown status. An explicit `recipient` is retained.
+- Arc USDC native system logs (18 decimals) and matching ERC-20 interface logs
+  (6 decimals) are counted once. Actual native USDC is labeled `tokenAddress:
+  "native"`; precision conversion stays inside the CLI. Same-symbol tokens
+  retain their contract addresses.
+  Native fills require system transfer logs; on Robinhood, an unavailable native
+  ETH amount is omitted, without substituting a quote or gross `tx.value`.
+- `gas: { amount, symbol }` reports `gasUsed * effectiveGasPrice` separately in
+  native units, excluding separate rollup fees and approval gas.
+
+Receipt reads use `EVM_RPC_4663` / `EVM_RPC_5042`, then `ROBINHOOD_RPC_URL` /
+`ARC_RPC_URL`, then the chains' mainnet RPC defaults. The RPC chain ID is verified
+and wallet API credentials are never forwarded. Permissioned Arc access may
+require a reachable RPC override. Hosted agents need a released CLI and an updated
+tenant image before this behavior is available.
+
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
 workflow](docs/agentkey.md). No provider catalog or upstream credential is stored
@@ -202,7 +234,7 @@ holdings.
 
 The platform must support Arc; it owns RPC selection and broadcasting. Its default
 RPC is `https://rpc.mainnet.arc.io`, with `ARC_RPC_URL` as a platform override;
-the explorer is `https://explorer.arc.io`. The [official endpoint documentation](https://docs.arc.io/arc/references/rpc-endpoints)
+the explorer is `https://arc.etherscan.io`. The [official endpoint documentation](https://docs.arc.io/arc/references/rpc-endpoints)
 currently marks mainnet access as permissioned. Existing runtime-guarded on-demand
 sends that require provider-native idempotent broadcasting remain unsupported.
 

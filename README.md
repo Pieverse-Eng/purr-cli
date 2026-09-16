@@ -201,9 +201,9 @@ view uses 6 decimals and shares the native balance; do not add both when reporti
 holdings.
 
 The platform must support Arc; it owns RPC selection and broadcasting. Its default
-RPC `https://rpc.arc.invalid` and explorer `https://explorer.arc.invalid` are
-nonfunctional placeholders. Set `ARC_RPC_URL` on the platform to a verified endpoint
-before using Arc; a verified explorer URL remains pending. Existing runtime-guarded on-demand
+RPC is `https://rpc.mainnet.arc.io`, with `ARC_RPC_URL` as a platform override;
+the explorer is `https://explorer.arc.io`. The [official endpoint documentation](https://docs.arc.io/arc/references/rpc-endpoints)
+currently marks mainnet access as permissioned. Existing runtime-guarded on-demand
 sends that require provider-native idempotent broadcasting remain unsupported.
 
 ### Solana raw-signature encoding

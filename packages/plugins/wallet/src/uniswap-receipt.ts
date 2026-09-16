@@ -153,7 +153,7 @@ export async function confirmUniswapSwap(
         symbol: chain.symbol,
       },
     }
-    if (receipt.status === 'reverted') return { ...result, input: null, output: null }
+    if (receipt.status === 'reverted') return result
     const { events, nativeLogs } = transfers(receipt, chainId)
     const blockNumber = receipt.blockNumber
     const warnings: string[] = []
@@ -161,22 +161,12 @@ export async function confirmUniswapSwap(
       if (typeof token !== 'string' || !isAddress(token) || !isAddress(owner)) return null
       const asset = canonicalToken(token, chainId)
       // tx.value is gross funding, not a net fill: routers may refund native funds.
-      if (asset === NATIVE && !nativeLogs) {
-        warnings.push(
-          `Native ${chain.symbol} ${direction} amount unavailable: no system transfer logs.`,
-        )
-        return null
-      }
+      if (asset === NATIVE && !nativeLogs) return null
       const relevant = events.filter(
         (t) =>
           t.token === asset && (t.from === owner.toLowerCase() || t.to === owner.toLowerCase()),
       )
-      if (!relevant.length) {
-        warnings.push(
-          `No matching transfer logs for ${token} ${direction}; actual amount unavailable.`,
-        )
-        return null
-      }
+      if (!relevant.length) return null
       const net = relevant.reduce(
         (n, t) =>
           n +
@@ -201,20 +191,25 @@ export async function confirmUniswapSwap(
             blockNumber,
           })
         } catch {
-          warnings.push(`Amount unavailable for ${token}: decimals could not be read.`)
+          return null
         }
       }
       return {
         tokenAddress: asset === NATIVE ? 'native' : asset,
         ...(asset === NATIVE ? { symbol: chain.symbol } : {}),
-        amount: decimals === null ? null : formatUnits(amount, decimals),
+        amount: formatUnits(amount, decimals),
       }
     }
     const [input, output] = await Promise.all([
       actualAmount(data.fromToken, receipt.from, 'sent'),
       actualAmount(data.toToken, recipient ?? receipt.from, 'received'),
     ])
-    return { ...result, input, output, ...(warnings.length ? { warnings } : {}) }
+    return {
+      ...result,
+      ...(input ? { input } : {}),
+      ...(output ? { output } : {}),
+      ...(warnings.length ? { warnings } : {}),
+    }
   } catch {
     // Never leak RPC URLs/credentials or turn a read failure into a failed submission.
     return unavailable(

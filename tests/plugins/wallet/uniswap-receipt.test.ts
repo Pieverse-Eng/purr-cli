@@ -164,24 +164,67 @@ describe('Uniswap automatic receipt confirmation', () => {
     })
   })
 
-  it('reports missing native ETH evidence instead of treating a quote as a fill', async () => {
+  it('silently omits unavailable native ETH input while keeping the confirmed token output', async () => {
     mockRpc(4663, () => receipt(), { fromToken: NATIVE })
     await execute(4663)
-    expect(output()).toMatchObject({ status: 'success', input: null })
-    expect(output().warnings.join()).toContain('system transfer logs')
+    expect(output()).toMatchObject({
+      status: 'success',
+      hash: HASH,
+      output: { tokenAddress: OUTPUT, amount: '2556.514112279151428756' },
+      gas: { symbol: 'ETH' },
+    })
+    expect(output()).not.toHaveProperty('input')
+    expect(output()).not.toHaveProperty('warnings')
+    expect(output()).not.toHaveProperty('estimatedToAmountFormatted')
   })
 
-  it('keeps success but reports an unavailable amount when token metadata cannot be read', async () => {
-    mockRpc(5042, () => receipt(), { metadataError: true })
+  it('silently omits unavailable native ETH output while keeping the confirmed token input', async () => {
+    mockRpc(4663, () => receipt([transfer(INPUT, OWNER, ROUTER, 10000000n)]), {
+      toToken: NATIVE,
+    })
+    await execute(4663, { to: 'ETH' })
+    expect(output()).toMatchObject({
+      status: 'success',
+      input: { tokenAddress: INPUT, amount: '10' },
+    })
+    expect(output()).not.toHaveProperty('output')
+    expect(output()).not.toHaveProperty('warnings')
+  })
+
+  it('omits only the unavailable amount when token metadata cannot be read', async () => {
+    mockRpc(
+      5042,
+      () =>
+        receipt([
+          transfer(SYSTEM, OWNER, ROUTER, 10n ** 19n),
+          transfer(OUTPUT, ROUTER, OWNER, 2556514112279151428756n),
+        ]),
+      { metadataError: true },
+    )
     await execute()
     expect(output()).toMatchObject({
       status: 'success',
-      output: {
-        tokenAddress: OUTPUT,
-        amount: null,
-      },
+      input: { tokenAddress: 'native', symbol: 'USDC', amount: '10' },
     })
-    expect(output().warnings.join()).toContain('decimals could not be read')
+    expect(output()).not.toHaveProperty('output')
+    expect(output()).not.toHaveProperty('warnings')
+  })
+
+  it('keeps the successful receipt even when neither amount has transfer evidence', async () => {
+    mockRpc(4663, () => receipt([]))
+    await execute(4663)
+    expect(output()).toMatchObject({ status: 'success', hash: HASH, gas: { symbol: 'ETH' } })
+    expect(output()).not.toHaveProperty('input')
+    expect(output()).not.toHaveProperty('output')
+    expect(output()).not.toHaveProperty('warnings')
+  })
+
+  it('retains warnings for transfers in the unexpected direction', async () => {
+    mockRpc(4663, () => receipt([transfer(INPUT, ROUTER, OWNER, 10000000n)]))
+    await execute(4663)
+    expect(output()).toMatchObject({ status: 'success', hash: HASH })
+    expect(output()).not.toHaveProperty('input')
+    expect(output().warnings.join()).toContain('Unexpected transfer direction')
   })
 
   it('reports a reverted transaction with gas and no fills, without retrying execute', async () => {
@@ -189,9 +232,10 @@ describe('Uniswap automatic receipt confirmation', () => {
     await execute()
     expect(output()).toMatchObject({
       status: 'reverted',
-      input: null,
-      output: null,
+      gas: { symbol: 'USDC' },
     })
+    expect(output()).not.toHaveProperty('input')
+    expect(output()).not.toHaveProperty('output')
     expect(submissions(mock)).toHaveLength(1)
   })
 

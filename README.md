@@ -79,9 +79,10 @@ on-demand routes remains unsupported; normal execution uses platform broadcastin
 
 `purr wallet uniswap --execute` automatically checks the receipt after submission,
 with a 60-second budget. The hash is written to stderr immediately; stdout remains
-one compact JSON object: `status`, `chainId`, `hash`, `explorerUrl`, actual `input`
-and `output`, and `gas`. Execution no longer echoes the quote payload or raw
-receipt details. Quote-only output is unchanged; no extra flag is required.
+one compact JSON object: `status`, `chainId`, `hash`, `explorerUrl`, and, when
+available, actual `input` / `output` and `gas`. Execution no longer echoes the
+quote payload or raw receipt details. Quote-only output is unchanged; no extra
+flag is required.
 
 - `status`: `success` (included onchain), `reverted`, `pending` (no receipt
   before the deadline), or `unknown` (RPC unavailable/mismatched). Inclusion is
@@ -89,15 +90,16 @@ receipt details. Quote-only output is unchanged; no extra flag is required.
   never repeat `--execute` merely to query its status.
 - `input` / `output`: actual net transfers as `{ tokenAddress, amount }`, with
   `amount` an exact human-readable decimal string. Native assets also include
-  `symbol`. Missing transfer evidence gives `null`; missing decimals gives
-  `amount: null`. `warnings` appears only when information is missing, and
+  `symbol`. Missing transfer evidence or decimals silently omits that entire
+  `input` / `output` field. Reverted transactions omit both fields.
+  `warnings` reports unexpected transfer directions, and
   `reason` explains pending/unknown status. An explicit `recipient` is retained.
 - Arc USDC native system logs (18 decimals) and matching ERC-20 interface logs
   (6 decimals) are counted once. Actual native USDC is labeled `tokenAddress:
   "native"`; precision conversion stays inside the CLI. Same-symbol tokens
   retain their contract addresses.
   Native fills require system transfer logs; on Robinhood, an unavailable native
-  ETH amount is reported as such, without substituting a quote or gross `tx.value`.
+  ETH amount is omitted, without substituting a quote or gross `tx.value`.
 - `gas: { amount, symbol }` reports `gasUsed * effectiveGasPrice` separately in
   native units, excluding separate rollup fees and approval gas.
 

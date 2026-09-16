@@ -118,6 +118,7 @@ Trading commands:
   position close --symbol <symbol> [--percentage <1-100>] [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
   leverage get --symbol <symbol> [--margin-mode <${MARGIN_MODES.join('|')}>]
   leverage set --symbol <symbol> --leverage <n> [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
+  bracket-order --symbol <symbol> --side <BUY|SELL> --type <LIMIT|MARKET> --quantity <decimal> [--price <decimal>] --take-profit <trigger> --stop-loss <trigger> [--client-order-id <id>] [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
   algo create --symbol <symbol> --side <BUY|SELL> --quantity <decimal> [--take-profit <price>] [--stop-loss <price>] [--margin-mode <${MARGIN_MODES.join('|')}>] [--execute true]
   algo list [--symbol <symbol>]
   algo cancel --order-id <id> --symbol <symbol> [--execute true]
@@ -126,7 +127,9 @@ ORDERLY_BROKER_ID is required for account, network, deposit, and withdrawal comm
 All commands that change assets or orders are previews until --execute true is supplied.
 Leverage is tracked per symbol and per margin mode, and markets listed by a
 broker support ISOLATED only. Unsupported options are refused rather than
-ignored, so a preview always matches what execution submits.`
+ignored, so a preview always matches what execution submits.
+bracket-order submits an entry with protection linked to it and sized from its
+fill. algo create builds standalone TP/SL for a position that already exists.`
 
 function record(value: unknown): JsonRecord {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -878,6 +881,89 @@ async function createAlgo(args: Record<string, string>): Promise<void> {
   print(await privateRequest('POST', '/v1/algo/order', body))
 }
 
+/**
+ * A native bracket: Orderly links the protection to this entry, sizes it from
+ * the entry's executed quantity, and cancels it with the entry. Calling `order
+ * create` and then `algo create` produces two unlinked orders instead, and
+ * leaves the entry unprotected in between. `TP_SL` is used rather than
+ * `POSITIONAL_TP_SL`, which would instead target whatever position exists when
+ * the trigger fires.
+ *
+ * The protection legs are MARKET because Orderly's own SDK resolves a `TP_SL`
+ * child without an exit limit price to exactly that (`resolveTPSLOrderType`:
+ * limit price wins, else `CLOSE_POSITION` for a full-position group, else
+ * `MARKET`). `CLOSE_POSITION` belongs to `POSITIONAL_TP_SL` and would silently
+ * resize the protection to the whole position, and a LIMIT leg can trigger
+ * without filling.
+ */
+async function createBracketOrder(args: Record<string, string>): Promise<void> {
+  const symbol = required(args, 'symbol')
+  const requested = marginModeArg(args)
+  const side = required(args, 'side').toUpperCase()
+  if (side !== 'BUY' && side !== 'SELL') throw new OrderlyCliError('--side must be BUY or SELL')
+  const type = required(args, 'type').toUpperCase()
+  if (type !== 'LIMIT' && type !== 'MARKET')
+    throw new OrderlyCliError('--type must be LIMIT or MARKET for a bracket entry')
+  if (type === 'MARKET' && args.price !== undefined)
+    throw new OrderlyCliError('--price is not supported for a MARKET bracket entry')
+  const quantity = positiveDecimal(required(args, 'quantity'), 'quantity')
+  const takeProfit = positiveDecimal(required(args, 'take-profit'), 'take-profit')
+  const stopLoss = positiveDecimal(required(args, 'stop-loss'), 'stop-loss')
+  // Protection is submitted with the entry or not at all, so a swapped pair has
+  // to fail here rather than arm a stop above the target.
+  const profitAbove = side === 'BUY'
+  if (compareDecimals(takeProfit, stopLoss) !== (profitAbove ? 1 : -1)) {
+    throw new OrderlyCliError(
+      `--take-profit must be ${profitAbove ? 'above' : 'below'} --stop-loss for a ${side} entry`,
+    )
+  }
+  const entry: JsonRecord = { symbol, order_quantity: quantity }
+  if (type === 'LIMIT') entry.order_price = positiveDecimal(required(args, 'price'), 'price')
+  await validateOrder(entry)
+  const marginMode = await resolveMarginMode(symbol, requested)
+  const exit = profitAbove ? 'SELL' : 'BUY'
+  const protection = (algoType: 'TAKE_PROFIT' | 'STOP_LOSS', triggerPrice: string): JsonRecord => ({
+    symbol,
+    algo_type: algoType,
+    side: exit,
+    type: 'MARKET',
+    trigger_price: triggerPrice,
+    reduce_only: true,
+  })
+  const body: JsonRecord = {
+    symbol,
+    algo_type: 'BRACKET',
+    side,
+    type,
+    quantity,
+    ...(entry.order_price === undefined ? {} : { price: entry.order_price }),
+    ...(args['client-order-id'] ? { client_order_id: args['client-order-id'] } : {}),
+    ...(marginMode === undefined ? {} : { margin_mode: marginMode }),
+    child_orders: [
+      {
+        symbol,
+        algo_type: 'TP_SL',
+        child_orders: [protection('TAKE_PROFIT', takeProfit), protection('STOP_LOSS', stopLoss)],
+      },
+    ],
+  }
+  if (!execute(args))
+    return print({
+      execute: false,
+      bracketOrder: body,
+      note: 'Protection is sized from the entry fill and is submitted with it. Reuse the same --client-order-id when executing this preview.',
+    })
+  const result = record(await privateRequest('POST', '/v1/algo/order', body))
+  const entryRow = asRows(result)[0]
+  if (!entryRow || entryRow.order_id === undefined) {
+    throw new OrderlyCliError(
+      'Orderly did not return a bracket entry order ID. Check algo list before resubmitting; the entry may already be live.',
+      { data: result },
+    )
+  }
+  print(result)
+}
+
 async function publicQuery(type: string, args: Record<string, string>): Promise<void> {
   const body: JsonRecord = {
     type,
@@ -933,6 +1019,18 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   'position-close': ['symbol', 'percentage', 'margin-mode', 'execute'],
   'leverage-get': ['symbol', 'margin-mode'],
   'leverage-set': ['symbol', 'leverage', 'margin-mode', 'execute'],
+  'bracket-order': [
+    'symbol',
+    'side',
+    'type',
+    'quantity',
+    'price',
+    'take-profit',
+    'stop-loss',
+    'client-order-id',
+    'margin-mode',
+    'execute',
+  ],
   'algo-create': [
     'symbol',
     'side',
@@ -1128,6 +1226,8 @@ export async function orderlyCommand(command: string, args: Record<string, strin
       }
       return print(result)
     }
+    case 'bracket-order':
+      return await createBracketOrder(args)
     case 'algo-create':
       return await createAlgo(args)
     case 'algo-list':

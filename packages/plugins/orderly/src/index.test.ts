@@ -860,6 +860,144 @@ describe('Orderly API contracts', () => {
     expect(result.reasons).toContain('Orderly account holds no collateral')
   })
 
+  it('submits a limit entry and its linked protection as one bracket', async () => {
+    mockWallets()
+    mockMarket({ broker_id: 'mythos' })
+    let body: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/private-request')) {
+        body = request.body as Record<string, unknown>
+        return { ok: true, data: { rows: [{ order_id: 77, algo_type: 'BRACKET' }] } }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+
+    await orderlyCommand('bracket-order', {
+      symbol: 'PERP_INTC_USDC_mythos',
+      side: 'BUY',
+      type: 'LIMIT',
+      quantity: '0.15',
+      price: '100',
+      'take-profit': '120',
+      'stop-loss': '90',
+      execute: 'true',
+    })
+
+    expect(body).toEqual({
+      symbol: 'PERP_INTC_USDC_mythos',
+      algo_type: 'BRACKET',
+      side: 'BUY',
+      type: 'LIMIT',
+      quantity: '0.15',
+      price: '100',
+      margin_mode: 'ISOLATED',
+      child_orders: [
+        {
+          symbol: 'PERP_INTC_USDC_mythos',
+          algo_type: 'TP_SL',
+          child_orders: [
+            {
+              symbol: 'PERP_INTC_USDC_mythos',
+              algo_type: 'TAKE_PROFIT',
+              side: 'SELL',
+              type: 'MARKET',
+              trigger_price: '120',
+              reduce_only: true,
+            },
+            {
+              symbol: 'PERP_INTC_USDC_mythos',
+              algo_type: 'STOP_LOSS',
+              side: 'SELL',
+              type: 'MARKET',
+              trigger_price: '90',
+              reduce_only: true,
+            },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('keeps a market bracket free of an entry price', async () => {
+    mockWallets()
+    mockMarket()
+    let body: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/private-request')) {
+        body = request.body as Record<string, unknown>
+        return { ok: true, data: { rows: [{ order_id: 78 }] } }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+
+    await orderlyCommand('bracket-order', {
+      symbol: 'PERP_BTC_USDC',
+      side: 'SELL',
+      type: 'MARKET',
+      quantity: '0.01',
+      'take-profit': '50000',
+      'stop-loss': '70000',
+      execute: 'true',
+    })
+
+    expect(body).toMatchObject({ algo_type: 'BRACKET', type: 'MARKET', side: 'SELL' })
+    expect(body).not.toHaveProperty('price')
+  })
+
+  it('refuses a bracket whose protection would arm on the wrong side', async () => {
+    mockWallets()
+    mockMarket()
+
+    await expect(
+      orderlyCommand('bracket-order', {
+        symbol: 'PERP_BTC_USDC',
+        side: 'BUY',
+        type: 'LIMIT',
+        quantity: '0.01',
+        price: '60000',
+        'take-profit': '50000',
+        'stop-loss': '70000',
+      }),
+    ).rejects.toThrow('--take-profit must be above --stop-loss for a BUY entry')
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+  })
+
+  it('refuses a bracket entry that would be submitted without protection', async () => {
+    mockWallets()
+    mockMarket()
+
+    await expect(
+      orderlyCommand('bracket-order', {
+        symbol: 'PERP_BTC_USDC',
+        side: 'BUY',
+        type: 'LIMIT',
+        quantity: '0.01',
+        price: '60000',
+        'take-profit': '70000',
+      }),
+    ).rejects.toThrow('Missing required argument: --stop-loss')
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+  })
+
+  it('reports an unconfirmed bracket submission instead of assuming it failed', async () => {
+    mockWallets()
+    mockMarket()
+    mocks.apiPost.mockResolvedValue({ ok: true, data: { rows: [] } })
+
+    await expect(
+      orderlyCommand('bracket-order', {
+        symbol: 'PERP_BTC_USDC',
+        side: 'BUY',
+        type: 'LIMIT',
+        quantity: '0.01',
+        price: '60000',
+        'take-profit': '70000',
+        'stop-loss': '50000',
+        execute: 'true',
+      }),
+    ).rejects.toThrow('Check algo list before resubmitting')
+  })
+
   it('never creates a Solana wallet while previewing onboarding', async () => {
     mocks.apiGet.mockImplementation(async (path: string) => {
       if (path.endsWith('/integrations/orderly-trading'))

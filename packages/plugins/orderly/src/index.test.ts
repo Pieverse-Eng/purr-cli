@@ -5,15 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPost: vi.fn(),
+  apiPut: vi.fn(),
   resolveCredentials: vi.fn(() => ({ instanceId: 'instance-123' })),
 }))
 
-vi.mock('@pieverseio/purr-core/api-client', () => ({
+vi.mock('@pieverseio/purr-core/api-client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@pieverseio/purr-core/api-client')>()),
   apiGet: mocks.apiGet,
   apiPost: mocks.apiPost,
+  apiPut: mocks.apiPut,
   resolveCredentials: mocks.resolveCredentials,
 }))
 
+import { ApiClientError } from '@pieverseio/purr-core/api-client'
 import {
   orderlyCanonicalMessage,
   orderlyCommand,
@@ -40,6 +44,33 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   })
+}
+
+/**
+ * Every order, algo, and leverage command reads the market to decide the margin
+ * mode, so the market response is stubbed instead of reaching the live API.
+ */
+function mockMarket(info: Record<string, unknown> = {}) {
+  const fetchMock = vi.fn(async (input: string) => {
+    const symbol = /\/v1\/public\/info\/([^/?]+)$/.exec(input)?.[1]
+    if (symbol) {
+      return json({
+        success: true,
+        data: {
+          symbol,
+          broker_id: null,
+          base_tick: '0.001',
+          base_min: '0.001',
+          quote_tick: '0.01',
+          min_notional: '10',
+          ...info,
+        },
+      })
+    }
+    throw new Error(`Unexpected Orderly request: ${input}`)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 function mockWallets(): void {
@@ -86,6 +117,7 @@ describe('Orderly API contracts', () => {
     delete process.env.ORDERLY_RPC_URL_42161
     mocks.apiGet.mockReset()
     mocks.apiPost.mockReset()
+    mocks.apiPut.mockReset()
     mocks.resolveCredentials.mockClear()
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
   })
@@ -396,6 +428,9 @@ describe('Orderly API contracts', () => {
       throw new Error(`Unexpected wallet write: ${path}`)
     })
     const fetchMock = vi.fn(async (input: string, _init?: RequestInit) => {
+      if (input.endsWith('/v1/public/info/PERP_BTC_USDC')) {
+        return json({ success: true, data: { symbol: 'PERP_BTC_USDC', broker_id: null } })
+      }
       throw new Error(`Unexpected Orderly request: ${input}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -530,6 +565,7 @@ describe('Orderly API contracts', () => {
 
   it('creates a STOP root order for take-profit only', async () => {
     mockWallets()
+    mockMarket()
     let body: Record<string, unknown> | undefined
     mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
       if (path.endsWith('/orderly/private-request')) {
@@ -561,6 +597,7 @@ describe('Orderly API contracts', () => {
 
   it('creates a STOP root order for stop-loss only', async () => {
     mockWallets()
+    mockMarket()
     let body: Record<string, unknown> | undefined
     mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
       if (path.endsWith('/orderly/private-request')) {
@@ -592,6 +629,7 @@ describe('Orderly API contracts', () => {
 
   it('keeps TP_SL child orders when both trigger prices are supplied', async () => {
     mockWallets()
+    mockMarket()
     let body: Record<string, unknown> | undefined
     mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
       if (path.endsWith('/orderly/private-request')) {
@@ -634,6 +672,192 @@ describe('Orderly API contracts', () => {
         },
       ],
     })
+  })
+
+  it('carries the requested margin mode into the submitted order', async () => {
+    mockWallets()
+    mockMarket()
+    let body: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/private-request')) {
+        body = request.body as Record<string, unknown>
+        return { ok: true, data: {} }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+
+    await orderlyCommand('order-create', {
+      symbol: 'PERP_BTC_USDC',
+      side: 'BUY',
+      type: 'LIMIT',
+      quantity: '0.001',
+      price: '50000',
+      'margin-mode': 'isolated',
+      execute: 'true',
+    })
+
+    expect(body).toMatchObject({ symbol: 'PERP_BTC_USDC', margin_mode: 'ISOLATED' })
+  })
+
+  it('prepares a broker market as isolated in the preview it will execute', async () => {
+    mockWallets()
+    mockMarket({ broker_id: 'mythos' })
+
+    await orderlyCommand('order-create', {
+      symbol: 'PERP_INTC_USDC_mythos',
+      side: 'BUY',
+      type: 'LIMIT',
+      quantity: '0.15',
+      price: '100',
+    })
+
+    const preview = JSON.parse(String(vi.mocked(console.log).mock.calls.at(-1)?.[0]))
+    expect(preview).toMatchObject({ execute: false, order: { margin_mode: 'ISOLATED' } })
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+  })
+
+  it('refuses cross margin on an isolated-only market before collateral moves', async () => {
+    mockWallets()
+    mockMarket({ broker_id: 'mythos' })
+
+    await expect(
+      orderlyCommand('order-create', {
+        symbol: 'PERP_INTC_USDC_mythos',
+        side: 'BUY',
+        type: 'LIMIT',
+        quantity: '0.15',
+        price: '100',
+        'margin-mode': 'cross',
+      }),
+    ).rejects.toThrow('PERP_INTC_USDC_mythos supports ISOLATED margin only')
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+  })
+
+  it('refuses an unsupported margin mode rather than dropping it from the payload', async () => {
+    mockWallets()
+    mockMarket()
+
+    await expect(
+      orderlyCommand('order-create', {
+        symbol: 'PERP_BTC_USDC',
+        side: 'BUY',
+        type: 'LIMIT',
+        quantity: '0.001',
+        price: '50000',
+        'margin-mode': 'portfolio',
+      }),
+    ).rejects.toThrow('Invalid --margin-mode: "portfolio". Expected CROSS or ISOLATED.')
+    expect(mocks.apiPost).not.toHaveBeenCalled()
+  })
+
+  it('refuses an option the command does not read', async () => {
+    await expect(
+      orderlyCommand('leverage-get', { symbol: 'PERP_BTC_USDC', 'margin-node': 'isolated' }),
+    ).rejects.toThrow(
+      'Unknown option for purr orderly leverage get: --margin-node. Allowed options: --symbol, --margin-mode',
+    )
+    expect(mocks.apiGet).not.toHaveBeenCalled()
+  })
+
+  it('sets leverage for one margin mode and checks the mode Orderly applied', async () => {
+    mockWallets()
+    mockMarket()
+    let body: Record<string, unknown> | undefined
+    mocks.apiPost.mockImplementation(async (path: string, request: Record<string, unknown>) => {
+      if (path.endsWith('/orderly/private-request')) {
+        body = request.body as Record<string, unknown>
+        return { ok: true, data: { symbol: 'PERP_BTC_USDC', margin_mode: 'CROSS', leverage: 3 } }
+      }
+      throw new Error(`Unexpected wallet write: ${path}`)
+    })
+
+    await expect(
+      orderlyCommand('leverage-set', {
+        symbol: 'PERP_BTC_USDC',
+        leverage: '3',
+        'margin-mode': 'isolated',
+        execute: 'true',
+      }),
+    ).rejects.toThrow('Orderly applied CROSS margin mode for PERP_BTC_USDC instead of ISOLATED')
+    expect(body).toEqual({ symbol: 'PERP_BTC_USDC', leverage: 3, margin_mode: 'ISOLATED' })
+  })
+
+  it('reads leverage for the margin mode the market actually supports', async () => {
+    mockWallets()
+    mockMarket({ broker_id: 'mythos' })
+    mocks.apiPost.mockResolvedValue({ ok: true, data: {} })
+
+    await orderlyCommand('leverage-get', { symbol: 'PERP_INTC_USDC_mythos' })
+
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/orderly/private-request',
+      expect.objectContaining({
+        method: 'GET',
+        path: '/v1/client/leverage?symbol=PERP_INTC_USDC_mythos&margin_mode=ISOLATED',
+      }),
+    )
+  })
+
+  it('persists the trading switch through Platform without asking it for permission', async () => {
+    mocks.apiPut.mockResolvedValue({ ok: true, data: { enabled: true } })
+
+    await orderlyCommand('enable', {})
+
+    expect(mocks.apiPut).toHaveBeenCalledWith(
+      '/v1/instances/instance-123/integrations/orderly-trading',
+      { enabled: true },
+    )
+    expect(mocks.apiGet).not.toHaveBeenCalled()
+  })
+
+  it('surfaces the Platform blockers when a disable is refused', async () => {
+    mocks.apiPut.mockRejectedValue(
+      new ApiClientError({
+        status: 409,
+        method: 'PUT',
+        path: '/v1/instances/instance-123/integrations/orderly-trading',
+        bodyText: '',
+        body: {
+          ok: false,
+          code: 'ORDERLY_TRADING_DISABLE_BLOCKED',
+          error: 'Cannot disable Orderly Trading while positions remain',
+          data: { requiredActions: ['close_positions'] },
+        },
+      }),
+    )
+
+    await expect(orderlyCommand('disable', {})).rejects.toMatchObject({
+      message: 'Cannot disable Orderly Trading while positions remain',
+      code: 'ORDERLY_TRADING_DISABLE_BLOCKED',
+      status: 409,
+      data: { requiredActions: ['close_positions'] },
+    })
+  })
+
+  it('reports collateral separately from authentication', async () => {
+    mockWallets()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        if (input.includes('/v1/public/info/')) {
+          return json({ success: true, data: { symbol: 'PERP_BTC_USDC' } })
+        }
+        if (input.includes('/v1/get_account')) {
+          return json({ success: true, data: { account_id: ACCOUNT_ID } })
+        }
+        throw new Error(`Unexpected Orderly request: ${input}`)
+      }),
+    )
+    mocks.apiPost.mockResolvedValue({
+      ok: true,
+      data: { holding: [{ token: 'USDC', holding: 0 }] },
+    })
+
+    await orderlyCommand('status', {})
+
+    const result = JSON.parse(String(vi.mocked(console.log).mock.calls.at(-1)?.[0]))
+    expect(result).toMatchObject({ accountReady: true, authReady: true, fundedReady: false })
+    expect(result.reasons).toContain('Orderly account holds no collateral')
   })
 
   it('never creates a Solana wallet while previewing onboarding', async () => {

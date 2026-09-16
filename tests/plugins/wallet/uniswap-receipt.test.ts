@@ -135,7 +135,7 @@ describe('Uniswap automatic receipt confirmation', () => {
       status: 'success',
       hash: HASH,
       chainId: 5042,
-      explorerUrl: `https://explorer.arc.io/tx/${HASH}`,
+      explorerUrl: `https://arc.etherscan.io/tx/${HASH}`,
       input: { tokenAddress: 'native', symbol: 'USDC', amount: '10' },
       output: { tokenAddress: OUTPUT, amount: '2556.514112279151428756' },
       gas: { amount: '0.01314176776818675', symbol: 'USDC' },

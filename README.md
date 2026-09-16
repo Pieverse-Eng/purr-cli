@@ -232,7 +232,7 @@ holdings.
 
 The platform must support Arc; it owns RPC selection and broadcasting. Its default
 RPC is `https://rpc.mainnet.arc.io`, with `ARC_RPC_URL` as a platform override;
-the explorer is `https://explorer.arc.io`. The [official endpoint documentation](https://docs.arc.io/arc/references/rpc-endpoints)
+the explorer is `https://arc.etherscan.io`. The [official endpoint documentation](https://docs.arc.io/arc/references/rpc-endpoints)
 currently marks mainnet access as permissioned. Existing runtime-guarded on-demand
 sends that require provider-native idempotent broadcasting remain unsupported.
 

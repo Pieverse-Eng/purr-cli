@@ -24,7 +24,7 @@ const CHAINS = {
   5042: {
     rpc: 'https://rpc.mainnet.arc.io',
     env: 'ARC_RPC_URL',
-    explorer: 'https://explorer.arc.io',
+    explorer: 'https://arc.etherscan.io',
     symbol: 'USDC',
   },
 } as const

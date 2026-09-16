@@ -54,6 +54,53 @@ describe('walletTransfer', () => {
 
   // ── EVM native transfer ──
 
+  it.each([
+    { chain: 'arc', token: 'USDC' },
+    { 'chain-id': '5042', token: 'USDC' },
+    { 'chain-id': '5042' },
+  ])('sends Arc native USDC through the native API path: %j', async (selection) => {
+    const mock = mockFetch({ ok: true, data: {} })
+    vi.stubGlobal('fetch', mock)
+    await executeWalletTransfer({
+      ...selection,
+      to: '0x2222222222222222222222222222222222222222',
+      amount: '1.123456789012345678',
+    })
+    const body = JSON.parse(mock.mock.calls[0][1].body)
+    expect(body).toEqual({
+      to: '0x2222222222222222222222222222222222222222',
+      amount: '1.123456789012345678',
+      chainId: 5042,
+      chainType: 'ethereum',
+      assetType: 'native',
+    })
+  })
+
+  it.each([undefined, '6'])(
+    'keeps an explicit Arc CA as ERC-20 with decimals %s',
+    async (decimals) => {
+      const mock = mockFetch({ ok: true, data: {} })
+      vi.stubGlobal('fetch', mock)
+      const token = '0x1111111111111111111111111111111111111111'
+      await executeWalletTransfer({
+        chain: 'arc',
+        token,
+        to: '0x2222222222222222222222222222222222222222',
+        amount: '1.25',
+        ...(decimals ? { decimals } : {}),
+      })
+      const body = JSON.parse(mock.mock.calls[0][1].body)
+      expect(body).toMatchObject({
+        chainId: 5042,
+        assetType: 'erc20',
+        tokenAddress: token,
+        amount: '1.25',
+      })
+      if (decimals) expect(body.decimals).toBe(6)
+      else expect(body).not.toHaveProperty('decimals')
+    },
+  )
+
   it('sends EVM native transfer with correct body', async () => {
     const mock = mockFetch({
       ok: true,

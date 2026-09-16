@@ -4,6 +4,7 @@ import { buildAbiCallStep } from '@pieverseio/purr-plugin-evm/abi-call'
 import { buildApproveSteps } from '@pieverseio/purr-plugin-evm/approve'
 import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
+import { resolveToken } from '@pieverseio/purr-core/token-registry'
 
 describe('buildApproveSteps', () => {
   it('produces a single conditional approve step for normal tokens', () => {
@@ -68,6 +69,20 @@ describe('buildApproveSteps', () => {
 })
 
 describe('buildTransferSteps', () => {
+  it('builds Arc USDC as native value using exact 18-decimal base units', () => {
+    const result = buildTransferSteps({
+      token: resolveToken('USDC', 5042),
+      to: '0x1234567890123456789012345678901234567890',
+      amountWei: '1123456789012345678',
+      chainId: 5042,
+    })
+    expect(result.steps[0]).toMatchObject({
+      chainId: 5042,
+      data: '0x',
+      value: `0x${1123456789012345678n.toString(16)}`,
+      to: '0x1234567890123456789012345678901234567890',
+    })
+  })
   it('encodes native transfer with value', () => {
     const result = buildTransferSteps({
       token: '0x0000000000000000000000000000000000000000',

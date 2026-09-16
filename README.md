@@ -52,7 +52,7 @@ purr <group> <command> [options]
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
-| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood Uniswap operations |
+| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood/Arc Uniswap operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
 | `execute` | Execute `TxStep[]` JSON from a file through the configured instance wallet |
@@ -70,6 +70,13 @@ Hosted research can use `purr wallet uniswap` quotes with
 research plugin. This context never falls back to wallet credentials and rejects
 `--execute`; ordinary wallet commands keep their existing instance authentication.
 
+Uniswap supports Robinhood (`4663`, default) and Arc (`5042`). On Arc,
+`--from USDC` / `--to USDC` selects the 6-decimal ERC-20 interface at
+`0x3600000000000000000000000000000000000000`; native sentinels are rejected
+for swaps. Wallet balances and transfers still use native USDC with 18 decimals.
+Both views share funds, including gas. Arc execution through runtime-guarded
+on-demand routes remains unsupported; normal execution uses platform broadcasting.
+
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
 workflow](docs/agentkey.md). No provider catalog or upstream credential is stored
@@ -83,6 +90,7 @@ purr wallet transfer --to <recipient-address> --amount <amount> --chain-id <chai
 purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-type solana
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
+purr wallet uniswap --from USDC --to 0xeCe5cA8bf9220718E5727754026757512212cb3c --amount 1 --chain arc
 
 # Balancer pool discovery and swap
 purr balancer pools --chain base --tokens WETH,USDC --protocol-version 3
@@ -170,6 +178,33 @@ purr store install <slug>
 purr store install <source>:<slug>
 purr store remove <slug>
 ```
+
+### Arc Mainnet wallets
+
+Arc Mainnet uses chain ID `5042` (`--chain arc` / `--chain arc-mainnet` for wallet
+balance and transfer commands). Native USDC uses **18 decimals** and pays gas from
+the same balance. Omit `--token` or use `--token USDC` for native USDC:
+
+```bash
+purr wallet balance --chain-type ethereum --chain-id 5042
+purr wallet balance --chain arc --token USDC
+purr wallet transfer --to <evm-address> --amount 1.25 --chain arc --token USDC
+purr .pie transfer --pie alice.pie --amount 1.25 --chain-id 5042
+purr evm transfer --to <evm-address> --amount-wei 1250000000000000000 --chain-id 5042 --token USDC
+```
+
+`wallet transfer` and `.pie transfer` submit through the platform wallet API;
+`evm transfer` builds transaction steps. An explicit `--token <contract-address>`
+uses the ERC-20 path, with decimals resolved by the platform or supplied using
+`--decimals`. No Arc ERC-20 contract addresses are preconfigured. The USDC ERC-20
+view uses 6 decimals and shares the native balance; do not add both when reporting
+holdings.
+
+The platform must support Arc; it owns RPC selection and broadcasting. Its default
+RPC is `https://rpc.mainnet.arc.io`, with `ARC_RPC_URL` as a platform override;
+the explorer is `https://explorer.arc.io`. The [official endpoint documentation](https://docs.arc.io/arc/references/rpc-endpoints)
+currently marks mainnet access as permissioned. Existing runtime-guarded on-demand
+sends that require provider-native idempotent broadcasting remain unsupported.
 
 ### Solana raw-signature encoding
 

@@ -1,5 +1,5 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
-import { parseChainId } from '@pieverseio/purr-core/shared'
+import { isNative, parseChainId } from '@pieverseio/purr-core/shared'
 import { SOLANA_CHAIN_ID, chainNameToId, resolveToken } from '@pieverseio/purr-core/token-registry'
 
 export interface WalletTransferData {
@@ -62,9 +62,14 @@ export async function executeWalletTransfer(
   }
 
   if (args.token) {
-    body.assetType = isSolana ? 'spl' : 'erc20'
     const tokenChainId = isSolana ? SOLANA_CHAIN_ID : (parsedChainId as number)
-    body.tokenAddress = resolveToken(args.token, tokenChainId)
+    const tokenAddress = resolveToken(args.token, tokenChainId)
+    if (!isSolana && isNative(tokenAddress)) {
+      body.assetType = 'native'
+    } else {
+      body.assetType = isSolana ? 'spl' : 'erc20'
+      body.tokenAddress = tokenAddress
+    }
   } else {
     body.assetType = 'native'
   }

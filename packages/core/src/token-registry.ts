@@ -8,6 +8,12 @@ export const SOLANA_CHAIN_ID = -1
 const NATIVE = NATIVE_EVM as `0x${string}`
 
 const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
+  // Soneium: other ERC-20s can be selected by their exact contract address.
+  1868: {
+    ETH: NATIVE,
+    WETH: '0x4200000000000000000000000000000000000006',
+    'USDC.E': '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369',
+  },
   // Arc Mainnet: native USDC uses 18 decimals; no ERC-20 deployments assumed.
   5042: {
     USDC: NATIVE,
@@ -189,6 +195,7 @@ const SOLANA_REGISTRY: Record<string, string> = {
 }
 
 const CHAIN_NAME_TO_ID: Record<string, number> = {
+  soneium: 1868,
   arc: 5042,
   'arc-mainnet': 5042,
   bnb: 56,

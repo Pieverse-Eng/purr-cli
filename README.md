@@ -80,9 +80,11 @@ on-demand routes remains unsupported; normal execution uses platform broadcastin
 On Soneium, select `--chain soneium` or `--chain-id 1868`. `ETH` is native gas
 currency; `WETH` resolves to `0x4200000000000000000000000000000000000006`.
 Other ERC-20s use their exact Soneium contract address. Balance and transfer
-commands accept the same chain flags. Hosted execution requires the platform
-integration and provider-native Soneium send support; a successful quote does
-not establish that execution is enabled. Preserve any capability rejection.
+commands accept the same chain flags. Ordinary execution uses TEE digest signing
+and Platform RPC broadcasting, as on Arc; native TEE Soneium broadcasting is
+not required. Runtime-guarded on-demand execution still requires provider-native
+send/replay support and remains unavailable without it. Preserve that rejection;
+a successful quote does not establish that the guarded path is enabled.
 
 ```bash
 purr wallet balance --chain soneium

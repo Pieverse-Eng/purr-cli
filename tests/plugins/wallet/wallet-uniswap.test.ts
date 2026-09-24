@@ -188,7 +188,7 @@ describe('walletUniswap', () => {
   it('rejects unsupported or unknown chains', async () => {
     await expect(
       walletUniswap({ from: 'ETH', to: 'SPCX', amount: '0.003', chain: 'base' }),
-    ).rejects.toThrow('Robinhood Chain (4663) and Arc (5042) only')
+    ).rejects.toThrow('Robinhood Chain (4663), Arc (5042), and Soneium (1868) only')
 
     await expect(
       walletUniswap({ from: 'ETH', to: 'SPCX', amount: '0.003', chain: 'wat' }),

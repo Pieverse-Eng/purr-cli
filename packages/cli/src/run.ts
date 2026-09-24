@@ -737,6 +737,8 @@ Examples:
   purr wallet balance --chain-type ethereum --chain-id 56
   purr wallet balance --token 0x55d3...7955 --chain-id 56
   purr wallet balance --chain robinhood --token USDG
+  purr wallet balance --chain soneium
+  purr wallet uniswap --from ETH --to <TOKEN_CA> --amount 0.003 --chain soneium
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
   purr wallet uniswap --from USDC --to <TOKEN_CA> --amount 1 --chain arc

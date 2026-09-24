@@ -738,6 +738,7 @@ Examples:
   purr wallet balance --token 0x55d3...7955 --chain-id 56
   purr wallet balance --chain robinhood --token USDG
   purr wallet balance --chain soneium
+  purr wallet balance --chain soneium --token USDC.e
   purr wallet uniswap --from ETH --to <TOKEN_CA> --amount 0.003 --chain soneium
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
   purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
@@ -782,6 +783,7 @@ Examples:
   purr wallet transfer --to 0x... --amount 0.01 --chain-id 56
   purr wallet transfer --to 0x... --amount 1000 --chain-id 56 --token 0x55d3...7955
   purr wallet transfer --to 0x... --amount 100 --chain robinhood --token USDG
+  purr wallet transfer --to 0x... --amount 1 --chain soneium --token USDC.e
   purr wallet transfer --to FuQPd1q... --amount 0.5 --chain-type solana
   purr wallet transfer --to FuQPd1q... --amount 100 --chain-type solana --token EPjFWdd5...
   purr wallet abi-call --to 0x... --signature 'register(string)' --args '["https://example.com/agent.json"]' --chain-id 2818

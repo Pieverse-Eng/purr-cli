@@ -12,6 +12,7 @@ const REGISTRY: Record<number, Record<string, `0x${string}`>> = {
   1868: {
     ETH: NATIVE,
     WETH: '0x4200000000000000000000000000000000000006',
+    'USDC.E': '0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369',
   },
   // Arc Mainnet: native USDC uses 18 decimals; no ERC-20 deployments assumed.
   5042: {

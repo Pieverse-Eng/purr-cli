@@ -79,6 +79,8 @@ on-demand routes remains unsupported; normal execution uses platform broadcastin
 
 On Soneium, select `--chain soneium` or `--chain-id 1868`. `ETH` is native gas
 currency; `WETH` resolves to `0x4200000000000000000000000000000000000006`.
+`USDC.e` resolves to Soneium's bridged USDC at
+`0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369` (6 decimals).
 Other ERC-20s use their exact Soneium contract address. Balance and transfer
 commands accept the same chain flags. Ordinary execution uses TEE digest signing
 and Platform RPC broadcasting, as on Arc; native TEE Soneium broadcasting is
@@ -88,8 +90,9 @@ a successful quote does not establish that the guarded path is enabled.
 
 ```bash
 purr wallet balance --chain soneium
-purr wallet balance --chain soneium --token <TOKEN_CA>
+purr wallet balance --chain soneium --token USDC.e
 purr wallet transfer --chain soneium --to <RECIPIENT> --amount 0.001
+purr wallet transfer --chain soneium --to <RECIPIENT> --amount 1 --token USDC.e
 purr wallet uniswap --chain soneium --from ETH --to <TOKEN_CA> --amount 0.001
 ```
 

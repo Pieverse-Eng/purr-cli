@@ -8,7 +8,7 @@ import {
 
 export const AGENTKEY_USAGE = `Usage: purr agentkey <discover|describe|execute|request> [options]
 
-  discover ["full user request"] [--prefix <returned path>]
+  discover ["capability or provider/operation"] [--prefix <returned path>]
     Search dynamically; omit the request to browse. No arguments lists root
     categories. Copy returned paths to browse deeper; never guess a prefix.
     Both request and prefix search within that subtree.
@@ -22,8 +22,11 @@ export const AGENTKEY_USAGE = `Usage: purr agentkey <discover|describe|execute|r
     Read the existing receipt/result without executing or charging again.
 
 Agent workflow: discover -> describe -> fill params from schema -> execute.
-Pass the full user phrasing to discover, not an extracted keyword. Use the
-canonical execute_as.name from describe. No fixed provider list is maintained.
+For a known suitable tool, start at describe; reuse a schema already in context.
+Discovery finds tools, not research evidence. Search by capability or
+provider/operation; pass research queries, identities, dates and URLs in execute
+params. If results are unrelated, browse and narrow to a returned prefix.
+Use the canonical execute_as.name from describe. No fixed provider list is maintained.
 Query request for dispatched results. Indeterminate means the outcome or billing
 is unresolved, not a background job: do not keep polling or repeat the same execute.
 If an error is returned, use it to correct parameters or choose a suitable tool.
@@ -36,7 +39,7 @@ No upstream API key or MCP setup is needed. Balance: purr instance credits.
 
 Examples:
   purr agentkey discover
-  purr agentkey discover "Find recent Robinhood posts on X"
+  purr agentkey discover "X post search"
   purr agentkey discover --prefix social
   purr agentkey describe Serper/search
   purr agentkey execute Serper/search --params '{"q":"Robinhood","num":1}' --max-credits 0.1

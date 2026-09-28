@@ -138,7 +138,7 @@ describe('Sui wallet commands', () => {
     it('quotes without an Idempotency-Key', async () => {
       const mock = mockFetch({ ok: true, data: { estimatedAmountOut: '0.12' } })
       vi.stubGlobal('fetch', mock)
-      await walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.1', 'slippage-bps': '100' })
+      await walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.1', slippage: '1' })
       const { url, body, headers } = request(mock)
       expect(url).toBe('https://api.test/v1/instances/inst-123/wallet/swap/quote')
       expect(body).toEqual({
@@ -166,6 +166,29 @@ describe('Sui wallet commands', () => {
       expect(url).toBe('https://api.test/v1/instances/inst-123/wallet/swap/execute')
       expect(body).toMatchObject({ minAmountOutBaseUnits: '120000' })
       expect(headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
+    })
+
+    it.each([
+      ['0.25', 25],
+      ['0.5', 50],
+      ['50', 5000],
+    ])('converts --slippage %s%% to %i basis points', async (slippage, bps) => {
+      const mock = mockFetch({ ok: true, data: {} })
+      vi.stubGlobal('fetch', mock)
+      await walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.1', slippage })
+      expect(request(mock).body.slippageBps).toBe(bps)
+    })
+
+    it.each([['0'], ['51'], ['0.125'], ['abc']])('rejects --slippage %s', async (slippage) => {
+      await expect(
+        walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.1', slippage }),
+      ).rejects.toThrow('--slippage')
+    })
+
+    it('points --slippage-bps callers to the percentage flag', async () => {
+      await expect(
+        walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.1', 'slippage-bps': '100' }),
+      ).rejects.toThrow('--slippage as a percentage')
     })
 
     it('rejects a decimal minimum, which must be in base units', async () => {

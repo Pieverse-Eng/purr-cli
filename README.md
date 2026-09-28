@@ -161,7 +161,7 @@ purr wallet balance --chain-type sui --token USDC
 purr wallet sign --chain-type sui --address <sui-address> --message <message>
 purr wallet transfer --chain-type sui --to <full-64-hex-sui-address> --amount 0.1 --token USDC
 purr wallet sui-swap --from SUI --to USDC --amount 0.1                       # Cetus quote
-purr wallet sui-swap --from SUI --to USDC --amount 0.1 --min-amount-out <base-units> --execute
+purr wallet sui-swap --from SUI --to USDC --amount 0.1 --slippage 0.5 --min-amount-out <minAmountOutBaseUnits> --execute
 purr wallet sui-execute --tx-file ./tx.b64                                    # caller-built TransactionData
 
 # Balancer pool discovery and swap

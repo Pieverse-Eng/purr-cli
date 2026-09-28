@@ -23,11 +23,17 @@ export function buildSuiSwapBody(args: Record<string, string>): Record<string, u
     amount: requiredArg(args, 'amount'),
   }
   if (args['slippage-bps'] !== undefined) {
-    const slippageBps = Number(args['slippage-bps'])
-    if (!Number.isInteger(slippageBps) || slippageBps < 0) {
-      throw new Error(`Invalid --slippage-bps: "${args['slippage-bps']}"`)
+    throw new Error('sui-swap takes --slippage as a percentage (e.g. 0.5), not --slippage-bps')
+  }
+  if (args.slippage !== undefined) {
+    // A percentage like the other wallet swaps; the platform works in basis points.
+    const slippage = args.slippage.trim()
+    if (!/^\d+(\.\d{1,2})?$/.test(slippage) || Number(slippage) <= 0 || Number(slippage) > 50) {
+      throw new Error(
+        '--slippage must be a percentage above 0 and at most 50, with up to 2 decimals',
+      )
     }
-    body.slippageBps = slippageBps
+    body.slippageBps = Math.round(Number(slippage) * 100)
   }
   if (args['min-amount-out']) {
     if (!/^\d+$/.test(args['min-amount-out'])) {
@@ -40,7 +46,8 @@ export function buildSuiSwapBody(args: Record<string, string>): Record<string, u
 
 /**
  * Quote a Sui swap through the Cetus aggregator, or execute it with
- * `--execute`. Execution re-quotes, keeps the accepted minimum output
+ * `--execute`. `--slippage` is a percentage (default 0.5). Execution
+ * re-quotes, keeps the accepted minimum output
  * (`--min-amount-out`, base units, e.g. a quote's `minAmountOutBaseUnits`),
  * and reports the confirmed `amountOut`.
  */

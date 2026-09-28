@@ -47,9 +47,9 @@ export function buildSuiSwapBody(args: Record<string, string>): Record<string, u
 /**
  * Quote a Sui swap through the Cetus aggregator, or execute it with
  * `--execute`. `--slippage` is a percentage (default 0.5). Execution
- * re-quotes, keeps the accepted minimum output
- * (`--min-amount-out`, base units, e.g. a quote's `minAmountOutBaseUnits`),
- * and reports the confirmed `amountOut`.
+ * re-quotes, never accepts less than the fresh quote less the slippage (or
+ * an optional `--min-amount-out` in base units, if higher), and reports the
+ * confirmed `amountOut`.
  */
 export async function walletSuiSwap(args: Record<string, string>): Promise<void> {
   const { instanceId } = resolveCredentials()
@@ -62,6 +62,5 @@ export async function walletSuiSwap(args: Record<string, string>): Promise<void>
     key ? { headers: { 'Idempotency-Key': key } } : {},
   )
   if (!res.ok) throw suiFailure(res, `Sui swap ${endpoint} failed`, key)
-  // The quote keeps its base-unit fields: `minAmountOutBaseUnits` feeds `--min-amount-out`.
   console.log(JSON.stringify(execute ? compactSuiSwapResult(res.data) : res.data))
 }

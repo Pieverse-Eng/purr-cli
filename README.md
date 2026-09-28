@@ -52,7 +52,7 @@ purr <group> <command> [options]
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
-| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood/Arc Uniswap operations |
+| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, Robinhood/Arc/Soneium Uniswap, and Sui (transfer, Cetus swap, execute) operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
 | `execute` | Execute `TxStep[]` JSON from a file through the configured instance wallet |
@@ -70,12 +70,31 @@ Hosted research can use `purr wallet uniswap` quotes with
 research plugin. This context never falls back to wallet credentials and rejects
 `--execute`; ordinary wallet commands keep their existing instance authentication.
 
-Uniswap supports Robinhood (`4663`, default) and Arc (`5042`). On Arc,
+Uniswap supports Robinhood (`4663`, default), Arc (`5042`), and Soneium (`1868`). On Arc,
 `--from USDC` / `--to USDC` selects the 6-decimal ERC-20 interface at
 `0x3600000000000000000000000000000000000000`; native sentinels are rejected
 for swaps. Wallet balances and transfers still use native USDC with 18 decimals.
 Both views share funds, including gas. Arc execution through runtime-guarded
 on-demand routes remains unsupported; normal execution uses platform broadcasting.
+
+On Soneium, select `--chain soneium` or `--chain-id 1868`. `ETH` is native gas
+currency; `WETH` resolves to `0x4200000000000000000000000000000000000006`.
+`USDC.e` resolves to Soneium's bridged USDC at
+`0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369` (6 decimals).
+Other ERC-20s use their exact Soneium contract address. Balance and transfer
+commands accept the same chain flags. Ordinary execution uses TEE digest signing
+and Platform RPC broadcasting, as on Arc; native TEE Soneium broadcasting is
+not required. Runtime-guarded on-demand execution still requires provider-native
+send/replay support and remains unavailable without it. Preserve that rejection;
+a successful quote does not establish that the guarded path is enabled.
+
+```bash
+purr wallet balance --chain soneium
+purr wallet balance --chain soneium --token USDC.e
+purr wallet transfer --chain soneium --to <RECIPIENT> --amount 0.001
+purr wallet transfer --chain soneium --to <RECIPIENT> --amount 1 --token USDC.e
+purr wallet uniswap --chain soneium --from ETH --to <TOKEN_CA> --amount 0.001
+```
 
 `purr wallet uniswap --execute` automatically checks the receipt after submission,
 with a 60-second budget. The hash is written to stderr immediately; stdout remains
@@ -98,16 +117,27 @@ flag is required.
   (6 decimals) are counted once. Actual native USDC is labeled `tokenAddress:
   "native"`; precision conversion stays inside the CLI. Same-symbol tokens
   retain their contract addresses.
-  Native fills require system transfer logs; on Robinhood, an unavailable native
+  Native fills require system transfer logs; on Robinhood or Soneium, an unavailable native
   ETH amount is omitted, without substituting a quote or gross `tx.value`.
 - `gas: { amount, symbol }` reports `gasUsed * effectiveGasPrice` separately in
   native units, excluding separate rollup fees and approval gas.
 
-Receipt reads use `EVM_RPC_4663` / `EVM_RPC_5042`, then `ROBINHOOD_RPC_URL` /
-`ARC_RPC_URL`, then the chains' mainnet RPC defaults. The RPC chain ID is verified
+Receipt reads use `EVM_RPC_4663` / `EVM_RPC_5042` / `EVM_RPC_1868`, then
+`ROBINHOOD_RPC_URL` / `ARC_RPC_URL` / `SONEIUM_RPC_URL`, then the chains' mainnet
+RPC defaults (Soneium: `https://rpc.soneium.org`). The RPC chain ID is verified
 and wallet API credentials are never forwarded. Permissioned Arc access may
 require a reachable RPC override. Hosted agents need a released CLI and an updated
 tenant image before this behavior is available.
+
+Sui transfers and `sui-swap --execute` send an `Idempotency-Key` (a fresh one
+unless `--idempotency-key` is given) and report it as `operationId`. If a send
+returns `SUI_SUBMISSION_UNKNOWN`, retry the same command with
+`--idempotency-key <operationId>` so the platform reconciles it instead of
+sending again. A policy deferral (`POLICY_DEFERRED`) reports its approval
+`requestId` and the `idempotencyKey` it used; once approved, rerun the same
+command with `--idempotency-key <idempotencyKey>`. Recipients must be full
+32-byte addresses (`0x` + 64 hex). Hosted agents need a released CLI and an
+updated tenant image before these commands are available.
 
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
@@ -123,6 +153,16 @@ purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-t
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
 purr wallet uniswap --from USDC --to 0xeCe5cA8bf9220718E5727754026757512212cb3c --amount 1 --chain arc
+
+# Sui (mainnet): the platform builds and policy-checks each send; the TEE signs
+# and broadcasts it. Coins are SUI, USDC, or a full coin type (0x…::module::NAME).
+purr wallet address --chain-type sui
+purr wallet balance --chain-type sui --token USDC
+purr wallet sign --chain-type sui --address <sui-address> --message <message>
+purr wallet transfer --chain-type sui --to <full-64-hex-sui-address> --amount 0.1 --token USDC
+purr wallet sui-swap --from SUI --to USDC --amount 0.1                       # Cetus quote
+purr wallet sui-swap --from SUI --to USDC --amount 0.1 --slippage 0.5 --execute   # re-quotes; floor = quote less slippage
+purr wallet sui-execute --tx-file ./tx.b64                                    # caller-built TransactionData
 
 # Balancer pool discovery and swap
 purr balancer pools --chain base --tokens WETH,USDC --protocol-version 3

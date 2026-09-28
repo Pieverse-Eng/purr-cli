@@ -9,6 +9,7 @@ import { confirmUniswapSwap } from './uniswap-receipt.js'
 
 const ROBINHOOD_CHAIN_ID = 4663
 const ARC_CHAIN_ID = 5042
+const SONEIUM_CHAIN_ID = 1868
 const ARC_USDC = '0x3600000000000000000000000000000000000000'
 
 type UniswapSwapData = Record<string, unknown>
@@ -46,8 +47,10 @@ function resolveChainId(args: Record<string, string>): number {
   const chainId = args['chain-id']
     ? parseChainId(args['chain-id'])
     : (chainNameId ?? ROBINHOOD_CHAIN_ID)
-  if (chainId !== ROBINHOOD_CHAIN_ID && chainId !== ARC_CHAIN_ID) {
-    throw new Error('purr wallet uniswap supports Robinhood Chain (4663) and Arc (5042) only')
+  if (![ROBINHOOD_CHAIN_ID, ARC_CHAIN_ID, SONEIUM_CHAIN_ID].includes(chainId)) {
+    throw new Error(
+      'purr wallet uniswap supports Robinhood Chain (4663), Arc (5042), and Soneium (1868) only',
+    )
   }
   return chainId
 }

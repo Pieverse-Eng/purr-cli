@@ -15,6 +15,12 @@ const NATIVE = '0x0000000000000000000000000000000000000000'
 const SYSTEM = '0xfffffffffffffffffffffffffffffffffffffffe'
 const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 const CHAINS = {
+  1868: {
+    rpc: 'https://rpc.soneium.org',
+    env: 'SONEIUM_RPC_URL',
+    explorer: 'https://soneium.blockscout.com',
+    symbol: 'ETH',
+  },
   4663: {
     rpc: 'https://rpc.mainnet.chain.robinhood.com',
     env: 'ROBINHOOD_RPC_URL',

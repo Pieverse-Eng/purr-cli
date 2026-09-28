@@ -1,6 +1,14 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
 import { isNative, parseChainId } from '@pieverseio/purr-core/shared'
 import { SOLANA_CHAIN_ID, chainNameToId, resolveToken } from '@pieverseio/purr-core/token-registry'
+import {
+  SUI_NETWORK,
+  isSuiSelection,
+  resolveSuiCoin,
+  suiFailure,
+  suiIdempotencyKey,
+  withoutRedundantSuiFields,
+} from './sui.js'
 
 export interface WalletTransferData {
   from: string
@@ -31,6 +39,8 @@ export async function executeWalletTransfer(
   if (!amount) {
     throw new Error('Missing required argument: --amount')
   }
+
+  if (isSuiSelection(args)) return executeSuiTransfer(instanceId, args, to, amount)
 
   const chainNameId = args.chain ? chainNameToId(args.chain) : undefined
   const chainType = args['chain-type'] ?? (chainNameId === SOLANA_CHAIN_ID ? 'solana' : 'ethereum')
@@ -88,6 +98,32 @@ export async function executeWalletTransfer(
   }
 
   return res.data
+}
+
+/**
+ * Sui transfers name the network, take decimals from chain metadata and carry
+ * an Idempotency-Key, so an unresolved send can be retried safely with
+ * `--idempotency-key <operationId>`.
+ */
+async function executeSuiTransfer(
+  instanceId: string,
+  args: Record<string, string>,
+  to: string,
+  amount: string,
+): Promise<WalletTransferData> {
+  if (args.decimals || args['chain-id']) {
+    throw new Error(
+      'Sui transfers take decimals from chain metadata; omit --decimals and --chain-id',
+    )
+  }
+  const key = suiIdempotencyKey(args)
+  const res = await apiPost<WalletTransferResponse>(
+    `/v1/instances/${instanceId}/wallet/transfer`,
+    { chainType: 'sui', caip2: SUI_NETWORK, to, amount, ...resolveSuiCoin(args.token) },
+    { headers: { 'Idempotency-Key': key } },
+  )
+  if (!res.ok) throw suiFailure(res, 'Transfer failed', key)
+  return withoutRedundantSuiFields({ ...res.data })
 }
 
 export async function walletTransfer(args: Record<string, string>): Promise<void> {

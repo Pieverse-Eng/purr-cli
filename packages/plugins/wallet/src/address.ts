@@ -1,4 +1,5 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import { withoutRedundantSuiFields } from './sui.js'
 
 export interface WalletAddressData {
   address: string
@@ -37,5 +38,12 @@ export async function getWalletAddress(args: Record<string, string>): Promise<Wa
 }
 
 export async function walletAddress(args: Record<string, string>): Promise<void> {
-  console.log(JSON.stringify(await getWalletAddress(args)))
+  const data = await getWalletAddress(args)
+  console.log(
+    JSON.stringify(
+      data.chainType === 'sui'
+        ? withoutRedundantSuiFields({ ...data } as Record<string, unknown>)
+        : data,
+    ),
+  )
 }

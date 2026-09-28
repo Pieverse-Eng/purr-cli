@@ -134,7 +134,8 @@ unless `--idempotency-key` is given) and report it as `operationId`. If a send
 returns `SUI_SUBMISSION_UNKNOWN`, retry the same command with
 `--idempotency-key <operationId>` so the platform reconciles it instead of
 sending again. A policy deferral (`POLICY_DEFERRED`) reports its approval
-`requestId`; after approval, rerun with the same key. Recipients must be full
+`requestId` and the `idempotencyKey` it used; once approved, rerun the same
+command with `--idempotency-key <idempotencyKey>`. Recipients must be full
 32-byte addresses (`0x` + 64 hex). Hosted agents need a released CLI and an
 updated tenant image before these commands are available.
 

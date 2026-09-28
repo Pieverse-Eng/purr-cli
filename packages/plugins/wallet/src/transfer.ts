@@ -115,12 +115,13 @@ async function executeSuiTransfer(
       'Sui transfers take decimals from chain metadata; omit --decimals and --chain-id',
     )
   }
+  const key = suiIdempotencyKey(args)
   const res = await apiPost<WalletTransferResponse>(
     `/v1/instances/${instanceId}/wallet/transfer`,
     { chainType: 'sui', caip2: SUI_NETWORK, to, amount, ...resolveSuiCoin(args.token) },
-    { headers: { 'Idempotency-Key': suiIdempotencyKey(args) } },
+    { headers: { 'Idempotency-Key': key } },
   )
-  if (!res.ok) throw suiFailure(res, 'Transfer failed')
+  if (!res.ok) throw suiFailure(res, 'Transfer failed', key)
   return res.data
 }
 

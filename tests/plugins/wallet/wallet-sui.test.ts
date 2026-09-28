@@ -100,8 +100,15 @@ describe('Sui wallet commands', () => {
         ),
       )
       await expect(
-        executeWalletTransfer({ 'chain-type': 'sui', to: RECIPIENT, amount: '1' }),
-      ).rejects.toThrow(/POLICY_DEFERRED.*policy-child:wallet-transaction:7:key/)
+        executeWalletTransfer({
+          'chain-type': 'sui',
+          to: RECIPIENT,
+          amount: '1',
+          'idempotency-key': 'resume-me',
+        }),
+      ).rejects.toThrow(
+        /POLICY_DEFERRED.*policy-child:wallet-transaction:7:key.*"idempotencyKey":"resume-me"/,
+      )
     })
   })
 

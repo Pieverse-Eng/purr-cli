@@ -58,9 +58,13 @@ interface SuiFailureBody {
 /**
  * An `ok: false` body that arrived with a 2xx status, such as a policy
  * deferral (202 `POLICY_DEFERRED` with its approval `requestId`). Keep every
- * id the caller needs to follow up.
+ * id the caller needs to follow up, including the Idempotency-Key the send
+ * used: rerunning with `--idempotency-key` resumes the same operation (for
+ * example once the approval is granted).
  */
-export function suiFailure(body: SuiFailureBody, fallback: string): Error {
+export function suiFailure(body: SuiFailureBody, fallback: string, idempotencyKey?: string): Error {
   const { ok: _ok, ...detail } = body
-  return new Error(`${fallback}: ${JSON.stringify(detail)}`)
+  return new Error(
+    `${fallback}: ${JSON.stringify(idempotencyKey ? { ...detail, idempotencyKey } : detail)}`,
+  )
 }

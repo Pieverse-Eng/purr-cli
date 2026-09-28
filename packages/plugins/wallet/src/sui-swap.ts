@@ -48,11 +48,12 @@ export async function walletSuiSwap(args: Record<string, string>): Promise<void>
   const { instanceId } = resolveCredentials()
   const execute = args.execute === 'true'
   const endpoint = execute ? 'execute' : 'quote'
+  const key = execute ? suiIdempotencyKey(args) : undefined
   const res = await apiPost<SuiSwapResponse>(
     `/v1/instances/${instanceId}/wallet/swap/${endpoint}`,
     buildSuiSwapBody(args),
-    execute ? { headers: { 'Idempotency-Key': suiIdempotencyKey(args) } } : {},
+    key ? { headers: { 'Idempotency-Key': key } } : {},
   )
-  if (!res.ok) throw suiFailure(res, `Sui swap ${endpoint} failed`)
+  if (!res.ok) throw suiFailure(res, `Sui swap ${endpoint} failed`, key)
   console.log(JSON.stringify(res.data))
 }

@@ -6,6 +6,7 @@ import {
   inferChainId,
   resolveToken,
 } from '@pieverseio/purr-core/token-registry'
+import { SUI_NETWORK, isSuiSelection, resolveSuiCoin, withoutRedundantSuiFields } from './sui.js'
 
 interface WalletBalanceResponse {
   ok: boolean
@@ -28,6 +29,15 @@ export async function walletBalance(args: Record<string, string>): Promise<void>
 
   const params = new URLSearchParams()
   params.set('balance', 'true')
+
+  if (isSuiSelection(args)) {
+    // Sui is identified by its network, not a chain id.
+    params.set('chain_type', 'sui')
+    params.set('caip2', SUI_NETWORK)
+    const coin = resolveSuiCoin(args.token)
+    if (coin.assetType === 'sui_coin') params.set('token', coin.tokenAddress)
+    return printWalletBalance(instanceId, params)
+  }
 
   const chainNameId = args.chain ? chainNameToId(args.chain) : undefined
   if (args.chain && chainNameId === undefined) {
@@ -54,8 +64,13 @@ export async function walletBalance(args: Record<string, string>): Promise<void>
     params.set('chain_id', String(chainNameId))
   }
 
-  const query = params.toString()
-  const res = await apiGet<WalletBalanceResponse>(`/v1/instances/${instanceId}/wallet?${query}`)
+  await printWalletBalance(instanceId, params)
+}
+
+async function printWalletBalance(instanceId: string, params: URLSearchParams): Promise<void> {
+  const res = await apiGet<WalletBalanceResponse>(
+    `/v1/instances/${instanceId}/wallet?${params.toString()}`,
+  )
 
   if (!res.ok) {
     throw new Error(res.error ?? 'Failed to get wallet balance')
@@ -65,5 +80,7 @@ export async function walletBalance(args: Record<string, string>): Promise<void>
     throw new Error('No wallet found. Use `purr wallet address` first to create one.')
   }
 
-  console.log(JSON.stringify(res.data))
+  console.log(
+    JSON.stringify(res.data.chainType === 'sui' ? withoutRedundantSuiFields(res.data) : res.data),
+  )
 }

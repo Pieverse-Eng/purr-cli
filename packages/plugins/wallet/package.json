@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-wallet",
-  "version": "0.2.65",
+  "version": "0.2.66",
   "type": "module",
   "private": true,
   "exports": {
@@ -12,6 +12,9 @@
     "./sign-okx-x402": "./src/sign-okx-x402.ts",
     "./sign-transaction": "./src/sign-transaction.ts",
     "./sign-typed-data": "./src/sign-typed-data.ts",
+    "./sui": "./src/sui.ts",
+    "./sui-execute": "./src/sui-execute.ts",
+    "./sui-swap": "./src/sui-swap.ts",
     "./uniswap": "./src/uniswap.ts",
     "./pancake": "./src/pancake.ts",
     "./transfer": "./src/transfer.ts",

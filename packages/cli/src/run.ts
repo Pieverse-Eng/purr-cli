@@ -157,6 +157,8 @@ import { walletSign } from '@pieverseio/purr-plugin-wallet/sign'
 import { walletSignOkxX402 } from '@pieverseio/purr-plugin-wallet/sign-okx-x402'
 import { walletSignTransaction } from '@pieverseio/purr-plugin-wallet/sign-transaction'
 import { walletSignTypedData } from '@pieverseio/purr-plugin-wallet/sign-typed-data'
+import { walletSuiExecute } from '@pieverseio/purr-plugin-wallet/sui-execute'
+import { walletSuiSwap } from '@pieverseio/purr-plugin-wallet/sui-swap'
 import { walletTransfer } from '@pieverseio/purr-plugin-wallet/transfer'
 import { walletUniswap } from '@pieverseio/purr-plugin-wallet/uniswap'
 import {
@@ -627,7 +629,7 @@ Groups:
   pieverse          Pieverse campaigns and PIEVERSE staking
   pns               Pie Name Service and identity lookup helpers
   .pie              Resolve .pie identities and transfer to their wallets
-  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap)
+  wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap, sui-swap, sui-execute)
   redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
   instance          Instance status, credits, token renewal, and top-up
@@ -1962,12 +1964,18 @@ Execution:
         case 'uniswap':
           await walletUniswap(args)
           return
+        case 'sui-swap':
+          await walletSuiSwap(args)
+          return
+        case 'sui-execute':
+          await walletSuiExecute(args)
+          return
         case 'abi-call':
           await walletAbiCall(args)
           return
         default:
           throw new Error(
-            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap`,
+            `Unknown wallet command: ${command}. Use: address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap, sui-swap, sui-execute`,
           )
       }
     }

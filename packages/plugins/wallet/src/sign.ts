@@ -1,4 +1,5 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import { SUI_NETWORK } from './sui.js'
 
 /**
  * Wallet signing API encoding contract:
@@ -35,6 +36,8 @@ export async function walletSign(args: Record<string, string>): Promise<void> {
   if (args['chain-type']) {
     body.chainType = args['chain-type']
   }
+  // Sui message signing names its network (Sui personal messages are not transactions).
+  if (args['chain-type'] === 'sui') body.caip2 = SUI_NETWORK
 
   const res = await apiPost<WalletSignResponse>(`/v1/instances/${instanceId}/wallet/sign`, body)
 

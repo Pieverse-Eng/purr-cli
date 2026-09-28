@@ -52,7 +52,7 @@ purr <group> <command> [options]
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
-| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, and Robinhood/Arc/Soneium Uniswap operations |
+| `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, Robinhood/Arc/Soneium Uniswap, and Sui (transfer, Cetus swap, execute) operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
 | `execute` | Execute `TxStep[]` JSON from a file through the configured instance wallet |
@@ -129,6 +129,15 @@ and wallet API credentials are never forwarded. Permissioned Arc access may
 require a reachable RPC override. Hosted agents need a released CLI and an updated
 tenant image before this behavior is available.
 
+Sui transfers and `sui-swap --execute` send an `Idempotency-Key` (a fresh one
+unless `--idempotency-key` is given) and report it as `operationId`. If a send
+returns `SUI_SUBMISSION_UNKNOWN`, retry the same command with
+`--idempotency-key <operationId>` so the platform reconciles it instead of
+sending again. A policy deferral (`POLICY_DEFERRED`) reports its approval
+`requestId`; after approval, rerun with the same key. Recipients must be full
+32-byte addresses (`0x` + 64 hex). Hosted agents need a released CLI and an
+updated tenant image before these commands are available.
+
 AgentKey uses the same discover → describe → execute interaction as its MCP
 tools, through the platform's shared account. See [AgentKey commands and agent
 workflow](docs/agentkey.md). No provider catalog or upstream credential is stored
@@ -143,6 +152,16 @@ purr wallet transfer --to <solana-recipient-address> --amount <amount> --chain-t
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood
 purr wallet uniswap --from ETH --to SPCX --amount 0.003 --chain robinhood --execute
 purr wallet uniswap --from USDC --to 0xeCe5cA8bf9220718E5727754026757512212cb3c --amount 1 --chain arc
+
+# Sui (mainnet): the platform builds and policy-checks each send; the TEE signs
+# and broadcasts it. Coins are SUI, USDC, or a full coin type (0x…::module::NAME).
+purr wallet address --chain-type sui
+purr wallet balance --chain-type sui --token USDC
+purr wallet sign --chain-type sui --address <sui-address> --message <message>
+purr wallet transfer --chain-type sui --to <full-64-hex-sui-address> --amount 0.1 --token USDC
+purr wallet sui-swap --from SUI --to USDC --amount 0.1                       # Cetus quote
+purr wallet sui-swap --from SUI --to USDC --amount 0.1 --min-amount-out <base-units> --execute
+purr wallet sui-execute --tx-file ./tx.b64                                    # caller-built TransactionData
 
 # Balancer pool discovery and swap
 purr balancer pools --chain base --tokens WETH,USDC --protocol-version 3

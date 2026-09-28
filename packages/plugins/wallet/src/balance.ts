@@ -6,7 +6,7 @@ import {
   inferChainId,
   resolveToken,
 } from '@pieverseio/purr-core/token-registry'
-import { SUI_NETWORK, isSuiSelection, resolveSuiCoin } from './sui.js'
+import { SUI_NETWORK, isSuiSelection, resolveSuiCoin, withoutRedundantSuiFields } from './sui.js'
 
 interface WalletBalanceResponse {
   ok: boolean
@@ -80,5 +80,7 @@ async function printWalletBalance(instanceId: string, params: URLSearchParams): 
     throw new Error('No wallet found. Use `purr wallet address` first to create one.')
   }
 
-  console.log(JSON.stringify(res.data))
+  console.log(
+    JSON.stringify(res.data.chainType === 'sui' ? withoutRedundantSuiFields(res.data) : res.data),
+  )
 }

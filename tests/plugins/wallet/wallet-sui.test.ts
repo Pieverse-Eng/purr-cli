@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { walletAddress } from '@pieverseio/purr-plugin-wallet/address'
 import { walletBalance } from '@pieverseio/purr-plugin-wallet/balance'
 import { walletSign } from '@pieverseio/purr-plugin-wallet/sign'
 import { SUI_USDC_COIN_TYPE } from '@pieverseio/purr-plugin-wallet/sui'
@@ -9,6 +10,32 @@ import { mockFetch } from '../../helpers.js'
 
 const RECIPIENT = `0x${'22'.repeat(32)}`
 const CETUS = '0x06864a6f921804860930db6ddbe2e16acdf8504495ea7481637a1c8b9a8fe54b::cetus::CETUS'
+
+function printed(): unknown {
+  const log = console.log as unknown as { mock: { calls: string[][] } }
+  return JSON.parse(log.mock.calls.at(-1)![0])
+}
+
+const EXECUTED_SWAP = {
+  hash: 'digest',
+  from: RECIPIENT,
+  chainId: 0,
+  chainType: 'sui',
+  caip2: 'sui:mainnet',
+  transactionId: 'digest',
+  operationId: 'op-1',
+  replayed: false,
+  status: 'confirmed',
+  explorerUrl: 'https://suiscan.xyz/mainnet/tx/digest',
+  fromCoin: { coinType: '0x2::sui::SUI', symbol: 'SUI', decimals: 9 },
+  toCoin: { coinType: SUI_USDC_COIN_TYPE, symbol: 'USDC', decimals: 6 },
+  amountIn: '0.02',
+  amountInBaseUnits: '20000000',
+  amountOut: '0.024252',
+  amountOutBaseUnits: '24252',
+  gasUsedSui: '0.001617872',
+  minAmountOutBaseUnits: '24130',
+}
 
 function request(mock: ReturnType<typeof mockFetch>) {
   const [url, init] = mock.mock.calls[0]
@@ -206,5 +233,60 @@ describe('Sui wallet commands', () => {
     expect(url).toBe('https://api.test/v1/instances/inst-123/wallet/execute')
     expect(body).toEqual({ chainType: 'sui', caip2: 'sui:mainnet', transaction: 'AAAA' })
     expect(headers['Idempotency-Key']).toBeUndefined()
+  })
+
+  describe('output shapes', () => {
+    it('prints a confirmed swap like wallet uniswap results', async () => {
+      vi.stubGlobal('fetch', mockFetch({ ok: true, data: EXECUTED_SWAP }))
+      await walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.02', execute: 'true' })
+      expect(printed()).toEqual({
+        hash: 'digest',
+        explorerUrl: 'https://suiscan.xyz/mainnet/tx/digest',
+        status: 'confirmed',
+        operationId: 'op-1',
+        replayed: false,
+        input: { coinType: '0x2::sui::SUI', symbol: 'SUI', amount: '0.02' },
+        output: { coinType: SUI_USDC_COIN_TYPE, symbol: 'USDC', amount: '0.024252' },
+        gas: { amount: '0.001617872', symbol: 'SUI' },
+      })
+    })
+
+    it('omits an actual output the fullnode has not reported yet', async () => {
+      vi.stubGlobal('fetch', mockFetch({ ok: true, data: { ...EXECUTED_SWAP, amountOut: null } }))
+      await walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.02', execute: 'true' })
+      expect((printed() as { output: unknown }).output).toEqual({
+        coinType: SUI_USDC_COIN_TYPE,
+        symbol: 'USDC',
+      })
+    })
+
+    it('keeps the quote whole, including the base-unit floor for --min-amount-out', async () => {
+      const quote = { minAmountOut: '0.02413', minAmountOutBaseUnits: '24130' }
+      vi.stubGlobal('fetch', mockFetch({ ok: true, data: quote }))
+      await walletSuiSwap({ from: 'SUI', to: 'USDC', amount: '0.02' })
+      expect(printed()).toEqual(quote)
+    })
+
+    it('drops chainId, transactionId and row ids from Sui results only', async () => {
+      const row = { id: 'row', chainId: 0, chainType: 'sui', address: RECIPIENT }
+      vi.stubGlobal(
+        'fetch',
+        mockFetch({ ok: true, data: { ...row, transactionId: 'd', hash: 'd' } }),
+      )
+      await expect(
+        executeWalletTransfer({ 'chain-type': 'sui', to: RECIPIENT, amount: '1' }),
+      ).resolves.toEqual({ chainType: 'sui', address: RECIPIENT, hash: 'd' })
+
+      vi.stubGlobal('fetch', mockFetch({ ok: true, data: row }))
+      await walletBalance({ 'chain-type': 'sui' })
+      expect(printed()).toEqual({ chainType: 'sui', address: RECIPIENT })
+      await walletAddress({ 'chain-type': 'sui' })
+      expect(printed()).toEqual({ chainType: 'sui', address: RECIPIENT })
+
+      const evm = { id: 'row', chainId: 8453, chainType: 'ethereum', address: '0xabc' }
+      vi.stubGlobal('fetch', mockFetch({ ok: true, data: evm }))
+      await walletBalance({ 'chain-type': 'ethereum', 'chain-id': '8453' })
+      expect(printed()).toEqual(evm)
+    })
   })
 })

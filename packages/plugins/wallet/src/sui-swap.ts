@@ -1,5 +1,5 @@
 import { apiPost, resolveCredentials } from '@pieverseio/purr-core/api-client'
-import { SUI_NETWORK, suiFailure, suiIdempotencyKey } from './sui.js'
+import { SUI_NETWORK, compactSuiSwapResult, suiFailure, suiIdempotencyKey } from './sui.js'
 
 interface SuiSwapResponse {
   ok: boolean
@@ -62,5 +62,6 @@ export async function walletSuiSwap(args: Record<string, string>): Promise<void>
     key ? { headers: { 'Idempotency-Key': key } } : {},
   )
   if (!res.ok) throw suiFailure(res, `Sui swap ${endpoint} failed`, key)
-  console.log(JSON.stringify(res.data))
+  // The quote keeps its base-unit fields: `minAmountOutBaseUnits` feeds `--min-amount-out`.
+  console.log(JSON.stringify(execute ? compactSuiSwapResult(res.data) : res.data))
 }

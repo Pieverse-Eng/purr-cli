@@ -7,6 +7,7 @@ import {
   resolveSuiCoin,
   suiFailure,
   suiIdempotencyKey,
+  withoutRedundantSuiFields,
 } from './sui.js'
 
 export interface WalletTransferData {
@@ -122,7 +123,7 @@ async function executeSuiTransfer(
     { headers: { 'Idempotency-Key': key } },
   )
   if (!res.ok) throw suiFailure(res, 'Transfer failed', key)
-  return res.data
+  return withoutRedundantSuiFields({ ...res.data })
 }
 
 export async function walletTransfer(args: Record<string, string>): Promise<void> {

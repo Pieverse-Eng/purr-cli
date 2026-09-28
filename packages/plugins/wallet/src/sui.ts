@@ -68,3 +68,41 @@ export function suiFailure(body: SuiFailureBody, fallback: string, idempotencyKe
     `${fallback}: ${JSON.stringify(idempotencyKey ? { ...detail, idempotencyKey } : detail)}`,
   )
 }
+
+/**
+ * Drop fields that carry nothing for Sui: `chainId` is always 0 (Sui is named
+ * by `caip2`), `transactionId` repeats `hash`, and `id` is a platform row id.
+ */
+export function withoutRedundantSuiFields<T extends Record<string, unknown>>(data: T): T {
+  const { chainId: _chainId, transactionId: _transactionId, id: _id, ...rest } = data
+  return rest as T
+}
+
+interface SuiSwapCoin {
+  coinType?: string
+  symbol?: string
+}
+
+/**
+ * A confirmed swap in the shape of `wallet uniswap` results: what went in, what
+ * came out, and the gas paid, plus the ids a caller needs. The actual output
+ * is omitted rather than null when the fullnode had not reported it yet.
+ */
+export function compactSuiSwapResult(data: Record<string, unknown>): Record<string, unknown> {
+  const coin = (value: unknown, amount: unknown) => {
+    const { coinType, symbol } = (value ?? {}) as SuiSwapCoin
+    return { coinType, symbol, ...(typeof amount === 'string' ? { amount } : {}) }
+  }
+  return {
+    hash: data.hash,
+    explorerUrl: data.explorerUrl,
+    status: data.status,
+    operationId: data.operationId,
+    replayed: data.replayed,
+    input: coin(data.fromCoin, data.amountIn),
+    output: coin(data.toCoin, data.amountOut),
+    ...(typeof data.gasUsedSui === 'string'
+      ? { gas: { amount: data.gasUsedSui, symbol: 'SUI' } }
+      : {}),
+  }
+}

@@ -97,7 +97,8 @@ it('requotes and submits exact approval plus captured API calldata through the g
     router,
     100n * 10n ** 18n,
   ])
-  expect(steps[1]).toMatchObject({ to: router, data: captured.calldata, value: '0', chainId: 56 })
+  expect(steps[0].value).toBe('0x0')
+  expect(steps[1]).toMatchObject({ to: router, data: captured.calldata, value: '0x0', chainId: 56 })
   expect(mocks.execute.mock.calls[0][1]).toBeUndefined()
 })
 it('forwards an optional dedup key without retrying a failed execution', async () => {
@@ -136,7 +137,7 @@ it('sends native BNB as value without an ERC20 approval', async () => {
   await walletPancake({ ...args, from: 'BNB', execute: 'true' })
   const { steps } = JSON.parse(mocks.execute.mock.calls[0][0])
   expect(steps).toHaveLength(1)
-  expect(steps[0].value).toBe('100000000000000000000')
+  expect(steps[0].value).toBe('0x56bc75e2d63100000')
 })
 it.each(['min-amount-out', 'fees', 'fee', 'wallet', 'deadline', 'path', 'recipient', 'router'])(
   'rejects --%s before any request',

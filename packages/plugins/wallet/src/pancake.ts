@@ -220,7 +220,7 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
     const approve = (value: bigint): TxStep => ({
       to: fromToken,
       chainId: 56,
-      value: '0',
+      value: '0x0',
       data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER, value] }),
       label: value === 0n ? 'Reset PancakeSwap allowance' : 'Approve PancakeSwap input',
     })
@@ -240,7 +240,8 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
   steps.push({
     to: ROUTER,
     data: call.calldata,
-    value: BigInt(call.value).toString(),
+    // TxStep.value is hex wei; the managed wallet rejects decimal values.
+    value: `0x${BigInt(call.value).toString(16)}`,
     chainId: 56,
     label: 'PancakeSwap swap',
   })

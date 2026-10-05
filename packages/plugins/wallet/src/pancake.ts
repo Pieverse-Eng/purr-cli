@@ -242,9 +242,7 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
   // is refused for 60s. The wallet address keeps instances apart.
   const dedupKey =
     args['dedup-key'] ??
-    ['pancake', 56, wallet.address, fromToken, toToken, inputAmount]
-      .join(':')
-      .toLowerCase()
+    ['pancake', 56, wallet.address, fromToken, toToken, inputAmount].join(':').toLowerCase()
   steps.push({
     to: ROUTER,
     data: call.calldata,

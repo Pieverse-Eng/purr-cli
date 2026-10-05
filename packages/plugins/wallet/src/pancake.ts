@@ -237,6 +237,14 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
       })
     }
   }
+  // Without an explicit key, derive one from the swap itself, like the platform's
+  // swapDedupKey: an identical rerun (an agent retrying after an error or timeout)
+  // is refused for 60s. The wallet address keeps instances apart.
+  const dedupKey =
+    args['dedup-key'] ??
+    ['pancake', 56, wallet.address, fromToken, toToken, inputAmount]
+      .join(':')
+      .toLowerCase()
   steps.push({
     to: ROUTER,
     data: call.calldata,
@@ -248,7 +256,7 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
   console.log(
     JSON.stringify({
       ...quote,
-      execution: await executeStepsFromJson(JSON.stringify({ steps }), args['dedup-key']),
+      execution: await executeStepsFromJson(JSON.stringify({ steps }), dedupKey),
     }),
   )
 }

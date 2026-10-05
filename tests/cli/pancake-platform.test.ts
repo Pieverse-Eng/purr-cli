@@ -97,8 +97,12 @@ it('requotes and submits exact approval plus captured API calldata through the g
     router,
     100n * 10n ** 18n,
   ])
-  expect(steps[1]).toMatchObject({ to: router, data: captured.calldata, value: '0', chainId: 56 })
-  expect(mocks.execute.mock.calls[0][1]).toBeUndefined()
+  expect(steps[0].value).toBe('0x0')
+  expect(steps[1]).toMatchObject({ to: router, data: captured.calldata, value: '0x0', chainId: 56 })
+  // Derived from the swap so an identical rerun is deduplicated without the agent passing a key.
+  expect(mocks.execute.mock.calls[0][1]).toBe(
+    `pancake:56:${owner}:${A}:${B}:${100n * 10n ** 18n}`.toLowerCase(),
+  )
 })
 it('forwards an optional dedup key without retrying a failed execution', async () => {
   mocks.execute.mockRejectedValue(new Error('Execution response timed out'))
@@ -136,7 +140,10 @@ it('sends native BNB as value without an ERC20 approval', async () => {
   await walletPancake({ ...args, from: 'BNB', execute: 'true' })
   const { steps } = JSON.parse(mocks.execute.mock.calls[0][0])
   expect(steps).toHaveLength(1)
-  expect(steps[0].value).toBe('100000000000000000000')
+  expect(mocks.execute.mock.calls[0][1]).toBe(
+    `pancake:56:${owner}:${zeroAddress}:${B}:${100n * 10n ** 18n}`.toLowerCase(),
+  )
+  expect(steps[0].value).toBe('0x56bc75e2d63100000')
 })
 it.each(['min-amount-out', 'fees', 'fee', 'wallet', 'deadline', 'path', 'recipient', 'router'])(
   'rejects --%s before any request',

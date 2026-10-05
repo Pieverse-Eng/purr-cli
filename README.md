@@ -176,6 +176,8 @@ purr balancer remove-quote --chain base --pool-id 0x... --protocol-version 3 --k
 
 purr pancake quote --from USDT --to <token-address> --amount 100 --slippage 0.5
 purr pancake swap --from USDT --to <token-address> --amount 100 --slippage 0.5
+# An identical execution (same wallet, tokens and amount) is refused for 60s;
+# pass --dedup-key <key> to choose the key instead.
 purr pancake swap --from USDT --to <token-address> --amount 100 --slippage 0.5 --execute
 purr fourmeme raised-tokens
 purr fourmeme buy --token <token-address> --wallet <wallet-address> --funds <amount>

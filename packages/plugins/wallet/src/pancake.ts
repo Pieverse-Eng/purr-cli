@@ -220,7 +220,7 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
     const approve = (value: bigint): TxStep => ({
       to: fromToken,
       chainId: 56,
-      value: '0',
+      value: '0x0',
       data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [ROUTER, value] }),
       label: value === 0n ? 'Reset PancakeSwap allowance' : 'Approve PancakeSwap input',
     })
@@ -237,17 +237,24 @@ export async function walletPancake(args: Record<string, string>): Promise<void>
       })
     }
   }
+  // Without an explicit key, derive one from the swap itself, like the platform's
+  // swapDedupKey: an identical rerun (an agent retrying after an error or timeout)
+  // is refused for 60s. The wallet address keeps instances apart.
+  const dedupKey =
+    args['dedup-key'] ??
+    ['pancake', 56, wallet.address, fromToken, toToken, inputAmount].join(':').toLowerCase()
   steps.push({
     to: ROUTER,
     data: call.calldata,
-    value: BigInt(call.value).toString(),
+    // TxStep.value is hex wei; the managed wallet rejects decimal values.
+    value: `0x${BigInt(call.value).toString(16)}`,
     chainId: 56,
     label: 'PancakeSwap swap',
   })
   console.log(
     JSON.stringify({
       ...quote,
-      execution: await executeStepsFromJson(JSON.stringify({ steps }), args['dedup-key']),
+      execution: await executeStepsFromJson(JSON.stringify({ steps }), dedupKey),
     }),
   )
 }

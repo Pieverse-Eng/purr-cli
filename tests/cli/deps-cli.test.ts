@@ -14,7 +14,7 @@ describe('purr deps catalog', () => {
     const versions = Object.fromEntries(SKILL_CLI_DEPS.map((dep) => [dep.id, dep.version]))
     expect(versions).toMatchObject({
       opensea: '1.10.0',
-      baw: '1.2.1',
+      baw: '1.11.0',
       'okx-cex': '1.4.4',
       'okx-outcomes': 'v1.0.3',
       'bitget-cex': '3.0.0',
@@ -102,13 +102,13 @@ describe('purr deps install', () => {
       {
         id: 'baw',
         bin: 'baw',
-        version: '1.2.1',
+        version: '1.11.0',
         status: 'installed',
-        detail: '@binance/agentic-wallet@1.2.1',
+        detail: '@binance/agentic-wallet@1.11.0',
       },
     ])
     expect(calls[0]?.[0]).toBe('npm')
-    expect(calls[0]).toContain('@binance/agentic-wallet@1.2.1')
+    expect(calls[0]).toContain('@binance/agentic-wallet@1.11.0')
   })
 
   it('downloads a binary, checks sha256, and continues after a failure', async () => {

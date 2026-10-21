@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  getMyPieHandle,
   getPieIdentityProfile,
   listPieIdentityAccounts,
   lookupPieIdentityByAccount,
   pnsAccounts,
   pnsByAccount,
+  pnsMine,
   pnsProfile,
   pnsResolve,
   resolvePieName,
@@ -96,6 +98,37 @@ describe('pns resolve', () => {
     await pnsResolve('alice')
 
     expect(log).toHaveBeenCalledWith('0x1234567890123456789012345678901234567890')
+  })
+
+  it('looks up the instance handle through the scoped platform route', async () => {
+    process.env.INSTANCE_ID = 'inst-123'
+    const mock = mockFetch({
+      ok: true,
+      data: {
+        handle: 'alice',
+        renderedHandle: 'alice.pie',
+        walletAddress: '0x1234567890123456789012345678901234567890',
+        walletId: 'wallet-1',
+        instanceId: 'inst-123',
+        ownerUserId: 'user-1',
+        proofSignedAt: '2026-10-01T00:00:00.000Z',
+      },
+    })
+    vi.stubGlobal('fetch', mock)
+
+    await expect(getMyPieHandle()).resolves.toEqual({
+      handle: 'alice',
+      renderedHandle: 'alice.pie',
+      walletAddress: '0x1234567890123456789012345678901234567890',
+    })
+    expect(mock.mock.calls[0][0]).toBe('https://api.test/v2/instances/inst-123/handles/mine')
+  })
+
+  it('reports a missing instance handle', async () => {
+    process.env.INSTANCE_ID = 'inst-123'
+    vi.stubGlobal('fetch', mockFetch({ ok: false, error: 'Handle not found' }, 404))
+
+    await expect(pnsMine()).rejects.toThrow('PNS handle not found: this instance')
   })
 
   it('requires a PNS handle input', async () => {

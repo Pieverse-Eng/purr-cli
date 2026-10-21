@@ -123,6 +123,22 @@ export async function resolvePieName(input: string): Promise<PnsResolvedHandle> 
   return unwrap(response)
 }
 
+export interface PnsOwnHandle {
+  handle: string
+  renderedHandle: string
+  walletAddress: string
+}
+
+// The platform claims a default handle for the instance if it has none yet.
+export async function getMyPieHandle(): Promise<PnsOwnHandle> {
+  const { instanceId } = resolveCredentials()
+  const response = await apiGet<ApiEnvelope<PnsOwnHandle>>(
+    `/v2/instances/${encodeURIComponent(instanceId)}/handles/mine`,
+  )
+  const { handle, renderedHandle, walletAddress } = unwrap(response)
+  return { handle, renderedHandle, walletAddress }
+}
+
 export async function lookupPieIdentityByAccount(input: {
   channel: PieIdentityChannel
   account: string
@@ -176,6 +192,14 @@ export async function pnsResolve(handle?: string): Promise<void> {
     console.log(resolved.walletAddress)
   } catch (error) {
     throw formatLookupError(handle, error)
+  }
+}
+
+export async function pnsMine(): Promise<void> {
+  try {
+    console.log(JSON.stringify(await getMyPieHandle(), null, 2))
+  } catch (error) {
+    throw formatLookupError('this instance', error)
   }
 }
 

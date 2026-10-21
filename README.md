@@ -51,7 +51,7 @@ purr <group> <command> [options]
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
-| `pns` | Resolve Pie Name Service handles to instance wallet addresses |
+| `pns` | Resolve Pie Name Service handles to instance wallet addresses, look up the instance's own handle, and check `.ai` Agent ID availability |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, Robinhood/Arc/Soneium Uniswap, and Sui (transfer, Cetus swap, execute) operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
@@ -246,6 +246,8 @@ purr instance payment-methods
 purr instance renew --token <token-id-or-alias> --yes
 purr instance topup --credits <integer> --token <token-id-or-alias> --yes
 purr pns resolve <handle>
+purr pns mine
+purr pns ai-check [name]
 purr store list --search <keyword> --limit <limit>
 purr store info <slug>
 purr store install <slug>

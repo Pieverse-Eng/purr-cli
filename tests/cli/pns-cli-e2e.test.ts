@@ -99,6 +99,22 @@ describe('PNS CLI e2e', () => {
       assert.equal(req.method, 'GET')
       assert.equal(req.headers.authorization, `Bearer ${API_TOKEN}`)
 
+      if (req.url === `/v2/instances/${INSTANCE_ID}/handles/mine`) {
+        writeJson(res, 200, {
+          ok: true,
+          data: {
+            handle: 'alice',
+            renderedHandle: 'alice.pie',
+            walletAddress: WALLET_ADDRESS,
+            walletId: 'wallet-1',
+            instanceId: INSTANCE_ID,
+            ownerUserId: 'user-1',
+            proofSignedAt: '2026-10-01T00:00:00.000Z',
+          },
+        })
+        return
+      }
+
       if (req.url === '/v2/handles/alice') {
         writeJson(res, 200, {
           ok: true,
@@ -249,6 +265,23 @@ describe('PNS CLI e2e', () => {
     expect(requests[0]).toEqual({
       method: 'GET',
       url: `/v2/instances/${INSTANCE_ID}/pie-identities/alice.pie/profile`,
+      authorization: `Bearer ${API_TOKEN}`,
+    })
+  })
+
+  it('prints the instance handle as JSON', async () => {
+    const result = await runPurr(port, tmpHome, ['pns', 'mine'])
+
+    expect(result.code).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(JSON.parse(result.stdout)).toEqual({
+      handle: 'alice',
+      renderedHandle: 'alice.pie',
+      walletAddress: WALLET_ADDRESS,
+    })
+    expect(requests[0]).toEqual({
+      method: 'GET',
+      url: `/v2/instances/${INSTANCE_ID}/handles/mine`,
       authorization: `Bearer ${API_TOKEN}`,
     })
   })

@@ -27,9 +27,11 @@ import { buildRawStep } from '@pieverseio/purr-plugin-evm/raw'
 import { buildTransferSteps } from '@pieverseio/purr-plugin-evm/transfer'
 import { pieverseCard } from '@pieverseio/purr-plugin-pieverse-card/card'
 import { pieversePurrfectYap } from '@pieverseio/purr-plugin-pieverse-card/purrfect-yap'
+import { pnsAiCheck } from '@pieverseio/purr-plugin-pns/agent-id'
 import {
   pnsAccounts,
   pnsByAccount,
+  pnsMine,
   pnsProfile,
   pnsResolve,
 } from '@pieverseio/purr-plugin-pns/resolve'
@@ -722,6 +724,9 @@ Examples:
   purr pns by-account --channel telegram --account @alice
   purr pns accounts alice.pie
   purr pns profile alice.pie
+  purr pns mine
+  purr pns ai-check
+  purr pns ai-check alice
   purr .pie transfer --pie alice.pie --amount 0.01 --chain-id 56
   purr .pie transfer --channel telegram --account @alice --amount 0.01 --chain-id 56
   purr .pie transfer --channel line --account line-user --amount 100 --chain-id 56 --token USDT
@@ -1908,9 +1913,19 @@ Execution:
           }
           await pnsProfile(rest[0])
           return
+        case 'mine':
+          if (rest.length !== 0) throw new Error('Usage: purr pns mine')
+          await pnsMine()
+          return
+        case 'ai-check':
+          if (rest.length > 1 || rest[0]?.startsWith('--')) {
+            throw new Error('Usage: purr pns ai-check [name]')
+          }
+          await pnsAiCheck(rest[0])
+          return
         default:
           throw new Error(
-            `Unknown pns command: ${command}. Use: resolve, by-account, accounts, profile`,
+            `Unknown pns command: ${command}. Use: resolve, by-account, accounts, profile, mine, ai-check`,
           )
       }
     }

@@ -87,7 +87,7 @@ export const SKILL_CLI_DEPS: SkillCliDep[] = [
   {
     id: 'baw',
     bin: 'baw',
-    version: '1.2.1',
+    version: '1.11.0',
     skills: ['binance-agentic-wallet'],
     kind: 'npm',
     npmPackage: '@binance/agentic-wallet',

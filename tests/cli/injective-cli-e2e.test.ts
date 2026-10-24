@@ -150,15 +150,15 @@ describe('Injective actual CLI routing and output', () => {
     )
   })
 
-  it.each([
-    { WALLET_API_TOKEN: '' },
-    { INSTANCE_ID: '' },
-  ])('fails missing credentials before HTTP %j', async (overrides) => {
-    const result = await run(['injective', 'status'], overrides)
-    expect(result.code).toBe(1)
-    expect(result.stderr).toContain('Missing required credentials')
-    expect(received).toHaveLength(0)
-  })
+  it.each([{ WALLET_API_TOKEN: '' }, { INSTANCE_ID: '' }])(
+    'fails missing credentials before HTTP %j',
+    async (overrides) => {
+      const result = await run(['injective', 'status'], overrides)
+      expect(result.code).toBe(1)
+      expect(result.stderr).toContain('Missing required credentials')
+      expect(received).toHaveLength(0)
+    },
+  )
 
   it('renders old backend capability failures with an actionable code', async () => {
     status = 404

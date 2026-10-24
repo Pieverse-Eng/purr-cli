@@ -70,25 +70,20 @@ describe('Injective read-only CLI over backend HTTP', () => {
   })
   afterEach(() => vi.unstubAllEnvs())
 
-  it.each([
-    'status',
-    'account',
-    'balances',
-    'positions',
-    'orders',
-    'order-history',
-    'fills',
-  ])('routes %s only to its owned backend GET path', async (command) => {
-    const args = ['orders', 'order-history', 'fills'].includes(command)
-      ? ['--market-type', 'spot']
-      : []
-    const result = await injectiveCommand([command, ...args])
-    expect(result).toEqual((payload as { data: unknown }).data)
-    expect(requests).toHaveLength(1)
-    expect(requests[0].url.pathname).toBe(`/v1/instances/instance%2Fowned/injective/${command}`)
-    expect(requests[0].method).toBe('GET')
-    expect(requests[0].auth).toBe('Bearer test-token')
-  })
+  it.each(['status', 'account', 'balances', 'positions', 'orders', 'order-history', 'fills'])(
+    'routes %s only to its owned backend GET path',
+    async (command) => {
+      const args = ['orders', 'order-history', 'fills'].includes(command)
+        ? ['--market-type', 'spot']
+        : []
+      const result = await injectiveCommand([command, ...args])
+      expect(result).toEqual((payload as { data: unknown }).data)
+      expect(requests).toHaveLength(1)
+      expect(requests[0].url.pathname).toBe(`/v1/instances/instance%2Fowned/injective/${command}`)
+      expect(requests[0].method).toBe('GET')
+      expect(requests[0].auth).toBe('Bearer test-token')
+    },
+  )
 
   it('preserves opaque cursors, native hashes, decimal strings, null and coverage', async () => {
     const page = {
@@ -162,31 +157,34 @@ describe('Injective read-only CLI over backend HTTP', () => {
   it.each([
     ['order-book-depth', 'orderbook', 'levels', '20'],
     ['recent-trades', 'trades', 'limit', '50'],
-  ])('resolves %s from the catalog base before calling %s', async (command, endpoint, limitKey, defaultLimit) => {
-    const book = {
-      instrument: row(),
-      source: { mode: 'native' },
-      data: null,
-      meta: { status: 'unavailable', reason: 'upstream_unavailable' },
-    }
-    handler = (url, res) => {
-      res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(
-        JSON.stringify({
-          ok: true,
-          data: url.pathname.endsWith('/instruments') ? catalog() : book,
-        }),
-      )
-    }
-    expect(await injectiveCommand([command, ...marketArgs])).toEqual(book)
-    expect(requests).toHaveLength(2)
-    expect(requests[1].url.pathname).toBe(`/v1/market-data/${endpoint}`)
-    expect(Object.fromEntries(requests[1].url.searchParams)).toEqual({
-      underlying: 'SAME',
-      instrumentId: ID,
-      [limitKey]: defaultLimit,
-    })
-  })
+  ])(
+    'resolves %s from the catalog base before calling %s',
+    async (command, endpoint, limitKey, defaultLimit) => {
+      const book = {
+        instrument: row(),
+        source: { mode: 'native' },
+        data: null,
+        meta: { status: 'unavailable', reason: 'upstream_unavailable' },
+      }
+      handler = (url, res) => {
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: url.pathname.endsWith('/instruments') ? catalog() : book,
+          }),
+        )
+      }
+      expect(await injectiveCommand([command, ...marketArgs])).toEqual(book)
+      expect(requests).toHaveLength(2)
+      expect(requests[1].url.pathname).toBe(`/v1/market-data/${endpoint}`)
+      expect(Object.fromEntries(requests[1].url.searchParams)).toEqual({
+        underlying: 'SAME',
+        instrumentId: ID,
+        [limitKey]: defaultLimit,
+      })
+    },
+  )
 
   it('derives bounded candle buckets and filters [from,to), preserving source/coverage', async () => {
     const data = {
@@ -230,43 +228,38 @@ describe('Injective read-only CLI over backend HTTP', () => {
     })
   })
 
-  it.each([
-    '1m',
-    '5m',
-    '15m',
-    '30m',
-    '1h',
-    '4h',
-    '1d',
-  ])('routes the supported %s candle resolution with a bounded millisecond query', async (resolution) => {
-    handler = (url, res) => {
-      res.end(
-        JSON.stringify({
-          ok: true,
-          data: url.pathname.endsWith('/instruments')
-            ? catalog()
-            : { candles: [], historyAvailability: 'pending' },
-        }),
-      )
-    }
-    await injectiveCommand([
-      'candles',
-      ...marketArgs,
-      '--resolution',
-      resolution,
-      '--start-at',
-      '2026-10-01T08:00:00+08:00',
-      '--end-at',
-      END,
-    ])
-    expect(Object.fromEntries(requests[1].url.searchParams)).toEqual({
-      underlying: 'SAME',
-      instrumentId: ID,
-      tf: resolution,
-      to: String(TO),
-      limit: resolution === '1m' ? '2' : '1',
-    })
-  })
+  it.each(['1m', '5m', '15m', '30m', '1h', '4h', '1d'])(
+    'routes the supported %s candle resolution with a bounded millisecond query',
+    async (resolution) => {
+      handler = (url, res) => {
+        res.end(
+          JSON.stringify({
+            ok: true,
+            data: url.pathname.endsWith('/instruments')
+              ? catalog()
+              : { candles: [], historyAvailability: 'pending' },
+          }),
+        )
+      }
+      await injectiveCommand([
+        'candles',
+        ...marketArgs,
+        '--resolution',
+        resolution,
+        '--start-at',
+        '2026-10-01T08:00:00+08:00',
+        '--end-at',
+        END,
+      ])
+      expect(Object.fromEntries(requests[1].url.searchParams)).toEqual({
+        underlying: 'SAME',
+        instrumentId: ID,
+        tf: resolution,
+        to: String(TO),
+        limit: resolution === '1m' ? '2' : '1',
+      })
+    },
+  )
 
   it.each([
     'order',
@@ -333,14 +326,14 @@ describe('Injective read-only CLI over backend HTTP', () => {
     expect(requests).toHaveLength(0)
   })
 
-  it.each([
-    'markets',
-    'status',
-  ])('requires API credentials for %s without HTTP', async (command) => {
-    vi.stubEnv('WALLET_API_TOKEN', '')
-    await expect(injectiveCommand([command])).rejects.toThrow(/Missing required credentials/)
-    expect(requests).toHaveLength(0)
-  })
+  it.each(['markets', 'status'])(
+    'requires API credentials for %s without HTTP',
+    async (command) => {
+      vi.stubEnv('WALLET_API_TOKEN', '')
+      await expect(injectiveCommand([command])).rejects.toThrow(/Missing required credentials/)
+      expect(requests).toHaveLength(0)
+    },
+  )
 
   it('requires instance credentials for owned reads without HTTP', async () => {
     vi.stubEnv('INSTANCE_ID', '')

@@ -162,10 +162,22 @@ function backendError(body: unknown, status?: number, retryAfter?: string): Inje
   const error = record(envelope.error) ? envelope.error : envelope
   const code = typeof error.code === 'string' ? error.code : undefined
   const detail = envelope.data ?? error.data
+  const fields = {
+    ...(typeof error.reason === 'string' ? { reason: error.reason } : {}),
+    ...((typeof error.retryAfterMs === 'number' &&
+      Number.isFinite(error.retryAfterMs) &&
+      error.retryAfterMs >= 0) ||
+    error.retryAfterMs === null
+      ? { retryAfterMs: error.retryAfterMs }
+      : {}),
+  }
+  const structured = Object.keys(fields).length
+    ? { ...(record(detail) ? detail : detail === undefined ? {} : { details: detail }), ...fields }
+    : detail
   const data =
     retryAfter === undefined
-      ? detail
-      : { ...(record(detail) ? detail : { details: detail }), retryAfter }
+      ? structured
+      : { ...(record(structured) ? structured : { details: structured }), retryAfter }
   if (status === 404 && (!code || code === 'NOT_FOUND' || code === 'ROUTE_NOT_FOUND')) {
     return new InjectiveCliError(
       'Injective capability unavailable on this backend. Upgrade the platform backend to enable Injective read APIs.',

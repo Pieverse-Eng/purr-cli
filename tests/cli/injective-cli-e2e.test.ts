@@ -172,12 +172,14 @@ describe('Injective actual CLI routing and output', () => {
   it('renders upstream code and Retry-After without a retry storm', async () => {
     status = 429
     response = {
-      error: { code: 'INJECTIVE_RATE_LIMITED', message: 'Budget exhausted' },
-      data: { retryAfterMs: 9000 },
+      ok: false,
+      error: { code: 'INJECTIVE_RATE_LIMITED', reason: 'rate_limited', retryAfterMs: 1250 },
     }
     const result = await run(['injective', 'status'])
     expect(result.code).toBe(1)
-    expect(result.stderr).toContain('error [INJECTIVE_RATE_LIMITED]: Budget exhausted')
+    expect(result.stderr).toContain('error [INJECTIVE_RATE_LIMITED]')
+    expect(result.stderr).toContain('"reason": "rate_limited"')
+    expect(result.stderr).toContain('"retryAfterMs": 1250')
     expect(result.stderr).toContain('"retryAfter": "9"')
     expect(received).toHaveLength(1)
   })

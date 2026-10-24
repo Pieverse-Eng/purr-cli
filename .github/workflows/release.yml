@@ -67,6 +67,17 @@ jobs:
           fi
           bun build ${{ matrix.entrypoint }} --compile --target=${{ matrix.target }} --outfile ${{ matrix.artifact }} --define "PURR_VERSION='${VERSION}'" ${{ matrix.external }}
 
+      - name: Injective standalone read-only smoke
+        if: >-
+          (runner.os == 'Linux' && runner.arch == 'X64' && matrix.target == 'bun-linux-x64') ||
+          (runner.os == 'macOS' && runner.arch == 'X64' && matrix.target == 'bun-darwin-x64') ||
+          (runner.os == 'macOS' && runner.arch == 'ARM64' && matrix.target == 'bun-darwin-arm64')
+        env:
+          PURR_TEST_BINARY: ${{ github.workspace }}/${{ matrix.artifact }}
+        run: |
+          ./${{ matrix.artifact }} injective --help
+          bun run test tests/cli/injective-cli-e2e.test.ts --maxWorkers=1 --minWorkers=1
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

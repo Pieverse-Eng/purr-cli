@@ -181,4 +181,17 @@ describe('Injective actual CLI routing and output', () => {
     expect(result.stderr).toContain('"retryAfter": "9"')
     expect(received).toHaveLength(1)
   })
+
+  it('preserves an instance-domain 404 without suggesting a backend upgrade', async () => {
+    status = 404
+    response = {
+      ok: false,
+      error: { code: 'INSTANCE_NOT_FOUND', message: 'Current Agent instance is unavailable.' },
+    }
+    const result = await run(['injective', 'status'])
+    expect(result.code).toBe(1)
+    expect(result.stderr).toContain('error [INSTANCE_NOT_FOUND]')
+    expect(result.stderr).not.toMatch(/upgrade/i)
+    expect(received).toHaveLength(1)
+  })
 })

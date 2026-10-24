@@ -443,14 +443,12 @@ it.each([
 ])(
   'keeps the actual platform private-read error (%s)',
   async (httpStatus, code, reason, retryAfterMs) => {
-    const send = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ ok: false, error: { code, reason, retryAfterMs } }), {
-          status: httpStatus as number,
-          headers: { 'retry-after': '2' },
-        }),
-      )
+    const send = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: false, error: { code, reason, retryAfterMs } }), {
+        status: httpStatus as number,
+        headers: { 'retry-after': '2' },
+      }),
+    )
     vi.stubEnv('WALLET_API_URL', 'http://127.0.0.1:1')
     vi.stubEnv('WALLET_API_TOKEN', 'fixture-token')
     vi.stubEnv('INSTANCE_ID', 'fixture-instance')

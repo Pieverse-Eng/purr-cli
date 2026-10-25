@@ -341,8 +341,25 @@ describe('Injective read-only CLI over backend HTTP', () => {
     expect(requests).toHaveLength(0)
   })
 
-  it('fails closed if backend status claims execution is enabled', async () => {
-    payload = { ok: true, data: { mode: 'read_only', executionEnabled: true } }
+  it.each(['status', 'account'])('preserves later backend capabilities in %s', async (command) => {
+    const data = {
+      identity: { walletGeneration: 'gen-1' },
+      mode: 'execution',
+      executionEnabled: true,
+    }
+    payload = { ok: true, data }
+    expect(await injectiveCommand([command])).toEqual(data)
+    expect(requests).toHaveLength(1)
+    expect(requests[0].method).toBe('GET')
+  })
+
+  it.each([
+    null,
+    [],
+    { mode: 'read_only', executionEnabled: 'false' },
+    { mode: null, executionEnabled: false },
+  ])('rejects malformed account capability responses %j', async (data) => {
+    payload = { ok: true, data }
     await expect(injectiveCommand(['status'])).rejects.toMatchObject({
       code: 'INJECTIVE_INVALID_RESPONSE',
     })

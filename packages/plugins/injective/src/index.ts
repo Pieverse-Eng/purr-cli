@@ -411,9 +411,11 @@ export async function injectiveCommand(argv: string[]): Promise<unknown> {
   )
   if (
     (command === 'status' || command === 'account') &&
-    (!record(result) || result.executionEnabled !== false || result.mode !== 'read_only')
+    (!record(result) ||
+      typeof result.executionEnabled !== 'boolean' ||
+      typeof result.mode !== 'string')
   ) {
-    throw new InjectiveCliError('Backend did not confirm Injective read-only mode.', {
+    throw new InjectiveCliError('Invalid Injective account capability response.', {
       code: 'INJECTIVE_INVALID_RESPONSE',
       data: result,
     })

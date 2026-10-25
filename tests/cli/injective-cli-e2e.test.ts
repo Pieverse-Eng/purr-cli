@@ -106,6 +106,29 @@ describe('Injective actual CLI routing and output', () => {
     ])
   })
 
+  it.each(['status', 'account'])(
+    'prints later backend capabilities unchanged for %s',
+    async (command) => {
+      const data = {
+        identity: { walletGeneration: 'gen-2' },
+        mode: 'execution',
+        executionEnabled: true,
+      }
+      response = { ok: true, data }
+      const result = await run(['injective', command])
+      expect(result.code).toBe(0)
+      expect(result.stderr).toBe('')
+      expect(JSON.parse(result.stdout)).toEqual(data)
+      expect(received).toEqual([
+        {
+          path: `/v1/instances/owned-instance/injective/${command}`,
+          method: 'GET',
+          auth: 'Bearer test-token',
+        },
+      ])
+    },
+  )
+
   it('prints text help without credentials or HTTP', async () => {
     const result = await run(['injective', '--help'], { WALLET_API_TOKEN: '', INSTANCE_ID: '' })
     expect(result.code).toBe(0)

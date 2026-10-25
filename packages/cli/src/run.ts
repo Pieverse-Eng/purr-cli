@@ -92,6 +92,7 @@ import {
   hyperliquidHelp,
 } from '@pieverseio/purr-plugin-hyperliquid/index'
 import { LighterCliError, lighterCommand, lighterHelp } from '@pieverseio/purr-plugin-lighter/index'
+import { InjectiveCliError, injectiveCommand } from '@pieverseio/purr-plugin-injective/index'
 import { OrderlyCliError, orderlyCommand, orderlyHelp } from '@pieverseio/purr-plugin-orderly/index'
 import { OseroCliError, oseroCommand, oseroHelp } from '@pieverseio/purr-plugin-vendors/osero'
 import {
@@ -518,6 +519,12 @@ function owsBitgetSigner(
 export async function runPurrCli(options: PurrCliOptions = {}): Promise<void> {
   const [group, command, ...rest] = process.argv.slice(2)
 
+  if (group === 'injective') {
+    const result = await injectiveCommand(process.argv.slice(3))
+    console.log(typeof result === 'string' ? result : JSON.stringify(result))
+    return
+  }
+
   if (group === 'agentkey') {
     await handleAgentKeyCommand(command, rest)
     return
@@ -637,6 +644,7 @@ Groups:
   market            Public trending tokens and their most liquid active pool
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
   lighter           Lighter account, market data, orders, deposits, and withdrawals
+  injective         Injective mainnet read-only markets, account, positions, orders and fills
   orderly           Orderly managed-wallet perpetuals: market data, assets, orders, positions, and TP/SL
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)
@@ -2314,7 +2322,7 @@ Execution:
 
     default:
       throw new Error(
-        `Unknown group: ${group}. Use: market, aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, orderly, execute, config, version, store`,
+        `Unknown group: ${group}. Use: market, aster, binance-onchain-pay, ows-wallet, ows-execute, fourmeme, opensea, osero, predict-fun, pancake, lista, pieverse, pns, .pie, evm, wallet, redpacket, treasure-code, instance, hyperliquid, lighter, injective, orderly, execute, config, version, store`,
       )
   }
 
@@ -2345,6 +2353,12 @@ Execution:
 }
 
 export async function handleCliError(err: unknown, options: PurrCliOptions = {}): Promise<void> {
+  if (err instanceof InjectiveCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
+    process.exit(err.exitCode)
+  }
   if (process.argv[2] === 'agentkey') {
     console.error(formatAgentKeyError(err))
     process.exit(1)

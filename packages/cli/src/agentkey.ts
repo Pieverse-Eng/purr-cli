@@ -238,7 +238,8 @@ export async function handleAgentKeyCommand(
           // Pin the refreshed quote as the ceiling even when the user omitted one.
           maxCredits: flags['max-credits'] ?? quote.price.credits,
         },
-        { timeoutMs: 120_000, redirect: 'error' },
+        // Bun can transparently retransmit a POST when a reused socket closes.
+        { timeoutMs: 120_000, redirect: 'error', keepalive: false },
       )
     }
     console.log(JSON.stringify(result, null, 2))

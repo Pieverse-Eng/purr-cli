@@ -51,6 +51,7 @@ purr <group> <command> [options]
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
+| `injective` | Read-only Injective mainnet markets, account, balances, positions, orders, history, and fills through the platform backend |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, Robinhood/Arc/Soneium Uniswap, and Sui (transfer, Cetus swap, execute) operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
@@ -64,6 +65,79 @@ purr <group> <command> [options]
 | `version` | Print the CLI version |
 
 ### Examples
+
+#### Injective reads
+
+Run `purr injective --help` to check whether the installed CLI supports these
+commands. Public market queries require `WALLET_API_URL` and `WALLET_API_TOKEN`
+(or their `purr config` equivalents); owned account reads also require `INSTANCE_ID`.
+Every request is a backend GET. Account identity comes from the instance's managed
+wallet and default subaccount on Injective mainnet; addresses, subaccounts and
+networks cannot be overridden. These commands need no INJ gas and expose no
+signing, enable, order placement, RFQ, cancel, close, deposit or withdrawal actions.
+
+```bash
+purr injective status
+purr injective account
+purr injective balances
+purr injective positions --limit 50
+purr injective markets --market-type all
+# Use the complete native hash returned by markets, with its exact product.
+purr injective market --market-id "$MARKET_HASH" --market-type perp
+purr injective order-book-depth --market-id "$MARKET_HASH" --market-type perp --limit 20
+purr injective recent-trades --market-id "$MARKET_HASH" --market-type perp --limit 50
+purr injective candles --market-id "$MARKET_HASH" --market-type perp --resolution 1h --start-at 2026-10-01T00:00:00Z --end-at 2026-10-02T00:00:00Z
+purr injective orders --market-type perp --limit 50
+purr injective order-history --market-type spot --limit 50
+purr injective fills --market-type perp --cursor "$NEXT_CURSOR"
+```
+
+Native hashes and product identify markets; identical tickers never select a
+market. Public depth, trades and candles first resolve this exact identity in the
+backend catalog, then use its base and instrument ID. JSON preserves decimal
+strings, denoms, null/unavailable components, freshness, source and coverage.
+`market` returns the catalog envelope with only the exact matching row; `markets`
+retains the full catalog envelope. Account replies unwrap only the outer
+`{ok,data}` API envelope.
+
+Limits are 1–100 (book defaults to 20; trades and account pages to 50). Positions
+are perpetuals only. Orders, order history and fills require `--market-type` and
+accept an optional native `--market-id`. Positions also accept these filters,
+with `--market-type perp` optional. Pass `nextCursor` unchanged with the same
+instance, wallet generation, product, market and time filters; the backend rejects
+stale or mismatched cursors. History defaults to a fixed last seven days on the
+backend; explicit `--start-at`/`--end-at` must be paired RFC3339 timestamps spanning
+at most 31 days. Unknown flags, duplicate flags and positional extras fail before
+network access.
+
+Candles support `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `1d`, with at most 1500
+timeframe buckets per command. The CLI derives a bounded backend `limit` and
+exclusive `to`, then filters candle openings to `[start-at,end-at)`. Server source,
+requested range, next cursor and history coverage metadata remain unchanged;
+missing bars never prove that no trades occurred.
+
+Failures exit nonzero with `error [CODE]: message` on stderr and JSON details when
+provided. HTTP 429 preserves `retryAfter` and backend retry metadata without
+automatic retries. A missing route on an older backend reports
+`INJECTIVE_CAPABILITY_UNAVAILABLE` with upgrade guidance. Upstream failures and
+unknown markets are errors rather than empty collections. The status/account
+commands validate the capability field types and preserve the backend values.
+The CLI exposes only Injective reads, even if a later backend reports execution
+capabilities.
+
+Release gate: this source PR does not publish a new CLI. After CI and standalone
+Linux/macOS smoke pass, an explicitly authorized release must choose an unused
+version above `v0.2.69`, update versions using the repository convention, and tag
+that exact commit. Only then may hosted skills and runtime images pin the release.
+
+For relevant source, package and workflow changes, PR CI builds a Linux candidate
+and runs Injective and AgentKey contracts through the actual binary. Ordinary CI
+does not upload candidate artifacts. Use the manual Release workflow with
+`skip_release=true` to build downloadable candidates and run native binary checks
+without publishing a release or rolling tenants. Native binary checks are
+separate from cross-platform compilation.
+
+#### Wallet and venue examples
 
 Hosted research can use `purr wallet uniswap` quotes with
 `FX_PLATFORM_UNISWAP_QUOTE_URL` and `FX_PLATFORM_QUOTE_TOKEN`, supplied by the

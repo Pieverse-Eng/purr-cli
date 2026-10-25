@@ -23,6 +23,7 @@
         "@pieverseio/purr-plugin-balancer": "workspace:*",
         "@pieverseio/purr-plugin-evm": "workspace:*",
         "@pieverseio/purr-plugin-hyperliquid": "workspace:*",
+        "@pieverseio/purr-plugin-injective": "workspace:*",
         "@pieverseio/purr-plugin-lighter": "workspace:*",
         "@pieverseio/purr-plugin-orderly": "workspace:*",
         "@pieverseio/purr-plugin-ows": "workspace:*",
@@ -58,6 +59,13 @@
     "packages/plugins/hyperliquid": {
       "name": "@pieverseio/purr-plugin-hyperliquid",
       "version": "0.2.66",
+      "dependencies": {
+        "@pieverseio/purr-core": "workspace:*",
+      },
+    },
+    "packages/plugins/injective": {
+      "name": "@pieverseio/purr-plugin-injective",
+      "version": "0.2.69",
       "dependencies": {
         "@pieverseio/purr-core": "workspace:*",
       },
@@ -216,6 +224,8 @@
     "@pieverseio/purr-plugin-evm": ["@pieverseio/purr-plugin-evm@workspace:packages/plugins/evm"],
 
     "@pieverseio/purr-plugin-hyperliquid": ["@pieverseio/purr-plugin-hyperliquid@workspace:packages/plugins/hyperliquid"],
+
+    "@pieverseio/purr-plugin-injective": ["@pieverseio/purr-plugin-injective@workspace:packages/plugins/injective"],
 
     "@pieverseio/purr-plugin-lighter": ["@pieverseio/purr-plugin-lighter@workspace:packages/plugins/lighter"],
 

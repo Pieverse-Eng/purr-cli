@@ -28,6 +28,10 @@ export default defineConfig({
         replacement: fromRoot('./packages/plugins/lighter/src/$1.ts'),
       },
       {
+        find: /^@pieverseio\/purr-plugin-injective\/(.+)$/,
+        replacement: fromRoot('./packages/plugins/injective/src/$1.ts'),
+      },
+      {
         find: /^@pieverseio\/purr-plugin-pieverse-card\/(.+)$/,
         replacement: fromRoot('./packages/plugins/pieverse-card/src/$1.ts'),
       },

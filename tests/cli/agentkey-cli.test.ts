@@ -62,16 +62,23 @@ async function harness(handler?: Handler) {
   const url = `http://127.0.0.1:${address.port}`
   const run = (args: string[], entry = 'linux-macos') =>
     new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn('bun', ['run', `packages/cli/src/${entry}.ts`, 'agentkey', ...args], {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          WALLET_API_URL: url,
-          WALLET_API_TOKEN: 'test-instance-token',
-          INSTANCE_ID: instanceId,
+      const binary = entry === 'linux-macos' ? process.env.PURR_TEST_BINARY : undefined
+      const child = spawn(
+        binary ?? 'bun',
+        binary
+          ? ['agentkey', ...args]
+          : ['run', `packages/cli/src/${entry}.ts`, 'agentkey', ...args],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            WALLET_API_URL: url,
+            WALLET_API_TOKEN: 'test-instance-token',
+            INSTANCE_ID: instanceId,
+          },
+          stdio: ['ignore', 'pipe', 'pipe'],
         },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      })
+      )
       let stdout = ''
       let stderr = ''
       child.stdout.on('data', (chunk) => {

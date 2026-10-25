@@ -121,18 +121,21 @@ provided. HTTP 429 preserves `retryAfter` and backend retry metadata without
 automatic retries. A missing route on an older backend reports
 `INJECTIVE_CAPABILITY_UNAVAILABLE` with upgrade guidance. Upstream failures and
 unknown markets are errors rather than empty collections. The status/account
-commands reject a backend response that does not confirm `executionEnabled:false`
-and `mode:read_only`.
+commands validate the capability field types and preserve the backend values.
+The CLI exposes only Injective reads, even if a later backend reports execution
+capabilities.
 
 Release gate: this source PR does not publish a new CLI. After CI and standalone
 Linux/macOS smoke pass, an explicitly authorized release must choose an unused
 version above `v0.2.69`, update versions using the repository convention, and tag
 that exact commit. Only then may hosted skills and runtime images pin the release.
 
-PR CI builds a Linux candidate and runs Injective and AgentKey contracts through
-the actual binary before retaining it with checkout/head provenance and a SHA-256
-digest for 14 days. This candidate can qualify a backend without a release tag or
-tenant rollout. Native binary checks are separate from cross-platform compilation.
+For relevant source, package and workflow changes, PR CI builds a Linux candidate
+and runs Injective and AgentKey contracts through the actual binary. Ordinary CI
+does not upload candidate artifacts. Use the manual Release workflow with
+`skip_release=true` to build downloadable candidates and run native binary checks
+without publishing a release or rolling tenants. Native binary checks are
+separate from cross-platform compilation.
 
 #### Wallet and venue examples
 

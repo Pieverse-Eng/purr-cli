@@ -394,6 +394,60 @@ describe('Injective read-only CLI over backend HTTP', () => {
     })
   })
 
+  it('distinguishes an absent exact identity from a source outage using the complete product catalog', async () => {
+    handler = (url, res) => {
+      const data = url.searchParams.has('ids')
+        ? {
+            ...catalog(),
+            data: null,
+            missing: [ID],
+            meta: { status: 'unavailable', completeness: 'partial' },
+          }
+        : { ...catalog(), data: [row('perp', OTHER_HASH)] }
+      res.end(JSON.stringify({ ok: true, data }))
+    }
+    await expect(injectiveCommand(['market', ...marketArgs])).rejects.toMatchObject({
+      code: 'MARKET_NOT_FOUND',
+    })
+  })
+
+  it('does not claim a market is absent when product coverage is partial', async () => {
+    handler = (url, res) => {
+      const data = url.searchParams.has('ids')
+        ? {
+            ...catalog(),
+            data: null,
+            missing: [ID],
+            meta: { status: 'unavailable', completeness: 'partial' },
+          }
+        : {
+            ...catalog(),
+            data: [row('perp', OTHER_HASH)],
+            meta: { status: 'fresh', completeness: 'partial' },
+          }
+      res.end(JSON.stringify({ ok: true, data }))
+    }
+    await expect(injectiveCommand(['market', ...marketArgs])).rejects.toMatchObject({
+      code: 'INJECTIVE_SOURCE_UNAVAILABLE',
+    })
+  })
+
+  it('explains an old backend rejecting the locally validated Injective catalog query', async () => {
+    status = 400
+    payload = {
+      ok: false,
+      error: {
+        code: 'INVALID_QUERY',
+        message: 'A valid native venue and environment are required.',
+      },
+    }
+    await expect(injectiveCommand(['markets', '--market-type=perp'])).rejects.toMatchObject({
+      code: 'INJECTIVE_CAPABILITY_UNAVAILABLE',
+      status: 400,
+    })
+    await expect(injectiveCommand(['positions'])).rejects.toMatchObject({ code: 'INVALID_QUERY' })
+  })
+
   it('does not retry or substitute an empty collection on upstream HTTP failures', async () => {
     status = 503
     payload = {

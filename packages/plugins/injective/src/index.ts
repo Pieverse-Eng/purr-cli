@@ -200,13 +200,21 @@ async function get(path: string, params: Query = {}): Promise<unknown> {
   try {
     const response = await apiGet<unknown>(`${path}${query.size ? `?${query}` : ''}`, {
       timeoutMs: 20_000,
+      keepalive: false,
     })
     if (!record(response) || response.ok !== true || response.data === undefined)
       throw backendError(response)
     return response.data
   } catch (error) {
-    if (error instanceof ApiClientError)
-      throw backendError(error.body, error.status, error.retryAfter)
+    if (error instanceof ApiClientError) {
+      const failure = backendError(error.body, error.status, error.retryAfter)
+      if (path === CATALOG_PATH && error.status === 400 && failure.code === 'INVALID_QUERY')
+        throw new InjectiveCliError(
+          'This backend does not accept the Injective catalog query. Upgrade the platform backend to enable Injective read APIs.',
+          { code: 'INJECTIVE_CAPABILITY_UNAVAILABLE', status: error.status, data: failure.data },
+        )
+      throw failure
+    }
     if (error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)) {
       throw new InjectiveCliError('Injective backend request timed out after 20s.', {
         code: 'INJECTIVE_REQUEST_TIMEOUT',
@@ -240,11 +248,38 @@ async function exactMarket(
       data: catalog,
     })
   }
-  if (catalog.data === null)
+  if (catalog.data === null) {
+    // An exact miss has no observation clock. Prove absence from a fresh complete
+    // product catalog; missing[] alone is not authority when coverage is unknown.
+    if (Array.isArray(catalog.missing) && catalog.missing.includes(id)) {
+      const full = await get(CATALOG_PATH, {
+        venue: 'injective',
+        environment: 'mainnet',
+        product: marketType,
+      })
+      if (
+        record(full) &&
+        record(full.identity) &&
+        full.identity.venue === 'injective' &&
+        full.identity.environment === 'mainnet' &&
+        Array.isArray(full.data) &&
+        record(full.meta) &&
+        full.meta.status === 'fresh' &&
+        full.meta.completeness === 'complete' &&
+        !full.data.some(
+          (item) => record(item) && (item.id === id || item.nativeMarketId === marketId),
+        )
+      )
+        throw new InjectiveCliError(
+          'Exact native Injective market not found. Query markets and use its native hash and product.',
+          { code: 'MARKET_NOT_FOUND', data: catalog },
+        )
+    }
     throw new InjectiveCliError('Injective market catalog is unavailable.', {
       code: 'INJECTIVE_SOURCE_UNAVAILABLE',
       data: catalog,
     })
+  }
   if (!Array.isArray(catalog.data))
     throw new InjectiveCliError('Invalid Injective catalog.', {
       code: 'INJECTIVE_INVALID_RESPONSE',

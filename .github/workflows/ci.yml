@@ -26,3 +26,29 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Build Linux CLI candidate
+        run: >-
+          bun build packages/cli/src/linux-macos.ts --compile --target=bun-linux-x64
+          --outfile "$RUNNER_TEMP/purr" --define "PURR_VERSION='dev-${GITHUB_SHA}'"
+
+      - name: Test the actual CLI candidate
+        env:
+          PURR_TEST_BINARY: ${{ runner.temp }}/purr
+        run: bun run test tests/cli/injective-cli-e2e.test.ts tests/cli/agentkey-cli.test.ts --maxWorkers=1 --minWorkers=1
+
+      - name: Record candidate provenance
+        env:
+          CANDIDATE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          sha256sum "$RUNNER_TEMP/purr" > "$RUNNER_TEMP/purr.sha256"
+          node -e 'require("fs").writeFileSync(process.env.RUNNER_TEMP + "/purr-provenance.json", JSON.stringify({sourceHead:process.env.CANDIDATE_HEAD_SHA,checkoutSha:process.env.GITHUB_SHA,runId:process.env.GITHUB_RUN_ID},null,2))'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: purr-linux-x64-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/purr
+            ${{ runner.temp }}/purr.sha256
+            ${{ runner.temp }}/purr-provenance.json
+          retention-days: 14

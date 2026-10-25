@@ -129,6 +129,11 @@ Linux/macOS smoke pass, an explicitly authorized release must choose an unused
 version above `v0.2.69`, update versions using the repository convention, and tag
 that exact commit. Only then may hosted skills and runtime images pin the release.
 
+PR CI builds a Linux candidate and runs Injective and AgentKey contracts through
+the actual binary before retaining it with checkout/head provenance and a SHA-256
+digest for 14 days. This candidate can qualify a backend without a release tag or
+tenant rollout. Native binary checks are separate from cross-platform compilation.
+
 #### Wallet and venue examples
 
 Hosted research can use `purr wallet uniswap` quotes with

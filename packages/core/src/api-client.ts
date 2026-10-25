@@ -72,6 +72,7 @@ export interface ApiRequestOptions {
   headers?: Record<string, string>
   timeoutMs?: number
   redirect?: RequestRedirect
+  keepalive?: boolean
 }
 
 export class ApiClientError extends Error {
@@ -191,6 +192,7 @@ export async function apiGet<T = unknown>(
       ...options.headers,
     },
     signal: requestSignal(options.timeoutMs),
+    keepalive: options.keepalive,
   })
 
   if (!res.ok) {
@@ -226,6 +228,7 @@ export async function apiPost<T = unknown>(
     body: JSON.stringify(body),
     signal: requestSignal(options.timeoutMs),
     redirect: options.redirect,
+    keepalive: options.keepalive,
   })
 
   if (!res.ok) {

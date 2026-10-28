@@ -1,4 +1,10 @@
-import { ApiClientError, apiGet, resolveCredentials } from '@pieverseio/purr-core/api-client'
+import {
+  ApiClientError,
+  apiGet,
+  apiPost,
+  resolveCredentials,
+} from '@pieverseio/purr-core/api-client'
+import { readFileSync, statSync } from 'node:fs'
 
 type JsonRecord = Record<string, unknown>
 type Query = Record<string, string | number | undefined>
@@ -39,14 +45,43 @@ Markets require exact native 0x + 64-hex hash and product; symbols are never sel
 Default limits: book 20; trades, positions and records 50. Candles: at most 1500 buckets.
 History defaults to the backend's fixed last 7 days; explicit windows are at most 31 days.
 Reuse cursors only with the same instance, wallet generation, product, market and time filters.
-Execution is unavailable. No signing, orders, transfers or gas are needed for these reads.`
+Read commands do not broadcast. Trading is backend-gated and the Agent wallet pays INJ gas.
+
+Native perpetual trading (local drafts until --execute true):
+  readiness --market-id <hash>
+  management --market-id <hash>
+  order --market-id <hash> --kind limit|market --side buy|sell --quantity <decimal> --price <worst-or-limit> --margin <USDC> --max-fee-inj <decimal> [--review-file <json>]
+  cancel --market-id <hash> --order-hash <hash> --max-fee-inj <decimal>
+  close --market-id <hash> --side buy|sell --quantity <decimal> --price <worst> --max-fee-inj <decimal> [--review-file <json>]
+  protection --market-id <hash> --quantity <decimal> --review-file <json> --max-fee-inj <decimal> [--stop-loss-kind market|limit --stop-loss-trigger <price> --stop-loss-price <price>] [--take-profit-kind market|limit --take-profit-trigger <price> --take-profit-price <price>]
+  replace --market-id <hash> --order-hash <hash> --quantity <decimal> --price <price> --margin <decimal> --reduce-only true|false --review-file <json> --max-fee-inj <decimal>
+  cancel-batch --market-id <hash> --review-file <json> --max-fee-inj <decimal>
+  margin --market-id <hash> --direction add|remove --amount <USDC> --review-file <json> --max-fee-inj <decimal>
+  request --request-id <original-id-or-key> [--by id|idempotency-key]
+  funding [--market-id <hash>] [--start-at <rfc3339> --end-at <rfc3339>] [--limit <n>] [--cursor <opaque>]
+
+RFQ (same native position and execution journal):
+  rfq authorization --market-id <hash>
+  rfq preview --market-id <hash> --direction long|short --quantity <decimal> --margin <decimal> --worst-price <price> --wallet-generation <hash>
+  rfq setup --market-id <hash> --permissions <comma-separated-type-URLs> --expires-at <unix-seconds> --acknowledge-broad-authority true --authorization-state-hash <hash> --max-fee-inj <decimal>
+  rfq revoke --market-id <hash> --permissions <comma-separated-type-URLs> --authorization-state-hash <hash> --max-fee-inj <decimal>
+  rfq accept --market-id <hash> --bundle-file <json> --intent open|reduce --maximum-settlement-fee <USDC> --review-file <json> --authorization-state-hash <hash> --max-fee-inj <decimal>
+
+Every execution additionally requires --wallet-generation <hash> --idempotency-key <original-key> --execute true.
+Review JSON contains stateHash and an explicit cancelOrderHashes array; no implicit cancel-all.
+Bundle JSON is the preview's settlement object, preserving original signed decimal strings.
+Generic RFQ authorization has broad bank/exchange authority; finite expiry is not a spending cap.
+Unknown outcomes: query request with the original key; never retry with a new key or quote.
+Positions/orders/order-history/fills accept --view accounting-v1 for qualified accounting facts.`
 
 export function injectiveHelp(): string {
   return USAGE
 }
 
 const MARKET_OPTIONS = ['market-id', 'market-type']
-const PAGE_OPTIONS = [...MARKET_OPTIONS, 'limit', 'cursor']
+const PAGE_OPTIONS = [...MARKET_OPTIONS, 'limit', 'cursor', 'view']
+const WRITE_COMMON = ['market-id', 'max-fee-inj', 'wallet-generation', 'idempotency-key', 'execute']
+const RFQ_COMMON = [...WRITE_COMMON, 'authorization-state-hash']
 const OPTIONS: Record<string, readonly string[]> = {
   status: [],
   account: [],
@@ -60,6 +95,47 @@ const OPTIONS: Record<string, readonly string[]> = {
   orders: PAGE_OPTIONS,
   'order-history': [...PAGE_OPTIONS, 'start-at', 'end-at'],
   fills: [...PAGE_OPTIONS, 'start-at', 'end-at'],
+  funding: [...PAGE_OPTIONS.filter((name) => name !== 'view'), 'start-at', 'end-at'],
+  readiness: ['market-id'],
+  management: ['market-id'],
+  request: ['request-id', 'by'],
+  order: [...WRITE_COMMON, 'kind', 'side', 'quantity', 'price', 'margin', 'review-file'],
+  cancel: [...WRITE_COMMON, 'order-hash'],
+  close: [...WRITE_COMMON, 'side', 'quantity', 'price', 'review-file'],
+  protection: [
+    ...WRITE_COMMON,
+    'quantity',
+    'review-file',
+    'stop-loss-kind',
+    'stop-loss-trigger',
+    'stop-loss-price',
+    'take-profit-kind',
+    'take-profit-trigger',
+    'take-profit-price',
+  ],
+  replace: [
+    ...WRITE_COMMON,
+    'order-hash',
+    'quantity',
+    'price',
+    'margin',
+    'reduce-only',
+    'review-file',
+  ],
+  'cancel-batch': [...WRITE_COMMON, 'review-file'],
+  margin: [...WRITE_COMMON, 'direction', 'amount', 'review-file'],
+  'rfq/authorization': ['market-id'],
+  'rfq/preview': [
+    'market-id',
+    'direction',
+    'quantity',
+    'margin',
+    'worst-price',
+    'wallet-generation',
+  ],
+  'rfq/setup': [...RFQ_COMMON, 'permissions', 'expires-at', 'acknowledge-broad-authority'],
+  'rfq/revoke': [...RFQ_COMMON, 'permissions'],
+  'rfq/accept': [...RFQ_COMMON, 'bundle-file', 'intent', 'maximum-settlement-fee', 'review-file'],
 }
 const TIMEFRAMES: Record<string, number> = {
   '1m': 60_000,
@@ -104,7 +180,7 @@ function product(value: string | undefined, required = false): string | undefine
 
 function marketHash(value: string | undefined, required = false): string | undefined {
   if (value === undefined && !required) return undefined
-  if (!value || !/^0x[0-9a-fA-F]{64}$/.test(value))
+  if (!value || !/^0x[0-9a-fA-F]{64}(?![\s\S])/.test(value))
     invalid('--market-id must be a native 0x + 64-hex market hash')
   return value
 }
@@ -180,7 +256,7 @@ function backendError(body: unknown, status?: number, retryAfter?: string): Inje
       : { ...(record(structured) ? structured : { details: structured }), retryAfter }
   if (status === 404 && (!code || code === 'NOT_FOUND' || code === 'ROUTE_NOT_FOUND')) {
     return new InjectiveCliError(
-      'Injective capability unavailable on this backend. Upgrade the platform backend to enable Injective read APIs.',
+      'Injective capability unavailable on this backend. Upgrade the platform backend to enable this Injective API.',
       { code: 'INJECTIVE_CAPABILITY_UNAVAILABLE', status, data },
     )
   }
@@ -202,6 +278,12 @@ async function get(path: string, params: Query = {}): Promise<unknown> {
       timeoutMs: 20_000,
       keepalive: false,
     })
+    if (
+      record(response) &&
+      response.code === 'POLICY_DEFERRED' &&
+      typeof response.reason === 'string'
+    )
+      return response
     if (!record(response) || response.ok !== true || response.data === undefined)
       throw backendError(response)
     return response.data
@@ -225,6 +307,214 @@ async function get(path: string, params: Query = {}): Promise<unknown> {
 }
 
 const CATALOG_PATH = '/v1/market-data/reference/terminal/instruments'
+
+function required(args: Record<string, string>, name: string): string {
+  return args[name] || invalid(`Missing --${name}`)
+}
+function choice(args: Record<string, string>, name: string, values: readonly string[]): string {
+  const value = required(args, name)
+  if (!values.includes(value)) invalid(`--${name} must be ${values.join(' or ')}`)
+  return value
+}
+function amount(args: Record<string, string>, name: string, zero = false): string {
+  const value = required(args, name)
+  if (!/^(?:0|[1-9]\d{0,31})(?:\.\d{0,17}[1-9])?(?![\s\S])/.test(value) || (!zero && value === '0'))
+    invalid(
+      `--${name} must be an exact ${zero ? 'nonnegative' : 'positive'} decimal without trailing zeros`,
+    )
+  return value
+}
+function hexBinding(args: Record<string, string>, name: string): string {
+  const value = required(args, name)
+  if (!/^[a-f0-9]{64}(?![\s\S])/.test(value)) invalid(`--${name} must be the reviewed 64-hex value`)
+  return value
+}
+function jsonFile(args: Record<string, string>, name: string): JsonRecord {
+  try {
+    const path = required(args, name),
+      stat = statSync(path)
+    if (!stat.isFile() || stat.size > 60000)
+      invalid(`--${name} requires a JSON file of at most 60000 bytes`)
+    const value: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    if (!record(value)) invalid(`--${name} requires a JSON object`)
+    return value
+  } catch (cause) {
+    if (cause instanceof InjectiveCliError) throw cause
+    return invalid(`Cannot read valid JSON from --${name}`)
+  }
+}
+function reviewed(args: Record<string, string>): JsonRecord {
+  const value = jsonFile(args, 'review-file')
+  if (
+    Object.keys(value).some((key) => !['stateHash', 'cancelOrderHashes'].includes(key)) ||
+    typeof value.stateHash !== 'string' ||
+    !/^[a-f0-9]{64}(?![\s\S])/.test(value.stateHash) ||
+    !Array.isArray(value.cancelOrderHashes) ||
+    value.cancelOrderHashes.length > 32 ||
+    value.cancelOrderHashes.some(
+      (hash) => typeof hash !== 'string' || !/^0x[0-9a-f]{64}(?![\s\S])/.test(hash),
+    ) ||
+    new Set(value.cancelOrderHashes).size !== value.cancelOrderHashes.length
+  )
+    invalid('Review must contain the current stateHash and explicit unique cancelOrderHashes only')
+  return value
+}
+function businessBody(command: string, args: Record<string, string>): JsonRecord {
+  const body: JsonRecord = {
+    marketId: marketHash(args['market-id'], true)?.toLowerCase(),
+    maxFeeInj: amount(args, 'max-fee-inj'),
+  }
+  if (args['review-file'] !== undefined) body.review = reviewed(args)
+  if (
+    ['protection', 'replace', 'cancel-batch', 'margin', 'rfq/accept'].includes(command) &&
+    body.review === undefined
+  )
+    invalid(
+      'This operation requires --review-file with the current native state and explicit cancellation scope',
+    )
+  if (['order', 'close', 'replace', 'protection'].includes(command))
+    body.quantity = amount(args, 'quantity')
+  if (['order', 'close', 'replace'].includes(command)) body.price = amount(args, 'price')
+  if (['order', 'close'].includes(command)) body.side = choice(args, 'side', ['buy', 'sell'])
+  if (command === 'order') {
+    body.kind = choice(args, 'kind', ['limit', 'market'])
+    body.margin = amount(args, 'margin')
+  }
+  if (['cancel', 'replace'].includes(command))
+    body.orderHash = marketHash(required(args, 'order-hash'), true)?.toLowerCase()
+  if (command === 'replace') {
+    body.margin = amount(args, 'margin', true)
+    body.reduceOnly = choice(args, 'reduce-only', ['true', 'false']) === 'true'
+  }
+  if (command === 'protection') {
+    for (const [flag, key] of [
+      ['stop-loss', 'stopLoss'],
+      ['take-profit', 'takeProfit'],
+    ] as const) {
+      if (['kind', 'trigger', 'price'].some((part) => args[`${flag}-${part}`] !== undefined))
+        body[key] = {
+          kind: choice(args, `${flag}-kind`, ['market', 'limit']),
+          triggerPrice: amount(args, `${flag}-trigger`),
+          price: amount(args, `${flag}-price`),
+        }
+    }
+    if (!body.stopLoss && !body.takeProfit) invalid('Provide a stop loss or take profit')
+  }
+  if (command === 'margin') {
+    body.direction = choice(args, 'direction', ['add', 'remove'])
+    body.amount = amount(args, 'amount')
+  }
+  if (command.startsWith('rfq/'))
+    body.authorizationStateHash = hexBinding(args, 'authorization-state-hash')
+  if (['rfq/setup', 'rfq/revoke'].includes(command)) {
+    const allowed = [
+      '/cosmos.bank.v1beta1.MsgSend',
+      '/injective.exchange.v2.MsgPrivilegedExecuteContract',
+      '/injective.exchange.v2.MsgBatchUpdateOrders',
+      '/injective.exchange.v2.MsgCreateDerivativeMarketOrder',
+    ]
+    const permissions = required(args, 'permissions').split(',')
+    if (
+      !permissions.length ||
+      permissions.some((value) => !allowed.includes(value)) ||
+      new Set(permissions).size !== permissions.length
+    )
+      invalid('Provide unique official RFQ permission type URLs')
+    body.permissions = permissions
+    if (command === 'rfq/setup') {
+      const expires = required(args, 'expires-at')
+      if (
+        !/^[1-9]\d{0,15}(?![\s\S])/.test(expires) ||
+        BigInt(expires) > BigInt(Number.MAX_SAFE_INTEGER)
+      )
+        invalid('--expires-at must be finite Unix seconds')
+      body.expiresAt = expires
+      if (args['acknowledge-broad-authority'] !== 'true')
+        invalid('RFQ setup requires --acknowledge-broad-authority true')
+      body.acknowledgeBroadAuthority = true
+    }
+  }
+  if (command === 'rfq/accept') {
+    const bundle = jsonFile(args, 'bundle-file')
+    if (
+      Object.keys(bundle).some((key) => !['request', 'quotes'].includes(key)) ||
+      !record(bundle.request) ||
+      !Array.isArray(bundle.quotes) ||
+      !bundle.quotes.length ||
+      bundle.quotes.length > 25
+    )
+      invalid('--bundle-file must contain the original preview settlement request and quotes')
+    body.bundle = bundle
+    body.intent = choice(args, 'intent', ['open', 'reduce'])
+    body.maximumSettlementFee = amount(args, 'maximum-settlement-fee', true)
+  }
+  return body
+}
+async function postBusiness(
+  operation: string,
+  body: JsonRecord,
+  args: Record<string, string>,
+  execution: boolean,
+): Promise<unknown> {
+  const generation = hexBinding(args, 'wallet-generation')
+  const key = execution ? required(args, 'idempotency-key') : undefined
+  if (key !== undefined && !/^[A-Za-z0-9._:-]{1,128}(?![\s\S])/.test(key))
+    invalid('Invalid --idempotency-key')
+  const { instanceId } = resolveCredentials()
+  const recovery =
+    key === undefined
+      ? undefined
+      : {
+          originalKey: key,
+          command: `purr injective request --request-id ${key} --by idempotency-key`,
+        }
+  try {
+    const response = await apiPost<unknown>(
+      `/v1/instances/${encodeURIComponent(instanceId)}/injective/${operation}`,
+      body,
+      {
+        headers: {
+          'X-Terminal-Connection-Version': generation,
+          ...(key === undefined ? {} : { 'Idempotency-Key': key }),
+        },
+        timeoutMs: 20000,
+        keepalive: false,
+        redirect: 'error',
+      },
+    )
+    if (
+      record(response) &&
+      response.code === 'POLICY_DEFERRED' &&
+      typeof response.reason === 'string'
+    )
+      return response
+    if (!record(response) || response.ok !== true || response.data === undefined)
+      throw backendError(response)
+    return response.data
+  } catch (cause) {
+    if (cause instanceof ApiClientError) {
+      const failure = backendError(cause.body, cause.status, cause.retryAfter)
+      throw new InjectiveCliError(failure.message, {
+        code: failure.code,
+        status: failure.status,
+        data: {
+          ...(record(failure.data) ? failure.data : { details: failure.data }),
+          ...(recovery ? { recovery } : {}),
+        },
+      })
+    }
+    if (cause instanceof InjectiveCliError) throw cause
+    throw new InjectiveCliError(
+      execution
+        ? 'Execution response unavailable. Query the original request; do not submit a replacement.'
+        : 'RFQ preview unavailable.',
+      {
+        code: execution ? 'INJECTIVE_OUTCOME_UNKNOWN' : 'INJECTIVE_REQUEST_TIMEOUT',
+        data: recovery ? { recovery } : undefined,
+      },
+    )
+  }
+}
 
 async function exactMarket(
   marketId: string,
@@ -309,19 +599,60 @@ async function exactMarket(
 }
 
 export async function injectiveCommand(argv: string[]): Promise<unknown> {
-  const [command = 'help', ...rest] = argv
+  let [command = 'help', ...rest] = argv
+  if (command === 'rfq') {
+    const [action, ...options] = rest
+    if (!action || ['help', '--help', '-h'].includes(action)) return injectiveHelp()
+    command = `rfq/${action}`
+    rest = options
+  }
   if (['help', '--help', '-h'].includes(command)) {
     parseOptions(rest, [])
     return injectiveHelp()
   }
   if (!Object.hasOwn(OPTIONS, command)) {
     throw new InjectiveCliError(
-      `Unsupported Injective command: ${command}. Injective is read-only; use purr injective --help.`,
-      { code: 'INJECTIVE_READ_ONLY' },
+      `Unsupported Injective command: ${command}. Use purr injective --help.`,
+      { code: 'INJECTIVE_INVALID_ARGUMENT' },
     )
   }
   const args = parseOptions(rest, OPTIONS[command])
   if (args.help) return injectiveHelp()
+
+  if (['readiness', 'management', 'rfq/authorization', 'request'].includes(command)) {
+    const { instanceId } = resolveCredentials()
+    const prefix = `/v1/instances/${encodeURIComponent(instanceId)}/injective/`
+    if (command === 'request') {
+      const id = required(args, 'request-id')
+      if (!/^[A-Za-z0-9._:-]{1,128}$/.test(id)) invalid('Invalid original request reference')
+      if (args.by !== undefined && !['id', 'idempotency-key'].includes(args.by))
+        invalid('--by must be id or idempotency-key')
+      return get(prefix + `requests/${encodeURIComponent(id)}`, {
+        by: args.by === 'idempotency-key' ? args.by : undefined,
+      })
+    }
+    return get(prefix + (command === 'rfq/authorization' ? 'rfq-authorization' : command), {
+      marketId: marketHash(args['market-id'], true)?.toLowerCase(),
+    })
+  }
+  if (command === 'rfq/preview') {
+    const body = {
+      marketId: marketHash(args['market-id'], true)?.toLowerCase(),
+      direction: choice(args, 'direction', ['long', 'short']),
+      quantity: amount(args, 'quantity'),
+      margin: amount(args, 'margin', true),
+      worstPrice: amount(args, 'worst-price'),
+    }
+    return postBusiness('rfq/preview', body, args, false)
+  }
+  if (WRITE_COMMON.every((option) => OPTIONS[command].includes(option))) {
+    const body = businessBody(command, args)
+    if (args.execute !== undefined && !['true', 'false'].includes(args.execute))
+      invalid('--execute must be true or false')
+    const operation = command.replace('rfq/', 'rfq-')
+    if (args.execute !== 'true') return { executionEnabled: false, operation, body }
+    return postBusiness(operation, body, args, true)
+  }
 
   if (command === 'markets') {
     const marketType = args['market-type'] === 'all' ? undefined : product(args['market-type'])
@@ -381,11 +712,15 @@ export async function injectiveCommand(argv: string[]): Promise<unknown> {
   }
 
   const query: Query = {}
-  if (['positions', 'orders', 'order-history', 'fills'].includes(command)) {
-    const marketType = product(args['market-type'], command !== 'positions')
-    if (command === 'positions' && marketType === 'spot')
+  if (['positions', 'orders', 'order-history', 'fills', 'funding'].includes(command)) {
+    const marketType = product(args['market-type'], !['positions', 'funding'].includes(command))
+    if (['positions', 'funding'].includes(command) && marketType === 'spot')
       invalid('Injective positions support only --market-type perp')
-    query.product = command === 'positions' ? 'perp' : marketType
+    query.product = ['positions', 'funding'].includes(command) ? 'perp' : marketType
+    if (args.view !== undefined) {
+      if (args.view !== 'accounting-v1') invalid('--view must be accounting-v1')
+      query.view = args.view
+    }
     query.marketId = marketHash(args['market-id'])
     query.limit = limit(args.limit, 50)
     if (args.cursor !== undefined) {
@@ -393,7 +728,7 @@ export async function injectiveCommand(argv: string[]): Promise<unknown> {
         invalid('--cursor must be an opaque value of at most 20000 characters')
       query.cursor = args.cursor
     }
-    if (command === 'order-history' || command === 'fills') {
+    if (['order-history', 'fills', 'funding'].includes(command)) {
       const range = timeRange(args)
       if (
         range.from !== undefined &&

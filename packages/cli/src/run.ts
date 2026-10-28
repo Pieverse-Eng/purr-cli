@@ -644,7 +644,7 @@ Groups:
   market            Public trending tokens and their most liquid active pool
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
   lighter           Lighter account, market data, orders, deposits, and withdrawals
-  injective         Injective mainnet read-only markets, account, positions, orders and fills
+  injective         Injective mainnet markets, account, native trading and RFQ
   orderly           Orderly managed-wallet perpetuals: market data, assets, orders, positions, and TP/SL
   execute           Execute on-chain steps from a JSON file
   evm               EVM primitives (approve, transfer, raw)

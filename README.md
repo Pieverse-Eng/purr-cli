@@ -51,7 +51,7 @@ purr <group> <command> [options]
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
-| `injective` | Read-only Injective mainnet markets, account, balances, positions, orders, history, and fills through the platform backend |
+| `injective` | Injective market/account reads, native perpetual order management and RFQ through the platform backend |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, Robinhood/Arc/Soneium Uniswap, and Sui (transfer, Cetus swap, execute) operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
@@ -73,8 +73,9 @@ commands. Public market queries require `WALLET_API_URL` and `WALLET_API_TOKEN`
 (or their `purr config` equivalents); owned account reads also require `INSTANCE_ID`.
 Every request is a backend GET. Account identity comes from the instance's managed
 wallet and default subaccount on Injective mainnet; addresses, subaccounts and
-networks cannot be overridden. These commands need no INJ gas and expose no
-signing, enable, order placement, RFQ, cancel, close, deposit or withdrawal actions.
+networks cannot be overridden. These GET commands need no INJ gas. The candidate
+trading commands below use the same backend and require an enabled, qualified
+backend; account read availability does not authorize trading.
 
 ```bash
 purr injective status
@@ -122,13 +123,48 @@ automatic retries. A missing route on an older backend reports
 `INJECTIVE_CAPABILITY_UNAVAILABLE` with upgrade guidance. Upstream failures and
 unknown markets are errors rather than empty collections. The status/account
 commands validate the capability field types and preserve the backend values.
-The CLI exposes only Injective reads, even if a later backend reports execution
-capabilities.
+#### Injective native trading candidate
 
-Release gate: this source PR does not publish a new CLI. After CI and standalone
-Linux/macOS smoke pass, an explicitly authorized release must choose an unused
-version above `v0.2.69`, update versions using the repository convention, and tag
-that exact commit. Only then may hosted skills and runtime images pin the release.
+This source candidate collects Phase3–6 commands for one later PURR release.
+It does not publish a binary, update a version/tag or activate a backend. Native
+execution remains disabled until backend acceptance. The existing Agent wallet
+pays INJ gas; the CLI never uses a sponsored Gateway or directly signs/broadcasts.
+
+Use `purr injective --help` for exact flags. `order`, `cancel`, `close`,
+`protection`, `replace`, `cancel-batch`, `margin`, `rfq setup`, `rfq revoke` and
+`rfq accept` produce local business drafts by default. They perform no HTTP.
+Only explicit `--execute true`, `--wallet-generation` from the current Agent
+identity and an original `--idempotency-key` submit a business POST. No key,
+sequence, price, size, fee or quote is silently replaced or increased.
+
+`management --market-id ...` returns the complete native review. A review file
+contains only `stateHash` and an explicitly chosen `cancelOrderHashes` array;
+the CLI does not invent cancellation scope. `rfq authorization` returns actual
+fixed-contract grants and configuration with `authorizationStateHash`. Setup
+requires explicit type URLs, finite Unix-seconds expiry and broad-authority
+acknowledgement. This is GenericAuthorization, not a token allowance or gas grant.
+Existing wallet policy may refuse it and is never loosened by the CLI.
+
+`rfq preview` is a bounded quote-only POST with the current wallet generation,
+without an execution idempotency key. Save its `settlement` object unchanged as
+the bundle file for `rfq accept`; signed decimal spelling and large uint64 strings
+are preserved. Open/reduce intent, current native review, authorization hash,
+maximum settlement-fee allowance and INJ ceiling are explicit. The backend
+revalidates all signatures, expiry, fee and current-position facts. Partial fills
+and native records remain authoritative; a submitted transaction is not a fill.
+
+Policy202 output remains the original `POLICY_DEFERRED` object. Lost responses or
+unknown receipts must be investigated with
+`purr injective request --request-id ORIGINAL_KEY --by idempotency-key`.
+The CLI never retries a POST or automatically accepts a new quote. `funding`
+provides bounded perpetual funding history; `--view accounting-v1` on positions,
+orders, history and fills preserves unknown coverage/PnL as returned by backend.
+
+The actual CLI routing/binary tests include explicit execution, a deferred policy
+hold and original-request recovery against a disposable local HTTP fixture.
+They do not call a real signer, exchange, chain or wallet. Normal CI has not yet
+qualified this candidate. Release, checksums, skills pins and Hermes promotion
+remain one later coordinated batch after acceptance.
 
 For relevant source, package and workflow changes, PR CI builds a Linux candidate
 and runs Injective and AgentKey contracts through the actual binary. Ordinary CI

@@ -10,6 +10,9 @@ const hash = '0x' + 'a'.repeat(64),
 const reviewPath = join(directory, 'review.json'),
   bundlePath = join(directory, 'bundle.json')
 const review = { stateHash: generation, cancelOrderHashes: [hash] }
+const marginReviewPath = join(directory, 'margin-review.json')
+writeFileSync(marginReviewPath, JSON.stringify({ stateHash: generation, cancelOrderHashes: [] }))
+// Transport preservation fixture only; maker validation and chain effects belong to backend qualification.
 const bundle = {
   request: { rfqId: '9007199254740993', margin: '20', quantity: '1.000' },
   quotes: [{ price: '100.000', expiry: { height: '9007199254740995', timestamp: '0' } }],
@@ -89,7 +92,7 @@ it.each([
     ],
   ],
   ['cancel-batch', ['--review-file', reviewPath]],
-  ['margin', ['--direction', 'add', '--amount', '2', '--review-file', reviewPath]],
+  ['margin', ['--direction', 'add', '--amount', '2', '--review-file', marginReviewPath]],
 ] as const)(
   'builds a non-executing %s draft and submits exactly that reviewed body once',
   async (command, flags) => {

@@ -51,7 +51,7 @@ purr <group> <command> [options]
 | `lista` | Lista DAO vault listing, deposit, redeem, and withdraw builders |
 | `pieverse` | Pieverse campaign flows and PIEVERSE staking on Ethereum and BNB Chain |
 | `hyperliquid` | Hyperliquid account, market data, orders, transfers, deposits, and withdrawals through the platform TEE wallet |
-| `injective` | Injective market/account reads, native perpetual order management and RFQ through the platform backend |
+| `injective` | Injective market/account reads, native perpetual/Spot orders and RFQ through the platform backend |
 | `pns` | Resolve Pie Name Service handles to instance wallet addresses |
 | `wallet` | Platform managed-wallet address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, Robinhood/Arc/Soneium Uniswap, and Sui (transfer, Cetus swap, execute) operations |
 | `ows-wallet` | OWS-backed local custody sign-transaction and build-transfer helpers; not available in the Windows build |
@@ -125,7 +125,8 @@ unknown markets are errors rather than empty collections. The status/account
 commands validate the capability field types and preserve the backend values.
 #### Injective native trading candidate
 
-This source candidate collects Phase3–6 commands for one later PURR release.
+This source candidate collects Phase3–6 commands for one later PURR release,
+with later Spot commands behind their separate backend capability.
 It does not publish a binary, update a version/tag or activate a backend. Native
 execution remains disabled until backend acceptance. The existing Agent wallet
 pays INJ gas; the CLI never uses a sponsored Gateway or directly signs/broadcasts.
@@ -136,6 +137,16 @@ Use `purr injective --help` for exact flags. `order`, `cancel`, `close`,
 Only explicit `--execute true`, `--wallet-generation` from the current Agent
 identity and an original `--idempotency-key` submit a business POST. No key,
 sequence, price, size, fee or quote is silently replaced or increased.
+
+`spot readiness` reads native Spot capability and spendable asset facts for an
+exact market. `spot order` and `spot cancel` use the same local-draft/explicit
+execution flow and original-request recovery. Spot quantity is in base units;
+market-order price is the worst acceptable limit (buy ceiling, sell floor).
+The group rejects margin, leverage, reduce-only and perpetual review flags.
+It does not assume a Spot sale closes a perpetual position. Buy, sell, frozen
+balances and native asset receipts still need later funded acceptance; Spot
+does not block Phase3–6. Existing `orders`, `order-history` and `fills` use
+`--market-type spot` for those records.
 
 `management --market-id ...` returns the complete native review. A review file
 contains only `stateHash` and an explicitly chosen `cancelOrderHashes` array;
@@ -162,10 +173,12 @@ orders, history and fills preserves unknown coverage/PnL as returned by backend.
 
 The actual CLI routing/binary tests include explicit execution, a deferred policy
 hold and original-request recovery against a disposable local HTTP fixture.
-They do not call a real signer, exchange, chain or wallet. Normal check run40665219369 and the native Linux x64/macOS ARM64 candidate
+They do not call a real signer, exchange, chain or wallet. Historical normal check run40665219369 and the native Linux x64/macOS ARM64 candidate
 binary checks in run40669935166 passed for source998aedd. Other candidate targets
 prove compilation only; see [candidate evidence](docs/injective-candidate-qualification.md). Release, checksums, skills pins and Hermes promotion
 remain one later coordinated batch after acceptance.
+The later Spot source changes require their own ordinary CI and rebuilt candidate
+checks; the earlier binaries do not qualify those new commands.
 
 For relevant source, package and workflow changes, PR CI builds a Linux candidate
 and runs Injective and AgentKey contracts through the actual binary. Ordinary CI

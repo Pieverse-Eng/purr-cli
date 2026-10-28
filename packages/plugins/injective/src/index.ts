@@ -60,6 +60,13 @@ Native perpetual trading (local drafts until --execute true):
   request --request-id <original-id-or-key> [--by id|idempotency-key]
   funding [--market-id <hash>] [--start-at <rfc3339> --end-at <rfc3339>] [--limit <n>] [--cursor <opaque>]
 
+Native Spot trading (separate backend capability, local drafts until --execute true):
+  spot readiness --market-id <hash>
+  spot order --market-id <hash> --kind limit|market --side buy|sell --quantity <base-decimal> --price <worst-or-limit> --max-fee-inj <decimal>
+  spot cancel --market-id <hash> --order-hash <hash> --max-fee-inj <decimal>
+Spot uses spendable native assets, with no margin, leverage, reduce-only or perpetual review.
+For a market sell, price is the minimum acceptable price; for a market buy it is the maximum.
+
 RFQ (same native position and execution journal):
   rfq authorization --market-id <hash>
   rfq preview --market-id <hash> --direction long|short --quantity <decimal> --margin <decimal> --worst-price <price> --wallet-generation <hash>
@@ -124,6 +131,9 @@ const OPTIONS: Record<string, readonly string[]> = {
   ],
   'cancel-batch': [...WRITE_COMMON, 'review-file'],
   margin: [...WRITE_COMMON, 'direction', 'amount', 'review-file'],
+  'spot/readiness': ['market-id'],
+  'spot/order': [...WRITE_COMMON, 'kind', 'side', 'quantity', 'price'],
+  'spot/cancel': [...WRITE_COMMON, 'order-hash'],
   'rfq/authorization': ['market-id'],
   'rfq/preview': [
     'market-id',
@@ -372,15 +382,16 @@ function businessBody(command: string, args: Record<string, string>): JsonRecord
     invalid(
       'This operation requires --review-file with the current native state and explicit cancellation scope',
     )
-  if (['order', 'close', 'replace', 'protection'].includes(command))
+  if (['order', 'close', 'replace', 'protection', 'spot/order'].includes(command))
     body.quantity = amount(args, 'quantity')
-  if (['order', 'close', 'replace'].includes(command)) body.price = amount(args, 'price')
-  if (['order', 'close'].includes(command)) body.side = choice(args, 'side', ['buy', 'sell'])
-  if (command === 'order') {
+  if (['order', 'close', 'replace', 'spot/order'].includes(command))
+    body.price = amount(args, 'price')
+  if (['order', 'close', 'spot/order'].includes(command))
+    body.side = choice(args, 'side', ['buy', 'sell'])
+  if (['order', 'spot/order'].includes(command))
     body.kind = choice(args, 'kind', ['limit', 'market'])
-    body.margin = amount(args, 'margin')
-  }
-  if (['cancel', 'replace'].includes(command))
+  if (command === 'order') body.margin = amount(args, 'margin')
+  if (['cancel', 'replace', 'spot/cancel'].includes(command))
     body.orderHash = marketHash(required(args, 'order-hash'), true)?.toLowerCase()
   if (command === 'replace') {
     body.margin = amount(args, 'margin', true)
@@ -600,10 +611,10 @@ async function exactMarket(
 
 export async function injectiveCommand(argv: string[]): Promise<unknown> {
   let [command = 'help', ...rest] = argv
-  if (command === 'rfq') {
+  if (command === 'rfq' || command === 'spot') {
     const [action, ...options] = rest
     if (!action || ['help', '--help', '-h'].includes(action)) return injectiveHelp()
-    command = `rfq/${action}`
+    command = `${command}/${action}`
     rest = options
   }
   if (['help', '--help', '-h'].includes(command)) {
@@ -619,7 +630,9 @@ export async function injectiveCommand(argv: string[]): Promise<unknown> {
   const args = parseOptions(rest, OPTIONS[command])
   if (args.help) return injectiveHelp()
 
-  if (['readiness', 'management', 'rfq/authorization', 'request'].includes(command)) {
+  if (
+    ['readiness', 'management', 'rfq/authorization', 'spot/readiness', 'request'].includes(command)
+  ) {
     const { instanceId } = resolveCredentials()
     const prefix = `/v1/instances/${encodeURIComponent(instanceId)}/injective/`
     if (command === 'request') {
@@ -631,7 +644,7 @@ export async function injectiveCommand(argv: string[]): Promise<unknown> {
         by: args.by === 'idempotency-key' ? args.by : undefined,
       })
     }
-    return get(prefix + (command === 'rfq/authorization' ? 'rfq-authorization' : command), {
+    return get(prefix + command.replace('/', '-'), {
       marketId: marketHash(args['market-id'], true)?.toLowerCase(),
     })
   }
@@ -649,7 +662,7 @@ export async function injectiveCommand(argv: string[]): Promise<unknown> {
     const body = businessBody(command, args)
     if (args.execute !== undefined && !['true', 'false'].includes(args.execute))
       invalid('--execute must be true or false')
-    const operation = command.replace('rfq/', 'rfq-')
+    const operation = command.replace('/', '-')
     if (args.execute !== 'true') return { executionEnabled: false, operation, body }
     return postBusiness(operation, body, args, true)
   }

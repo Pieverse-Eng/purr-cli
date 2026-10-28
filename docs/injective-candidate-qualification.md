@@ -1,5 +1,16 @@
 # Injective combined CLI candidate evidence
 
+## Current source follow-up
+
+The later `spot readiness`, `spot order` and `spot cancel` additions reuse the
+existing authenticated command/approval/recovery path. Their authored plugin and
+actual-CLI fixture cases still need ordinary CI and an exact-source candidate
+build. The historical binaries below do not contain or qualify these additions.
+No version, release, tenant pin or promotion is changed. Spot is separately
+backend-gated and does not block Phase3–6 acceptance.
+
+## Historical candidate
+
 Candidate source: `998aeddc1ecbf122831078fed65b7e0bc8b18f3e` on PURR #103.
 This is the combined native perpetual management/RFQ CLI source, not a released
 minimum version or a tenant installation pin.

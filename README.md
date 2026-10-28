@@ -162,8 +162,9 @@ orders, history and fills preserves unknown coverage/PnL as returned by backend.
 
 The actual CLI routing/binary tests include explicit execution, a deferred policy
 hold and original-request recovery against a disposable local HTTP fixture.
-They do not call a real signer, exchange, chain or wallet. Normal CI has not yet
-qualified this candidate. Release, checksums, skills pins and Hermes promotion
+They do not call a real signer, exchange, chain or wallet. Normal check run40665219369 and the native Linux x64/macOS ARM64 candidate
+binary checks in run40669935166 passed for source998aedd. Other candidate targets
+prove compilation only; see [candidate evidence](docs/injective-candidate-qualification.md). Release, checksums, skills pins and Hermes promotion
 remain one later coordinated batch after acceptance.
 
 For relevant source, package and workflow changes, PR CI builds a Linux candidate

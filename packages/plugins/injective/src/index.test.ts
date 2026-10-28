@@ -276,7 +276,9 @@ describe('Injective read-only CLI over backend HTTP', () => {
     'sign',
     'broadcast',
   ])('rejects write/unsupported command %s without HTTP', async (command) => {
-    await expect(injectiveCommand([command])).rejects.toMatchObject({ code: 'INJECTIVE_INVALID_ARGUMENT' })
+    await expect(injectiveCommand([command])).rejects.toMatchObject({
+      code: 'INJECTIVE_INVALID_ARGUMENT',
+    })
     expect(requests).toHaveLength(0)
   })
 

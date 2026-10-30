@@ -271,12 +271,14 @@ describe('Injective read-only CLI over backend HTTP', () => {
     'deposit',
     'open-account',
     'withdraw',
-    'rfq',
+    'rfq/unsupported',
     'accept',
     'sign',
     'broadcast',
   ])('rejects write/unsupported command %s without HTTP', async (command) => {
-    await expect(injectiveCommand([command])).rejects.toMatchObject({ code: 'INJECTIVE_READ_ONLY' })
+    await expect(injectiveCommand([command])).rejects.toMatchObject({
+      code: 'INJECTIVE_INVALID_ARGUMENT',
+    })
     expect(requests).toHaveLength(0)
   })
 
@@ -503,7 +505,7 @@ describe('Injective read-only CLI over backend HTTP', () => {
     vi.stubEnv('WALLET_API_TOKEN', '')
     expect(await injectiveCommand(['--help'])).toBe(injectiveHelp())
     expect(injectiveHelp()).toContain('Read-only')
-    expect(injectiveHelp()).not.toMatch(/^ {2}(order |cancel |deposit |rfq )/m)
+    expect(injectiveHelp()).toContain('local drafts until --execute true')
     expect(requests).toHaveLength(0)
   })
 })

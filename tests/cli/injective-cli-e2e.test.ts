@@ -9,12 +9,25 @@ describe('Injective actual CLI routing and output', () => {
   let home: string
   let apiUrl: string
   const received: Array<{ path: string; method?: string; auth?: string }> = []
+  const writes: Array<{ body: unknown; key?: string; generation?: string }> = []
   let status = 200
   let response: unknown
   const server = createServer((req, res) => {
     received.push({ path: req.url ?? '', method: req.method, auth: req.headers.authorization })
-    res.writeHead(status, { 'Content-Type': 'application/json', 'Retry-After': '9' })
-    res.end(JSON.stringify(response))
+    let data = ''
+    req.on('data', (chunk) => {
+      data += String(chunk)
+    })
+    req.on('end', () => {
+      if (req.method === 'POST')
+        writes.push({
+          body: JSON.parse(data),
+          key: req.headers['idempotency-key'] as string | undefined,
+          generation: req.headers['x-terminal-connection-version'] as string | undefined,
+        })
+      res.writeHead(status, { 'Content-Type': 'application/json', 'Retry-After': '9' })
+      res.end(JSON.stringify(response))
+    })
   })
   beforeAll(async () => {
     home = mkdtempSync(join(tmpdir(), 'purr-injective-e2e-'))
@@ -25,6 +38,7 @@ describe('Injective actual CLI routing and output', () => {
   })
   beforeEach(() => {
     received.length = 0
+    writes.length = 0
     status = 200
     response = {
       ok: true,
@@ -140,13 +154,197 @@ describe('Injective actual CLI routing and output', () => {
   it('includes Injective discovery in root help', async () => {
     const result = await run(['--help'])
     expect(result.code).toBe(0)
-    expect(result.stdout).toMatch(/injective\s+Injective.*read-only/i)
+    expect(result.stdout).toMatch(/injective\s+Injective.*trading/i)
+  })
+
+  const orderArgs = [
+    'injective',
+    'order',
+    '--market-id',
+    '0x' + 'a'.repeat(64),
+    '--kind',
+    'limit',
+    '--side',
+    'buy',
+    '--quantity',
+    '0.001',
+    '--price',
+    '80000',
+    '--margin',
+    '20',
+    '--max-fee-inj',
+    '0.001',
+  ]
+  const identityArgs = ['--wallet-generation', 'b'.repeat(64), '--idempotency-key', 'original-key']
+  it('keeps trading a local draft until explicit execution and sends one owner-scoped business request', async () => {
+    const draft = await run(orderArgs)
+    expect(draft.code).toBe(0)
+    expect(JSON.parse(draft.stdout)).toMatchObject({
+      executionEnabled: false,
+      operation: 'order',
+      body: { quantity: '0.001' },
+    })
+    expect(received).toHaveLength(0)
+    response = {
+      ok: true,
+      data: { requestId: 'original', state: 'unknown', txHash: 'AB'.repeat(32) },
+    }
+    const result = await run([...orderArgs, ...identityArgs, '--execute', 'true'])
+    expect(result.code).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual((response as { data: unknown }).data)
+    expect(received).toHaveLength(1)
+    expect(received[0]).toMatchObject({
+      path: '/v1/instances/owned-instance/injective/order',
+      method: 'POST',
+    })
+    expect(writes[0]).toEqual({
+      key: 'original-key',
+      generation: 'b'.repeat(64),
+      body: {
+        marketId: '0x' + 'a'.repeat(64),
+        maxFeeInj: '0.001',
+        kind: 'limit',
+        side: 'buy',
+        quantity: '0.001',
+        price: '80000',
+        margin: '20',
+      },
+    })
+  })
+  it('preserves policy holds and queries an original unknown request without replaying a write', async () => {
+    status = 202
+    response = {
+      code: 'POLICY_DEFERRED',
+      reason: 'manual_approval_required',
+      request_id: 'approval-a',
+    }
+    const held = await run([...orderArgs, ...identityArgs, '--execute', 'true'])
+    expect(held.code).toBe(0)
+    expect(JSON.parse(held.stdout)).toEqual(response)
+    const recoveredHold = await run([
+      'injective',
+      'request',
+      '--request-id',
+      'original-key',
+      '--by',
+      'idempotency-key',
+    ])
+    expect(recoveredHold.code).toBe(0)
+    expect(JSON.parse(recoveredHold.stdout)).toEqual(response)
+    response = { ok: true, data: { requestId: 'original', state: 'unknown' } }
+    status = 200
+    const recovered = await run([
+      'injective',
+      'request',
+      '--request-id',
+      'original-key',
+      '--by',
+      'idempotency-key',
+    ])
+    expect(recovered.code).toBe(0)
+    expect(received.at(-1)).toMatchObject({
+      method: 'GET',
+      path: '/v1/instances/owned-instance/injective/requests/original-key?by=idempotency-key',
+    })
+    expect(writes).toHaveLength(1)
+  })
+
+  it('routes the Spot group through draft, explicit execution and original-request observation', async () => {
+    const args = [
+      'injective',
+      'spot',
+      'order',
+      '--market-id',
+      '0x' + 'a'.repeat(64),
+      '--kind',
+      'market',
+      '--side',
+      'sell',
+      '--quantity',
+      '0.123456789012345678',
+      '--price',
+      '2.01',
+      '--max-fee-inj',
+      '0.001',
+    ]
+    const draft = await run(args)
+    expect(draft.code).toBe(0)
+    expect(JSON.parse(draft.stdout)).toEqual({
+      executionEnabled: false,
+      operation: 'spot-order',
+      body: {
+        marketId: '0x' + 'a'.repeat(64),
+        kind: 'market',
+        side: 'sell',
+        quantity: '0.123456789012345678',
+        price: '2.01',
+        maxFeeInj: '0.001',
+      },
+    })
+    expect(received).toHaveLength(0)
+    status = 202
+    response = {
+      code: 'POLICY_DEFERRED',
+      reason: 'manual_approval_required',
+      request_id: 'spot-approval',
+    }
+    const held = await run([...args, ...identityArgs, '--execute', 'true'])
+    expect(held.code).toBe(0)
+    expect(JSON.parse(held.stdout)).toEqual(response)
+    expect(received).toEqual([
+      {
+        path: '/v1/instances/owned-instance/injective/spot-order',
+        method: 'POST',
+        auth: 'Bearer test-token',
+      },
+    ])
+    expect(writes).toEqual([
+      { body: JSON.parse(draft.stdout).body, key: 'original-key', generation: 'b'.repeat(64) },
+    ])
+    status = 200
+    response = { ok: true, data: { requestId: 'spot-original', state: 'unknown' } }
+    const recovered = await run([
+      'injective',
+      'request',
+      '--request-id',
+      'original-key',
+      '--by',
+      'idempotency-key',
+    ])
+    expect(recovered.code).toBe(0)
+    expect(JSON.parse(recovered.stdout)).toEqual({ requestId: 'spot-original', state: 'unknown' })
+    expect(received.at(-1)).toMatchObject({
+      method: 'GET',
+      path: '/v1/instances/owned-instance/injective/requests/original-key?by=idempotency-key',
+    })
+    expect(writes).toHaveLength(1)
+  })
+
+  it('reads Spot readiness from the actual CLI group', async () => {
+    const result = await run([
+      'injective',
+      'spot',
+      'readiness',
+      '--market-id',
+      '0x' + 'a'.repeat(64),
+    ])
+    expect(result.code).toBe(0)
+    expect(JSON.parse(result.stdout)).toEqual((response as { data: unknown }).data)
+    expect(received).toEqual([
+      {
+        path: '/v1/instances/owned-instance/injective/spot-readiness?marketId=0x' + 'a'.repeat(64),
+        method: 'GET',
+        auth: 'Bearer test-token',
+      },
+    ])
   })
 
   it.each([
     ['order'],
     ['cancel'],
-    ['rfq'],
+    ['rfq', 'unsupported'],
+    ['spot', 'unsupported'],
+    ['spot', 'order', '--margin', '1'],
     ['status', '--execute'],
     ['status', 'ignored'],
     ['markets', '--market-type=spot', '--market-type=perp'],

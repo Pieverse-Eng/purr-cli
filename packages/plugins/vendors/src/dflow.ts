@@ -1,4 +1,4 @@
-import { Connection, VersionedTransaction } from '@solana/web3.js'
+import { randomUUID } from 'node:crypto'
 import {
   ApiClientError,
   apiGet,
@@ -6,8 +6,13 @@ import {
   resolveCredentials,
 } from '@pieverseio/purr-core/api-client'
 
-const DEFAULT_SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com'
 const DFLOW_REQUEST_TIMEOUT_MS = 20_000
+// The platform builds, signs and broadcasts within this request, so allow for
+// a fresh DFlow order, the wallet policy check and the managed signer.
+const DFLOW_EXECUTE_TIMEOUT_MS = 90_000
+const DFLOW_CONFIRM_TIMEOUT_MS = 90_000
+const DFLOW_CONFIRM_INTERVAL_MS = 2_000
+const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
 const DYNAMIC_COMPUTE_UNIT_LIMIT_PARAM = 'dynamicComputeUnitLimit'
 
 const UNSUPPORTED_ORDER_PARAMS = new Set(['sponsor', 'sponsorExec', 'predictionMarketInitPayer'])
@@ -45,11 +50,16 @@ export interface DflowOrderArgs {
 
 export interface DflowExecuteOrderArgs {
   orderJson?: string
-  rpcUrl?: string
+  idempotencyKey?: string
+  minimumToAmount?: string
   poll?: boolean
   pollTimeoutMs?: number
   pollIntervalMs?: number
   raw?: boolean
+}
+
+export interface DflowExecutionStatusArgs {
+  requestId?: string
 }
 
 export interface DflowPredictionOrderStatusArgs {
@@ -87,15 +97,6 @@ interface PlatformWalletEnsureResponse {
   error?: string
 }
 
-interface PlatformSignSolanaTransactionResponse {
-  ok: boolean
-  data?: {
-    signedTransaction: string
-    address: string
-  }
-  error?: string
-}
-
 interface PlatformDflowResponse {
   ok: boolean
   data?: unknown
@@ -108,12 +109,13 @@ interface PlatformDflowResponse {
 
 type JsonObject = Record<string, unknown>
 
-class DflowCliError extends Error {
+export class DflowCliError extends Error {
   readonly code?: string
   readonly providerCode?: string
   readonly status?: number
   readonly retryable?: boolean
   readonly retryAfterSeconds?: number
+  readonly data?: JsonObject
 
   constructor(
     message: string,
@@ -123,6 +125,7 @@ class DflowCliError extends Error {
       status?: number
       retryable?: boolean
       retryAfterSeconds?: number
+      data?: JsonObject
     } = {},
   ) {
     super(message)
@@ -132,6 +135,7 @@ class DflowCliError extends Error {
     this.status = options.status
     this.retryable = options.retryable
     this.retryAfterSeconds = options.retryAfterSeconds
+    this.data = options.data
   }
 }
 
@@ -200,6 +204,7 @@ function toDflowCliError(error: unknown): Error {
       status: error.status,
       retryable: optionalBoolean(body?.retryable),
       retryAfterSeconds: retryAfterSeconds(error, body),
+      ...(isJsonObject(body?.data) ? { data: body.data } : {}),
     },
   )
 }
@@ -289,23 +294,6 @@ async function resolvePlatformSolanaAddress(): Promise<string> {
   return ensure.data.address
 }
 
-async function signSolanaTransactionViaPlatform(
-  transaction: string,
-): Promise<{ signedTransaction: string; address: string }> {
-  const { instanceId } = resolveCredentials()
-  const signed = await apiPost<PlatformSignSolanaTransactionResponse>(
-    `/v1/instances/${instanceId}/wallet/sign-solana-transaction`,
-    {
-      transaction,
-      intent: { kind: 'raw_hash', chainId: 'solana:mainnet' },
-    },
-  )
-  if (!signed.ok || !signed.data) {
-    throw new Error(signed.error ?? 'Failed to sign DFlow Solana transaction')
-  }
-  return signed.data
-}
-
 function assertNoUnsupportedOrderParams(params: JsonObject): void {
   for (const key of Object.keys(params)) {
     if (RESERVED_ORDER_PARAMS.has(key)) {
@@ -317,7 +305,7 @@ function assertNoUnsupportedOrderParams(params: JsonObject): void {
     }
     if (UNSUPPORTED_ORDER_PARAMS.has(key)) {
       throw new Error(
-        `DFlow ${key} is out of scope because purr signing currently supports one signer only`,
+        `DFlow ${key} is out of scope because platform execution supports one signer only`,
       )
     }
   }
@@ -338,56 +326,12 @@ function orderSummary(order: JsonObject): JsonObject {
   }
 }
 
-function requireOrderTransaction(order: JsonObject): {
-  transaction: string
-  lastValidBlockHeight: number
-} {
-  if (typeof order.transaction !== 'string' || order.transaction.trim() === '') {
-    throw new Error('DFlow order response must contain transaction')
-  }
-  const lastValidBlockHeight = Number(order.lastValidBlockHeight)
-  if (!Number.isFinite(lastValidBlockHeight) || lastValidBlockHeight <= 0) {
-    throw new Error('DFlow order response must contain numeric lastValidBlockHeight')
-  }
-  return { transaction: order.transaction, lastValidBlockHeight }
-}
-
-function parseDflowTransaction(transaction: string): VersionedTransaction {
-  try {
-    return VersionedTransaction.deserialize(Buffer.from(transaction, 'base64'))
-  } catch {
-    throw new Error('DFlow transaction must be a valid base64-encoded Solana transaction')
-  }
-}
-
 function unwrapOrderJson(parsed: JsonObject): JsonObject {
   const order = parsed.order
   if (typeof order === 'object' && order !== null && !Array.isArray(order)) {
     return order as JsonObject
   }
   return parsed
-}
-
-function requireSinglePlatformSigner(tx: VersionedTransaction, platformAddress: string): void {
-  const requiredSignerCount = tx.message.header.numRequiredSignatures
-  const signers = tx.message.staticAccountKeys
-    .slice(0, requiredSignerCount)
-    .map((key) => key.toBase58())
-  if (signers.length !== 1) {
-    throw new Error(
-      `DFlow transaction requires ${signers.length} signers; purr execution supports exactly one signer`,
-    )
-  }
-  if (signers[0] !== platformAddress) {
-    throw new Error(
-      `DFlow transaction signer ${signers[0]} does not match purr Solana address ${platformAddress}`,
-    )
-  }
-}
-
-function resolveSolanaRpcUrl(explicit?: string): string {
-  const rpcUrl = explicit ?? process.env.SOLANA_RPC_URL ?? DEFAULT_SOLANA_RPC_URL
-  return rpcUrl.trim()
 }
 
 function validatePositiveInteger(value: number | undefined, name: string): void {
@@ -644,11 +588,13 @@ export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
   const body = dflowRequestBody(args)
   const userPublicKey = await resolvePlatformSolanaAddress()
   const order = await platformDflowOrder(body)
+  // `request` lets `purr dflow execute-order` ask the platform for the same swap.
   if (args.raw) {
     return {
       type: 'dflow-order',
       userPublicKey,
       ...platformTransport(),
+      request: body,
       order,
     }
   }
@@ -656,6 +602,7 @@ export async function dflowOrder(args: DflowOrderArgs): Promise<JsonObject> {
     type: 'dflow-order',
     userPublicKey,
     ...platformTransport(),
+    request: body,
     summary: orderSummary(order),
     order,
   }
@@ -731,53 +678,180 @@ export async function dflowPredictionOrderStatus(
   }
 }
 
+function requireExecuteRequest(parsed: JsonObject, order: JsonObject): JsonObject {
+  if (!isJsonObject(parsed.request)) {
+    throw new Error(
+      'execute-order needs the JSON printed by `purr dflow order` (with its request); the platform rebuilds and signs the order, so a bare DFlow order cannot be executed',
+    )
+  }
+  const request = parsed.request
+  const options = request.options
+  if (options !== undefined && !isJsonObject(options)) {
+    throw new Error('DFlow order request options must be a JSON object')
+  }
+  const body = dflowRequestBody({
+    inputMint: optionalString(request.inputMint),
+    outputMint: optionalString(request.outputMint),
+    amount: optionalString(request.amount),
+    paramsJson: options ? JSON.stringify(options) : undefined,
+  })
+  for (const [field, orderField] of [
+    ['inputMint', 'inputMint'],
+    ['outputMint', 'outputMint'],
+    ['amount', 'inAmount'],
+  ] as const) {
+    if (order[orderField] !== undefined && order[orderField] !== body[field]) {
+      throw new Error(`DFlow order ${orderField} does not match its request ${field}`)
+    }
+  }
+  return body
+}
+
+function requireMinimumToAmount(explicit: string | undefined, order: JsonObject): string {
+  const value = explicit ?? optionalString(order.minOutAmount)
+  if (value === undefined) {
+    throw new Error('DFlow order has no minOutAmount; pass --minimum-to-amount <atomic>')
+  }
+  if (!/^\d+$/.test(value) || BigInt(value) <= 0n) {
+    throw new Error('--minimum-to-amount must be a positive integer in atomic units')
+  }
+  return value
+}
+
+function resolveIdempotencyKey(explicit: string | undefined): string {
+  if (explicit === undefined) return randomUUID()
+  if (!IDEMPOTENCY_KEY_PATTERN.test(explicit)) {
+    throw new Error('--idempotency-key must be 1-128 letters, digits, ".", "_", ":" or "-"')
+  }
+  return explicit
+}
+
+/** The platform's answer: `{ requestId, replayed?, result }`, result being the submission. */
+function executionSubmission(data: JsonObject): {
+  requestId: string
+  replayed: boolean
+  result: JsonObject
+} {
+  const requestId = optionalString(data.requestId)
+  if (!requestId || !isJsonObject(data.result)) {
+    throw new Error('DFlow platform execution returned an unexpected response')
+  }
+  return { requestId, replayed: data.replayed === true, result: data.result }
+}
+
+async function platformDflowExecute(body: JsonObject, idempotencyKey: string) {
+  try {
+    const response = await apiPost<PlatformDflowResponse>(instanceDflowPath('/execute'), body, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+      timeoutMs: DFLOW_EXECUTE_TIMEOUT_MS,
+    })
+    return executionSubmission(requireJsonObjectResponse(response))
+  } catch (error) {
+    // The platform may already have signed and broadcast: keep the key so the
+    // caller replays it (never a new one) or reads the execution status.
+    const normalized = toDflowCliError(error)
+    const details = normalized instanceof DflowCliError ? normalized : undefined
+    throw new DflowCliError(normalized.message, {
+      code: details?.code,
+      providerCode: details?.providerCode,
+      status: details?.status,
+      retryable: details?.retryable,
+      retryAfterSeconds: details?.retryAfterSeconds,
+      data: { idempotencyKey, ...details?.data },
+    })
+  }
+}
+
+async function platformDflowExecution(requestId: string): Promise<JsonObject> {
+  try {
+    const response = await apiGet<PlatformDflowResponse>(
+      instanceDflowPath(`/executions/${encodeURIComponent(requestId)}`),
+      { timeoutMs: DFLOW_REQUEST_TIMEOUT_MS },
+    )
+    return requireJsonObjectResponse(response)
+  } catch (error) {
+    throw toDflowCliError(error)
+  }
+}
+
+function chainState(execution: JsonObject): string | undefined {
+  return isJsonObject(execution.chain) ? optionalString(execution.chain.state) : undefined
+}
+
+/** Waits until the platform reports the submitted signature confirmed or reverted. */
+async function waitForConfirmation(
+  requestId: string,
+  intervalMs: number,
+): Promise<{ execution?: JsonObject; state: string }> {
+  const started = Date.now()
+  let execution: JsonObject | undefined
+  while (true) {
+    execution = await platformDflowExecution(requestId)
+    const state = chainState(execution) ?? 'unknown'
+    if (state === 'confirmed' || state === 'finalized' || state === 'reverted') {
+      return { execution, state }
+    }
+    if (Date.now() - started + intervalMs >= DFLOW_CONFIRM_TIMEOUT_MS) {
+      return { execution, state }
+    }
+    await sleep(intervalMs)
+  }
+}
+
 export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<JsonObject> {
   validatePositiveInteger(args.pollTimeoutMs, 'poll-timeout-ms')
   validatePositiveInteger(args.pollIntervalMs, 'poll-interval-ms')
-  const order = unwrapOrderJson(
-    parseJsonObject(requireString(args.orderJson, 'order-json'), '--order-json'),
+  const parsed = parseJsonObject(requireString(args.orderJson, 'order-json'), '--order-json')
+  const order = unwrapOrderJson(parsed)
+  const request = requireExecuteRequest(parsed, order)
+  const minimumToAmount = requireMinimumToAmount(args.minimumToAmount, order)
+  const idempotencyKey = resolveIdempotencyKey(args.idempotencyKey)
+
+  const { requestId, replayed, result } = await platformDflowExecute(
+    { ...request, minimumToAmount },
+    idempotencyKey,
   )
-  const { transaction, lastValidBlockHeight } = requireOrderTransaction(order)
-  const executionMode = getExecutionMode(order)
-  if (args.poll && executionMode === undefined) {
-    throw new Error(
-      'Cannot poll DFlow order because executionMode is missing; rebuild the order before execution',
-    )
+  const signature = optionalString(result.signature)
+  const executionMode = getExecutionMode(result)
+  const lastValidBlockHeight = optionalNonnegativeNumber(result.lastValidBlockHeight)
+  const base = {
+    type: 'dflow-execute-order',
+    requestId,
+    idempotencyKey,
+    ...(replayed ? { replayed } : {}),
+    minimumToAmount,
+    state: result.state,
+    executionMode,
+    signature,
+    lastValidBlockHeight,
+    orderAddress: getOrderAddress(order),
   }
-  const orderAddress = getOrderAddress(order)
-  const tx = parseDflowTransaction(transaction)
-  const recentBlockhash = tx.message.recentBlockhash
-  const rpcUrl = resolveSolanaRpcUrl(args.rpcUrl)
-  const platformAddress = await resolvePlatformSolanaAddress()
-  requireSinglePlatformSigner(tx, platformAddress)
-  const signed = await signSolanaTransactionViaPlatform(transaction)
-  if (signed.address !== platformAddress) {
-    throw new Error(`purr signer returned address ${signed.address}; expected ${platformAddress}`)
+  if (!signature) {
+    // Not submitted (for example awaiting a policy approval): nothing to confirm.
+    return { ...base, ...(args.raw ? { execution: result } : {}) }
   }
-  const connection = new Connection(rpcUrl, 'confirmed')
-  const signedBytes = Buffer.from(signed.signedTransaction, 'base64')
-  const signature = await connection.sendRawTransaction(signedBytes)
-  const confirmation = await connection.confirmTransaction(
-    {
-      signature,
-      blockhash: recentBlockhash,
-      lastValidBlockHeight,
-    },
-    'confirmed',
+
+  const confirmation = await waitForConfirmation(
+    requestId,
+    args.pollIntervalMs ?? DFLOW_CONFIRM_INTERVAL_MS,
   )
-  if (confirmation.value.err) {
-    throw new Error(
-      `DFlow transaction failed confirmation: ${JSON.stringify(confirmation.value.err)}`,
-    )
+  const chain = isJsonObject(confirmation.execution?.chain) ? confirmation.execution.chain : {}
+  if (confirmation.state === 'reverted') {
+    throw new DflowCliError(`DFlow transaction failed on chain: ${JSON.stringify(chain.error)}`, {
+      code: 'DFLOW_TRANSACTION_REVERTED',
+      data: { requestId, idempotencyKey, signature, error: chain.error ?? null },
+    })
   }
 
   let status: JsonObject | undefined
   let statusError: JsonObject | undefined
-  if (args.poll && executionMode === 'async') {
+  const confirmed = confirmation.state === 'confirmed' || confirmation.state === 'finalized'
+  if (confirmed && args.poll && executionMode === 'async') {
     try {
       status = await dflowPredictionOrderStatus({
         signature,
-        lastValidBlockHeight: String(lastValidBlockHeight),
+        lastValidBlockHeight:
+          lastValidBlockHeight === undefined ? undefined : String(lastValidBlockHeight),
         poll: true,
         timeoutMs: args.pollTimeoutMs,
         intervalMs: args.pollIntervalMs,
@@ -791,16 +865,16 @@ export async function dflowExecuteOrder(args: DflowExecuteOrderArgs): Promise<Js
   }
 
   return {
-    type: 'dflow-execute-order',
-    executionMode,
-    signerAddress: signed.address,
-    signature,
-    recentBlockhash,
-    lastValidBlockHeight,
-    orderAddress,
-    confirmation: args.raw ? confirmation : { slot: confirmation.context.slot, err: null },
+    ...base,
+    confirmation: { state: confirmation.state, confirmed },
     ...(status ? { status } : {}),
     ...(statusError ? { statusError } : {}),
-    ...(args.raw ? { order, signedTransaction: signed.signedTransaction, rpcUrl } : {}),
+    ...(args.raw ? { execution: confirmation.execution ?? result } : {}),
   }
+}
+
+export async function dflowExecutionStatus(args: DflowExecutionStatusArgs): Promise<JsonObject> {
+  const requestId = requireString(args.requestId, 'request-id')
+  const execution = await platformDflowExecution(requestId)
+  return { type: 'dflow-execution-status', requestId, execution }
 }

@@ -1,13 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  Connection,
-  PublicKey,
-  SystemProgram,
-  TransactionMessage,
-  VersionedTransaction,
-} from '@solana/web3.js'
-import {
+  DflowCliError,
   dflowExecuteOrder,
+  dflowExecutionStatus,
   dflowMetadata,
   dflowOrder,
   dflowPositions,
@@ -20,7 +15,8 @@ import {
 const originalFetch = globalThis.fetch
 const SOLANA_ADDRESS = 'DZttmKxhq1H7v5fFVPbejCkqHiTDjq9J6Q1muQT2ouWD'
 const OTHER_SOLANA_ADDRESS = '2QDSRUp5Xa8SSKceKLxeYpEDgjWCpxRDWBQQA43qX4vn'
-const RECENT_BLOCKHASH = '11111111111111111111111111111111'
+const SOL_MINT = 'So11111111111111111111111111111111111111112'
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
 
 function jsonResponse(body: unknown): Response {
   const text = JSON.stringify(body)
@@ -48,31 +44,71 @@ function jsonErrorResponse(
   } as unknown as Response
 }
 
-function dflowTransactionBase64(options: { payer?: string; extraSigner?: string } = {}): string {
-  const payer = new PublicKey(options.payer ?? SOLANA_ADDRESS)
-  const extraSigner = options.extraSigner ? new PublicKey(options.extraSigner) : undefined
-  const instructions = [
-    SystemProgram.transfer({
-      fromPubkey: payer,
-      toPubkey: payer,
-      lamports: 1,
+type Route = (body: unknown, init?: RequestInit) => Response | Promise<Response>
+
+/** Routes fetch by URL suffix; any other request fails the test. */
+function mockPlatform(routes: Record<string, Route>) {
+  const calls: Array<{ url: string; method?: string; headers?: HeadersInit; body?: unknown }> = []
+  Object.defineProperty(globalThis, 'fetch', {
+    value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      calls.push({ url, method: init?.method, headers: init?.headers, body })
+      const path = new URL(url).pathname
+      const route = routes[path]
+      if (!route) throw new Error(`unexpected fetch ${url}`)
+      return route(body, init)
     }),
-  ]
-  if (extraSigner) {
-    instructions.push(
-      SystemProgram.transfer({
-        fromPubkey: extraSigner,
-        toPubkey: extraSigner,
-        lamports: 1,
-      }),
-    )
-  }
-  const message = new TransactionMessage({
-    payerKey: payer,
-    recentBlockhash: RECENT_BLOCKHASH,
-    instructions,
-  }).compileToV0Message()
-  return Buffer.from(new VersionedTransaction(message).serialize()).toString('base64')
+    configurable: true,
+    writable: true,
+  })
+  return calls
+}
+
+const EXECUTE_PATH = '/v1/instances/test-instance/dflow/execute'
+const EXECUTION_PATH = '/v1/instances/test-instance/dflow/executions/request-1'
+const REQUEST = {
+  inputMint: SOL_MINT,
+  outputMint: USDC_MINT,
+  amount: '1000000',
+  options: { slippageBps: 50 },
+}
+const ORDER_OUTPUT = {
+  type: 'dflow-order',
+  request: REQUEST,
+  order: {
+    inputMint: SOL_MINT,
+    outputMint: USDC_MINT,
+    inAmount: '1000000',
+    outAmount: '24000000',
+    minOutAmount: '23880000',
+    executionMode: 'sync',
+    transaction: 'base64-preview-transaction',
+    lastValidBlockHeight: 999,
+  },
+}
+
+function submitted(result: Record<string, unknown> = {}) {
+  return jsonResponse({
+    ok: true,
+    data: {
+      requestId: 'request-1',
+      result: {
+        state: 'submitted',
+        signature: '5sig',
+        executionMode: 'sync',
+        lastValidBlockHeight: 999,
+        ...result,
+      },
+    },
+  })
+}
+
+function execution(state: string, error: unknown = null) {
+  return jsonResponse({
+    ok: true,
+    data: { requestId: 'request-1', chain: { signature: '5sig', state, error } },
+  })
 }
 
 describe('dflow execution helpers', () => {
@@ -218,7 +254,7 @@ describe('dflow execution helpers', () => {
               inAmount: '1000000',
               outAmount: '24000000',
               slippageBps: 'auto',
-              transaction: dflowTransactionBase64(),
+              transaction: 'base64-preview-transaction',
               lastValidBlockHeight: 12345,
             },
           })
@@ -327,433 +363,233 @@ describe('dflow execution helpers', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('polls an async DFlow order by executionMode without requiring orderAddress', async () => {
-    const transaction = dflowTransactionBase64()
-    const sendSpy = vi
-      .spyOn(Connection.prototype, 'sendRawTransaction')
-      .mockResolvedValue('5sig' as never)
-    const confirmSpy = vi.spyOn(Connection.prototype, 'confirmTransaction').mockResolvedValue({
-      context: { slot: 123 },
-      value: { err: null },
-    } as never)
-
-    Object.defineProperty(globalThis, 'fetch', {
-      value: vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString()
-        const body = init?.body ? JSON.parse(String(init.body)) : undefined
-
-        if (url.endsWith('/wallet/ensure')) {
-          expect(body).toEqual({ chainType: 'solana' })
-          return jsonResponse({
-            ok: true,
-            data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-          })
-        }
-        if (url.endsWith('/wallet/sign-solana-transaction')) {
-          expect(body).toEqual({
-            transaction,
-            intent: { kind: 'raw_hash', chainId: 'solana:mainnet' },
-          })
-          return jsonResponse({
-            ok: true,
-            data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
-          })
-        }
-        if (url.includes('/v1/instances/test-instance/dflow/order-status?')) {
-          const parsed = new URL(url)
-          expect(parsed.searchParams.get('signature')).toBe('5sig')
-          expect(parsed.searchParams.get('lastValidBlockHeight')).toBe('999')
-          expect(init?.headers).toMatchObject({ Authorization: 'Bearer test-token' })
-          expect(init?.headers).not.toHaveProperty('x-api-key')
-          return jsonResponse({
-            ok: true,
-            data: { status: 'closed', signature: '5sig' },
-          })
-        }
-        throw new Error(`unexpected fetch ${url}`)
-      }),
-      configurable: true,
-      writable: true,
+  it('executes through the platform with the order request, its minimum and an idempotency key', async () => {
+    const calls = mockPlatform({
+      [EXECUTE_PATH]: () => submitted(),
+      [EXECUTION_PATH]: () => execution('confirmed'),
     })
 
-    const result = await dflowExecuteOrder({
-      orderJson: JSON.stringify({
-        transaction,
-        lastValidBlockHeight: 999,
-        executionMode: 'async',
-      }),
-      rpcUrl: 'https://rpc.example.com',
-      poll: true,
-    })
+    const result = await dflowExecuteOrder({ orderJson: JSON.stringify(ORDER_OUTPUT) })
 
-    expect(sendSpy).toHaveBeenCalledTimes(1)
-    expect(confirmSpy).toHaveBeenCalledWith(
-      {
-        signature: '5sig',
-        blockhash: RECENT_BLOCKHASH,
-        lastValidBlockHeight: 999,
-      },
-      'confirmed',
-    )
-    expect(result).toMatchObject({
+    const execute = calls.find((call) => call.url.endsWith(EXECUTE_PATH))
+    expect(execute).toMatchObject({
+      method: 'POST',
+      body: { ...REQUEST, minimumToAmount: '23880000' },
+      headers: { Authorization: 'Bearer test-token' },
+    })
+    const idempotencyKey = (execute?.headers as Record<string, string>)['Idempotency-Key']
+    expect(idempotencyKey).toMatch(/^[0-9a-f-]{36}$/)
+    expect(calls.map((call) => new URL(call.url).pathname)).toEqual([EXECUTE_PATH, EXECUTION_PATH])
+    expect(result).toEqual({
       type: 'dflow-execute-order',
-      signerAddress: SOLANA_ADDRESS,
-      signature: '5sig',
-      recentBlockhash: RECENT_BLOCKHASH,
-      lastValidBlockHeight: 999,
-      executionMode: 'async',
-      status: {
-        signature: '5sig',
-        terminal: true,
-        status: { status: 'closed' },
-      },
-    })
-  })
-
-  it('does not query prediction order status for a synchronous DFlow order', async () => {
-    const transaction = dflowTransactionBase64()
-    vi.spyOn(Connection.prototype, 'sendRawTransaction').mockResolvedValue('5sig' as never)
-    vi.spyOn(Connection.prototype, 'confirmTransaction').mockResolvedValue({
-      context: { slot: 123 },
-      value: { err: null },
-    } as never)
-
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url.endsWith('/wallet/ensure')) {
-        return jsonResponse({
-          ok: true,
-          data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-        })
-      }
-      if (url.endsWith('/wallet/sign-solana-transaction')) {
-        return jsonResponse({
-          ok: true,
-          data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
-        })
-      }
-      throw new Error(`unexpected fetch ${url}`)
-    })
-    Object.defineProperty(globalThis, 'fetch', {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    })
-
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({
-          transaction,
-          lastValidBlockHeight: 999,
-          executionMode: 'sync',
-        }),
-        rpcUrl: 'https://rpc.example.com',
-        poll: true,
-      }),
-    ).resolves.toMatchObject({
-      type: 'dflow-execute-order',
+      requestId: 'request-1',
+      idempotencyKey,
+      minimumToAmount: '23880000',
+      state: 'submitted',
       executionMode: 'sync',
       signature: '5sig',
+      lastValidBlockHeight: 999,
+      orderAddress: undefined,
+      confirmation: { state: 'confirmed', confirmed: true },
     })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('preserves the confirmed signature when async status polling fails', async () => {
-    const transaction = dflowTransactionBase64()
-    vi.spyOn(Connection.prototype, 'sendRawTransaction').mockResolvedValue('5sig' as never)
-    vi.spyOn(Connection.prototype, 'confirmTransaction').mockResolvedValue({
-      context: { slot: 123 },
-      value: { err: null },
-    } as never)
-
-    Object.defineProperty(globalThis, 'fetch', {
-      value: vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString()
-        if (url.endsWith('/wallet/ensure')) {
-          return jsonResponse({
-            ok: true,
-            data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-          })
-        }
-        if (url.endsWith('/wallet/sign-solana-transaction')) {
-          return jsonResponse({
-            ok: true,
-            data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
-          })
-        }
-        if (url.includes('/v1/instances/test-instance/dflow/order-status?')) {
-          return jsonErrorResponse(502, {
-            ok: false,
-            code: 'dflow_upstream_error',
-            error: 'DFlow is temporarily unavailable.',
-            retryable: true,
-          })
-        }
-        throw new Error(`unexpected fetch ${url}`)
-      }),
-      configurable: true,
-      writable: true,
+  it('waits for the submitted signature to confirm', async () => {
+    const states = ['processed', 'unknown', 'finalized']
+    const calls = mockPlatform({
+      [EXECUTE_PATH]: () => submitted(),
+      [EXECUTION_PATH]: () => execution(states.shift() ?? 'finalized'),
     })
 
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({
-          transaction,
-          lastValidBlockHeight: 999,
-          executionMode: 'async',
-        }),
-        rpcUrl: 'https://rpc.example.com',
-        poll: true,
-      }),
-    ).resolves.toMatchObject({
-      type: 'dflow-execute-order',
-      executionMode: 'async',
-      signature: '5sig',
-      confirmation: { slot: 123, err: null },
-      statusError: {
-        status: 502,
-        code: 'dflow_upstream_error',
-        message: 'DFlow is temporarily unavailable.',
-        retryable: true,
+    const result = await dflowExecuteOrder({
+      orderJson: JSON.stringify(ORDER_OUTPUT),
+      pollIntervalMs: 1,
+    })
+
+    expect(calls.filter((call) => call.url.endsWith(EXECUTION_PATH))).toHaveLength(3)
+    expect(result.confirmation).toEqual({ state: 'finalized', confirmed: true })
+  })
+
+  it('reports a reverted transaction with its request and signature', async () => {
+    mockPlatform({
+      [EXECUTE_PATH]: () => submitted(),
+      [EXECUTION_PATH]: () => execution('reverted', { InstructionError: [2, 'Custom'] }),
+    })
+
+    const error = await dflowExecuteOrder({
+      orderJson: JSON.stringify(ORDER_OUTPUT),
+      idempotencyKey: 'swap-1',
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(DflowCliError)
+    expect(error).toMatchObject({
+      code: 'DFLOW_TRANSACTION_REVERTED',
+      data: {
+        requestId: 'request-1',
+        idempotencyKey: 'swap-1',
+        signature: '5sig',
+        error: { InstructionError: [2, 'Custom'] },
       },
     })
   })
 
-  it('rejects polling without executionMode before signing or broadcasting', async () => {
-    const fetchMock = vi.fn()
-    const sendSpy = vi.spyOn(Connection.prototype, 'sendRawTransaction')
-    Object.defineProperty(globalThis, 'fetch', {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
+  it('polls an async order after confirmation and keeps the signature when that fails', async () => {
+    mockPlatform({
+      [EXECUTE_PATH]: () => submitted({ executionMode: 'async' }),
+      [EXECUTION_PATH]: () => execution('confirmed'),
+      '/v1/instances/test-instance/dflow/order-status': () =>
+        jsonResponse({ ok: true, data: { status: 'closed', signature: '5sig' } }),
     })
-
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({
-          transaction: dflowTransactionBase64(),
-          lastValidBlockHeight: 999,
-        }),
-        rpcUrl: 'https://rpc.example.com',
-        poll: true,
-      }),
-    ).rejects.toThrow(/executionMode is missing/)
-    expect(fetchMock).not.toHaveBeenCalled()
-    expect(sendSpy).not.toHaveBeenCalled()
-  })
-
-  it('accepts the wrapped output from purr dflow order during execution', async () => {
-    const transaction = dflowTransactionBase64()
-    vi.spyOn(Connection.prototype, 'sendRawTransaction').mockResolvedValue('5sig' as never)
-    vi.spyOn(Connection.prototype, 'confirmTransaction').mockResolvedValue({
-      context: { slot: 123 },
-      value: { err: null },
-    } as never)
-
-    Object.defineProperty(globalThis, 'fetch', {
-      value: vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString()
-
-        if (url.endsWith('/wallet/ensure')) {
-          return jsonResponse({
-            ok: true,
-            data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-          })
-        }
-        if (url.endsWith('/wallet/sign-solana-transaction')) {
-          return jsonResponse({
-            ok: true,
-            data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
-          })
-        }
-        throw new Error(`unexpected fetch ${url}`)
-      }),
-      configurable: true,
-      writable: true,
-    })
-
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({
-          type: 'dflow-order',
-          order: {
-            transaction,
-            lastValidBlockHeight: 999,
-            orderAddress: 'order-address-1',
-          },
-        }),
-        rpcUrl: 'https://rpc.example.com',
-      }),
-    ).resolves.toMatchObject({
-      type: 'dflow-execute-order',
+    const polled = await dflowExecuteOrder({ orderJson: JSON.stringify(ORDER_OUTPUT), poll: true })
+    expect(polled).toMatchObject({
+      executionMode: 'async',
       signature: '5sig',
-      orderAddress: 'order-address-1',
-    })
-  })
-
-  it('rejects multi-signer DFlow transactions before platform signing', async () => {
-    const transaction = dflowTransactionBase64({ extraSigner: OTHER_SOLANA_ADDRESS })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url.endsWith('/wallet/ensure')) {
-        return jsonResponse({
-          ok: true,
-          data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-        })
-      }
-      throw new Error(`unexpected fetch ${url}`)
-    })
-    Object.defineProperty(globalThis, 'fetch', {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
+      status: { signature: '5sig', terminal: true, status: { status: 'closed' } },
     })
 
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({ transaction, lastValidBlockHeight: 999 }),
-        rpcUrl: 'https://rpc.example.com',
-      }),
-    ).rejects.toThrow(/supports exactly one signer/)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('rejects DFlow transactions whose signer is not the purr Solana address', async () => {
-    const transaction = dflowTransactionBase64({ payer: OTHER_SOLANA_ADDRESS })
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url.endsWith('/wallet/ensure')) {
-        return jsonResponse({
-          ok: true,
-          data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-        })
-      }
-      throw new Error(`unexpected fetch ${url}`)
+    mockPlatform({
+      [EXECUTE_PATH]: () => submitted({ executionMode: 'async' }),
+      [EXECUTION_PATH]: () => execution('confirmed'),
+      '/v1/instances/test-instance/dflow/order-status': () =>
+        jsonErrorResponse(500, { ok: false, error: 'status unavailable' }),
     })
-    Object.defineProperty(globalThis, 'fetch', {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    })
-
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({ transaction, lastValidBlockHeight: 999 }),
-        rpcUrl: 'https://rpc.example.com',
-      }),
-    ).rejects.toThrow(/does not match purr Solana address/)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
-
-  it('uses the default Solana RPC for execution when no override is set', async () => {
-    const transaction = dflowTransactionBase64()
-    vi.spyOn(Connection.prototype, 'sendRawTransaction').mockResolvedValue('5sig' as never)
-    vi.spyOn(Connection.prototype, 'confirmTransaction').mockResolvedValue({
-      context: { slot: 123 },
-      value: { err: null },
-    } as never)
-
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString()
-      if (url.endsWith('/wallet/ensure')) {
-        return jsonResponse({
-          ok: true,
-          data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-        })
-      }
-      if (url.endsWith('/wallet/sign-solana-transaction')) {
-        return jsonResponse({
-          ok: true,
-          data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
-        })
-      }
-      throw new Error(`unexpected fetch ${url}`)
-    })
-    Object.defineProperty(globalThis, 'fetch', {
-      value: fetchMock,
-      configurable: true,
-      writable: true,
-    })
-
-    const result = await dflowExecuteOrder({
-      orderJson: JSON.stringify({
-        transaction,
-        lastValidBlockHeight: 999,
-      }),
-      raw: true,
-    })
-
-    expect(result).toMatchObject({
-      type: 'dflow-execute-order',
+    const failed = await dflowExecuteOrder({ orderJson: JSON.stringify(ORDER_OUTPUT), poll: true })
+    expect(failed).toMatchObject({
       signature: '5sig',
-      rpcUrl: 'https://api.mainnet-beta.solana.com',
+      confirmation: { state: 'confirmed', confirmed: true },
+      statusError: { message: 'status unavailable', status: 500 },
     })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('uses SOLANA_RPC_URL before the public fallback', async () => {
-    process.env.SOLANA_RPC_URL = 'https://solana.example.com'
-    const transaction = dflowTransactionBase64()
-    vi.spyOn(Connection.prototype, 'sendRawTransaction').mockResolvedValue('5sig' as never)
-    vi.spyOn(Connection.prototype, 'confirmTransaction').mockResolvedValue({
-      context: { slot: 123 },
-      value: { err: null },
-    } as never)
-
-    Object.defineProperty(globalThis, 'fetch', {
-      value: vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString()
-        if (url.endsWith('/wallet/ensure')) {
-          return jsonResponse({
-            ok: true,
-            data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
-          })
-        }
-        if (url.endsWith('/wallet/sign-solana-transaction')) {
-          return jsonResponse({
-            ok: true,
-            data: { signedTransaction: transaction, address: SOLANA_ADDRESS },
-          })
-        }
-        throw new Error(`unexpected fetch ${url}`)
-      }),
-      configurable: true,
-      writable: true,
+  it('does not query order status for a synchronous order', async () => {
+    const calls = mockPlatform({
+      [EXECUTE_PATH]: () => submitted(),
+      [EXECUTION_PATH]: () => execution('confirmed'),
     })
+    await dflowExecuteOrder({ orderJson: JSON.stringify(ORDER_OUTPUT), poll: true })
+    expect(calls.some((call) => call.url.includes('/order-status'))).toBe(false)
+  })
 
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({
-          transaction,
-          lastValidBlockHeight: 999,
+  it('returns an unsubmitted execution without waiting for a signature', async () => {
+    const calls = mockPlatform({
+      [EXECUTE_PATH]: () =>
+        jsonResponse({
+          ok: true,
+          data: { requestId: 'request-1', result: { state: 'awaiting_approval' } },
         }),
-        raw: true,
-      }),
-    ).resolves.toMatchObject({
-      rpcUrl: 'https://solana.example.com',
+    })
+    const result = await dflowExecuteOrder({ orderJson: JSON.stringify(ORDER_OUTPUT) })
+    expect(result).toMatchObject({ requestId: 'request-1', state: 'awaiting_approval' })
+    expect(result).not.toHaveProperty('confirmation')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('keeps the idempotency key and request on a failed execute so it can be replayed', async () => {
+    mockPlatform({
+      [EXECUTE_PATH]: () =>
+        jsonErrorResponse(502, {
+          ok: false,
+          code: 'EXECUTION_INTERRUPTED',
+          error: 'The execution outcome is unknown',
+          data: { requestId: 'request-1', causeCode: 'WALLET_SEND_OUTCOME_UNKNOWN' },
+        }),
+    })
+
+    const error = await dflowExecuteOrder({
+      orderJson: JSON.stringify(ORDER_OUTPUT),
+      idempotencyKey: 'swap-1',
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(DflowCliError)
+    expect(error).toMatchObject({
+      code: 'EXECUTION_INTERRUPTED',
+      status: 502,
+      data: {
+        idempotencyKey: 'swap-1',
+        requestId: 'request-1',
+        causeCode: 'WALLET_SEND_OUTCOME_UNKNOWN',
+      },
     })
   })
 
-  it('validates poll options before platform signing', async () => {
+  it('uses an explicit minimum and idempotency key', async () => {
+    const calls = mockPlatform({
+      [EXECUTE_PATH]: () => submitted(),
+      [EXECUTION_PATH]: () => execution('confirmed'),
+    })
+    await dflowExecuteOrder({
+      orderJson: JSON.stringify(ORDER_OUTPUT),
+      minimumToAmount: '23000000',
+      idempotencyKey: 'swap-1',
+    })
+    expect(calls[0]).toMatchObject({
+      body: { minimumToAmount: '23000000' },
+      headers: { 'Idempotency-Key': 'swap-1' },
+    })
+  })
+
+  it('rejects unusable execution input before calling the platform', async () => {
     const fetchMock = vi.fn()
     Object.defineProperty(globalThis, 'fetch', {
       value: fetchMock,
       configurable: true,
       writable: true,
     })
-
-    await expect(
-      dflowExecuteOrder({
-        orderJson: JSON.stringify({
-          transaction: dflowTransactionBase64(),
-          lastValidBlockHeight: 999,
-        }),
-        rpcUrl: 'https://rpc.example.com',
-        poll: true,
-        pollIntervalMs: 0,
-      }),
-    ).rejects.toThrow(/poll-interval-ms must be a positive integer/)
+    const cases: Array<[Parameters<typeof dflowExecuteOrder>[0], string]> = [
+      [{ orderJson: JSON.stringify(ORDER_OUTPUT.order) }, 'execute-order needs the JSON printed'],
+      [
+        {
+          orderJson: JSON.stringify({
+            ...ORDER_OUTPUT,
+            order: { ...ORDER_OUTPUT.order, inAmount: '5' },
+          }),
+        },
+        'DFlow order inAmount does not match its request amount',
+      ],
+      [
+        {
+          orderJson: JSON.stringify({
+            ...ORDER_OUTPUT,
+            order: { ...ORDER_OUTPUT.order, minOutAmount: undefined },
+          }),
+        },
+        'pass --minimum-to-amount',
+      ],
+      [
+        { orderJson: JSON.stringify(ORDER_OUTPUT), minimumToAmount: '0' },
+        '--minimum-to-amount must be a positive integer',
+      ],
+      [
+        { orderJson: JSON.stringify(ORDER_OUTPUT), idempotencyKey: 'has space' },
+        '--idempotency-key must be',
+      ],
+      [
+        {
+          orderJson: JSON.stringify({
+            ...ORDER_OUTPUT,
+            request: { ...REQUEST, options: { sponsor: 'x' } },
+          }),
+        },
+        'DFlow sponsor is out of scope',
+      ],
+      [{ orderJson: JSON.stringify(ORDER_OUTPUT), pollTimeoutMs: 0 }, '--poll-timeout-ms'],
+    ]
+    for (const [args, message] of cases) {
+      await expect(dflowExecuteOrder(args)).rejects.toThrow(message)
+    }
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('reads a platform execution by request id', async () => {
+    mockPlatform({ [EXECUTION_PATH]: () => execution('finalized') })
+    await expect(dflowExecutionStatus({ requestId: 'request-1' })).resolves.toEqual({
+      type: 'dflow-execution-status',
+      requestId: 'request-1',
+      execution: {
+        requestId: 'request-1',
+        chain: { signature: '5sig', state: 'finalized', error: null },
+      },
+    })
   })
 
   it('checks DFlow prediction order status by transaction signature', async () => {

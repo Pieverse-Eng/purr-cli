@@ -1,6 +1,6 @@
 {
   "name": "@pieverseio/purr-plugin-vendors",
-  "version": "0.2.71",
+  "version": "0.2.72",
   "type": "module",
   "private": true,
   "exports": {
@@ -21,7 +21,6 @@
   },
   "dependencies": {
     "@pieverseio/purr-core": "workspace:*",
-    "@solana/web3.js": "^1.95.0",
     "viem": "^2.46.0"
   }
 }

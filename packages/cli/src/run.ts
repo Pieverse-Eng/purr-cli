@@ -63,7 +63,9 @@ import {
   type BitgetWalletSigner,
 } from '@pieverseio/purr-plugin-vendors/bitget'
 import {
+  DflowCliError,
   dflowExecuteOrder,
+  dflowExecutionStatus,
   dflowMetadata,
   dflowOrder,
   dflowPositions,
@@ -671,7 +673,9 @@ Examples:
   purr ows-wallet bitget-x402-pay --ows-wallet treasury --url https://api.example.com/premium --method POST --data '{"fileSize":100}'
   purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --params-json '{"slippageBps":"auto"}'
   purr dflow quote --input-mint <mint> --output-mint <mint> --amount <atomic>
+  purr dflow order --input-mint <mint> --output-mint <mint> --amount <atomic> --execute true
   purr dflow execute-order --order-file /tmp/dflow-order.json
+  purr dflow execution-status --request-id <request-id>
   purr dflow prediction-order-status --signature <transaction-signature> --poll true
   purr dflow positions
   purr dflow metadata --path markets --query-json '{"status":"active","limit":10}'
@@ -1216,8 +1220,9 @@ Examples:
           if (parseBooleanFlag(args.execute) === true) {
             const safeResult = dflowOrderOutput(result, raw)
             const executed = await dflowExecuteOrder({
-              orderJson: JSON.stringify(result.order),
-              rpcUrl: args['rpc-url'],
+              orderJson: JSON.stringify({ request: result.request, order: result.order }),
+              idempotencyKey: args['idempotency-key'],
+              minimumToAmount: args['minimum-to-amount'],
               poll: parseBooleanFlag(args.poll),
               pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
               pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
@@ -1233,12 +1238,18 @@ Examples:
           const orderJson = requireArgOrFile(args, 'order-json', 'order-file')
           const result = await dflowExecuteOrder({
             orderJson,
-            rpcUrl: args['rpc-url'],
+            idempotencyKey: args['idempotency-key'],
+            minimumToAmount: args['minimum-to-amount'],
             poll: parseBooleanFlag(args.poll),
             pollTimeoutMs: parseIntegerArg(args['poll-timeout-ms'], 'poll-timeout-ms'),
             pollIntervalMs: parseIntegerArg(args['poll-interval-ms'], 'poll-interval-ms'),
             raw: parseBooleanFlag(args.raw),
           })
+          console.log(JSON.stringify(result, null, 2))
+          return
+        }
+        case 'execution-status': {
+          const result = await dflowExecutionStatus({ requestId: args['request-id'] })
           console.log(JSON.stringify(result, null, 2))
           return
         }
@@ -1291,7 +1302,7 @@ Examples:
         }
         default:
           throw new Error(
-            `Unknown dflow command: ${command}. Use: quote, order, execute-order, prediction-order-status, positions, priority-fees, metadata, stream`,
+            `Unknown dflow command: ${command}. Use: quote, order, execute-order, execution-status, prediction-order-status, positions, priority-fees, metadata, stream`,
           )
       }
     }
@@ -2368,6 +2379,12 @@ export async function handleCliError(err: unknown, options: PurrCliOptions = {})
     : undefined
   if (process.argv[2] === 'opensea') {
     console.error(formatOpenSeaError(err))
+    process.exit(1)
+  }
+  if (err instanceof DflowCliError) {
+    const prefix = err.code ? `error [${err.code}]` : 'error'
+    console.error(`${prefix}: ${err.message}`)
+    if (err.data !== undefined) console.error(JSON.stringify(err.data, null, 2))
     process.exit(1)
   }
   if (err instanceof HyperliquidCliError) {

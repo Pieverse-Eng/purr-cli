@@ -188,6 +188,143 @@ describe('DFlow CLI output', () => {
     )
   })
 
+  it('executes a previewed order through the platform and prints a replayable failure', async () => {
+    const executeBodies: Array<{ key: unknown; body: Record<string, unknown> }> = []
+    let failExecute = false
+    await withDflowServer(
+      async (req, res) => {
+        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/wallet/ensure`) {
+          writeJson(res, 200, {
+            ok: true,
+            data: { address: SOLANA_ADDRESS, chainId: 0, chainType: 'solana' },
+          })
+          return
+        }
+        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/dflow/order`) {
+          writeJson(res, 200, {
+            ok: true,
+            data: {
+              inputMint: 'input-mint',
+              outputMint: 'output-mint',
+              inAmount: '1000000',
+              outAmount: '24000000',
+              minOutAmount: '23880000',
+              executionMode: 'sync',
+              transaction: SERIALIZED_TRANSACTION,
+              lastValidBlockHeight: 12345,
+            },
+          })
+          return
+        }
+        if (req.method === 'POST' && req.url === `/v1/instances/${INSTANCE_ID}/dflow/execute`) {
+          executeBodies.push({
+            key: req.headers['idempotency-key'],
+            body: await readJsonBody(req),
+          })
+          if (failExecute) {
+            writeJson(res, 502, {
+              ok: false,
+              code: 'EXECUTION_INTERRUPTED',
+              error: 'The execution outcome is unknown',
+              data: { requestId: 'request-1' },
+            })
+            return
+          }
+          writeJson(res, 200, {
+            ok: true,
+            data: {
+              requestId: 'request-1',
+              result: {
+                state: 'submitted',
+                signature: '5sig',
+                executionMode: 'sync',
+                lastValidBlockHeight: 12345,
+              },
+            },
+          })
+          return
+        }
+        if (
+          req.method === 'GET' &&
+          req.url === `/v1/instances/${INSTANCE_ID}/dflow/executions/request-1`
+        ) {
+          writeJson(res, 200, {
+            ok: true,
+            data: { requestId: 'request-1', chain: { signature: '5sig', state: 'confirmed' } },
+          })
+          return
+        }
+        if (req.url?.endsWith('/wallet/sign-solana-transaction')) {
+          throw new Error('execution must not sign on the client')
+        }
+        writeJson(res, 404, { ok: false, error: 'not found' })
+      },
+      async (port) => {
+        const args = [
+          'dflow',
+          'order',
+          '--input-mint',
+          'input-mint',
+          '--output-mint',
+          'output-mint',
+          '--amount',
+          '1000000',
+          '--params-json',
+          '{"slippageBps":50}',
+          '--execute',
+          'true',
+          '--idempotency-key',
+          'swap-1',
+        ]
+        const executed = await runPurr(port, args)
+        expect(executed.stderr).toBe('')
+        expect(executed.code).toBe(0)
+        expect(executeBodies).toEqual([
+          {
+            key: 'swap-1',
+            body: {
+              inputMint: 'input-mint',
+              outputMint: 'output-mint',
+              amount: '1000000',
+              options: { slippageBps: 50 },
+              minimumToAmount: '23880000',
+            },
+          },
+        ])
+        expect(JSON.parse(executed.stdout)).toMatchObject({
+          type: 'dflow-order',
+          execution: {
+            type: 'dflow-execute-order',
+            requestId: 'request-1',
+            idempotencyKey: 'swap-1',
+            signature: '5sig',
+            confirmation: { state: 'confirmed', confirmed: true },
+          },
+        })
+
+        const status = await runPurr(port, [
+          'dflow',
+          'execution-status',
+          '--request-id',
+          'request-1',
+        ])
+        expect(status.code).toBe(0)
+        expect(JSON.parse(status.stdout)).toMatchObject({
+          type: 'dflow-execution-status',
+          execution: { chain: { state: 'confirmed' } },
+        })
+
+        failExecute = true
+        const failed = await runPurr(port, args)
+        expect(failed.code).toBe(1)
+        expect(failed.stderr).toContain('error [EXECUTION_INTERRUPTED]')
+        expect(failed.stderr).toContain('"idempotencyKey": "swap-1"')
+        expect(failed.stderr).toContain('"minimumToAmount": "23880000"')
+        expect(failed.stderr).toContain('"requestId": "request-1"')
+      },
+    )
+  })
+
   it('queries DFlow prediction order status by transaction signature', async () => {
     await withDflowServer(
       async (req, res) => {

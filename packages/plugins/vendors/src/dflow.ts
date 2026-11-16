@@ -105,6 +105,10 @@ interface PlatformDflowResponse {
   error?: string
   retryable?: boolean
   retryAfterSeconds?: number | null
+  /** Wallet-policy answers (for example `202 POLICY_DEFERRED`) carry these instead. */
+  reason?: string
+  request_id?: string
+  expires_at?: string
 }
 
 type JsonObject = Record<string, unknown>
@@ -190,6 +194,21 @@ function retryAfterSeconds(
     : undefined
 }
 
+/** The wallet-policy request a caller approves before replaying the same key. */
+function policyDetails(body: JsonObject | undefined): JsonObject {
+  const policyRequestId = optionalString(body?.request_id)
+  const policyExpiresAt = optionalString(body?.expires_at)
+  return {
+    ...(policyRequestId ? { policyRequestId } : {}),
+    ...(policyExpiresAt ? { policyExpiresAt } : {}),
+  }
+}
+
+function errorData(body: JsonObject | undefined): JsonObject | undefined {
+  const data = { ...(isJsonObject(body?.data) ? body.data : {}), ...policyDetails(body) }
+  return Object.keys(data).length > 0 ? data : undefined
+}
+
 function toDflowCliError(error: unknown): Error {
   if (error instanceof DflowCliError) return error
   if (!(error instanceof ApiClientError)) {
@@ -197,26 +216,34 @@ function toDflowCliError(error: unknown): Error {
   }
   const body = isJsonObject(error.body) ? error.body : undefined
   return new DflowCliError(
-    optionalString(body?.error) ?? optionalString(body?.message) ?? 'DFlow platform request failed',
+    optionalString(body?.error) ??
+      optionalString(body?.message) ??
+      optionalString(body?.reason) ??
+      'DFlow platform request failed',
     {
       code: optionalString(body?.code),
       providerCode: optionalString(body?.providerCode),
       status: error.status,
       retryable: optionalBoolean(body?.retryable),
       retryAfterSeconds: retryAfterSeconds(error, body),
-      ...(isJsonObject(body?.data) ? { data: body.data } : {}),
+      data: errorData(body),
     },
   )
 }
 
 function unwrapPlatformDflowResponse(response: PlatformDflowResponse): unknown {
   if (!response.ok || response.data === undefined) {
-    throw new DflowCliError(response.error ?? 'DFlow platform request failed', {
-      code: response.code,
-      providerCode: response.providerCode,
-      retryable: response.retryable,
-      retryAfterSeconds: response.retryAfterSeconds ?? undefined,
-    })
+    const body = response as unknown as JsonObject
+    throw new DflowCliError(
+      response.error ?? optionalString(response.reason) ?? 'DFlow platform request failed',
+      {
+        code: response.code,
+        providerCode: response.providerCode,
+        retryable: response.retryable,
+        retryAfterSeconds: response.retryAfterSeconds ?? undefined,
+        data: errorData(body),
+      },
+    )
   }
   return response.data
 }

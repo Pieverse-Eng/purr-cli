@@ -512,6 +512,36 @@ describe('dflow execution helpers', () => {
     })
   })
 
+  it('reports a deferred wallet policy with the request to approve and the key to replay', async () => {
+    mockPlatform({
+      [EXECUTE_PATH]: () => ({
+        ...jsonResponse({
+          code: 'POLICY_DEFERRED',
+          reason: 'approval_required',
+          request_id: 'policy-1',
+          expires_at: '2026-11-17T00:00:00Z',
+        }),
+        status: 202,
+      }),
+    })
+
+    const error = await dflowExecuteOrder({
+      orderJson: JSON.stringify(ORDER_OUTPUT),
+      idempotencyKey: 'swap-1',
+    }).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(DflowCliError)
+    expect(error).toMatchObject({
+      code: 'POLICY_DEFERRED',
+      message: 'approval_required',
+      data: {
+        idempotencyKey: 'swap-1',
+        policyRequestId: 'policy-1',
+        policyExpiresAt: '2026-11-17T00:00:00Z',
+      },
+    })
+  })
+
   it('uses an explicit minimum and idempotency key', async () => {
     const calls = mockPlatform({
       [EXECUTE_PATH]: () => submitted(),

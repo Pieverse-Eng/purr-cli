@@ -377,7 +377,7 @@ describe('dflow execution helpers', () => {
       body: { ...REQUEST, minimumToAmount: '23880000' },
       headers: { Authorization: 'Bearer test-token' },
     })
-    const idempotencyKey = (execute?.headers as Record<string, string>)['Idempotency-Key']
+    const idempotencyKey = ((execute?.headers ?? {}) as Record<string, string>)['Idempotency-Key']
     expect(idempotencyKey).toMatch(/^[0-9a-f-]{36}$/)
     expect(calls.map((call) => new URL(call.url).pathname)).toEqual([EXECUTE_PATH, EXECUTION_PATH])
     expect(result).toEqual({

@@ -319,6 +319,7 @@ describe('DFlow CLI output', () => {
         expect(failed.code).toBe(1)
         expect(failed.stderr).toContain('error [EXECUTION_INTERRUPTED]')
         expect(failed.stderr).toContain('"idempotencyKey": "swap-1"')
+        expect(failed.stderr).toContain('"minimumToAmount": "23880000"')
         expect(failed.stderr).toContain('"requestId": "request-1"')
       },
     )

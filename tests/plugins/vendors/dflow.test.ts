@@ -506,6 +506,7 @@ describe('dflow execution helpers', () => {
       status: 502,
       data: {
         idempotencyKey: 'swap-1',
+        minimumToAmount: '23880000',
         requestId: 'request-1',
         causeCode: 'WALLET_SEND_OUTCOME_UNKNOWN',
       },

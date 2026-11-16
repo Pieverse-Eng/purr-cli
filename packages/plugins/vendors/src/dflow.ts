@@ -784,7 +784,8 @@ async function platformDflowExecute(body: JsonObject, idempotencyKey: string) {
       status: details?.status,
       retryable: details?.retryable,
       retryAfterSeconds: details?.retryAfterSeconds,
-      data: { idempotencyKey, ...details?.data },
+      // A replay must send the same payload, minimum included, under this key.
+      data: { idempotencyKey, minimumToAmount: body.minimumToAmount, ...details?.data },
     })
   }
 }

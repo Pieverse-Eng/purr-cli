@@ -910,9 +910,12 @@ export async function handleInstanceCommand(
         throw new Error('Passport does not accept --token; use its public paymentRequest')
       }
       if (yes) {
-        throw new Error('Passport does not accept --yes; approve payment through official kpass skills')
+        throw new Error(
+          'Passport does not accept --yes; approve payment through official kpass skills',
+        )
       }
-      if (!dryRun) throw new Error('Passport requires --dry-run to return its public paymentRequest')
+      if (!dryRun)
+        throw new Error('Passport requires --dry-run to return its public paymentRequest')
       await handlePassportMembershipPreview(idempotencyKey)
     } else {
       await handleCanonicalBillingCommand({

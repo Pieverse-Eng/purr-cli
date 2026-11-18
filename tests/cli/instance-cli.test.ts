@@ -214,6 +214,131 @@ async function withServer(
 }
 
 describe('instance CLI', () => {
+  it.each([
+    { args: [], error: '--payment-source' },
+    { args: ['--payment-source', 'other', '--idempotency-key', 'purchase-1'], error: '--payment-source' },
+    { args: ['--payment-source', 'agent-wallet'], error: '--idempotency-key' },
+    { args: ['--payment-source', 'passport', '--idempotency-key', 'purchase-1'], error: '--dry-run' },
+    { args: ['--payment-source', 'passport', '--idempotency-key', 'purchase-1', '--dry-run', '--yes'], error: '--yes' },
+    { args: ['--payment-source', 'passport', '--idempotency-key', 'purchase-1', '--dry-run', '--token', 'usdc-base'], error: '--token' },
+  ])('rejects invalid Pro purchase arguments before creating an invoice: $error $args', async ({ args, error }) => {
+    let requests = 0
+    await withServer(async (_req, res) => {
+      requests++
+      writeJson(res, 500, { ok: false, error: 'Unexpected request' })
+    }, async (port) => {
+      const result = await runPurr(port, ['instance', 'pawpilot-pro', ...args])
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain(error)
+      expect(requests).toBe(0)
+    })
+  })
+
+  it('returns the same public Passport payment request without wallet lookup or payment', async () => {
+    const paymentRequest = {
+      url: 'https://merchant.example/api/app/pawpilot-commerce/v1/orders/order-1/pay',
+      method: 'POST',
+      body: { invoiceId: 'invoice-pro-passport' },
+    }
+    const bodies: JsonObject[] = []
+    const keys: Array<string | string[] | undefined> = []
+    await withServer(async (req, res) => {
+      assert.equal(req.method, 'POST')
+      assert.equal(req.url, `/v1/instances/${INSTANCE_ID}/billing/quote`)
+      bodies.push(await readBody(req))
+      keys.push(req.headers['idempotency-key'])
+      writeJson(res, 200, { ok: true, data: {
+        invoiceId: 'invoice-pro-passport', kind: 'membership_purchase', paymentSource: 'passport',
+        requiresPayment: true, state: 'quoted', quotes: [], paymentRequest,
+        benefits: { membershipDays: 30, credits: 150 },
+      } })
+    }, async (port) => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const result = await runPurr(port, ['instance', 'pawpilot-pro', '--payment-source', 'passport', '--idempotency-key', 'purchase-passport-1', '--dry-run'])
+        expect(result.code).toBe(0)
+        expect(JSON.parse(result.stdout)).toMatchObject({
+          dryRun: true, invoiceId: 'invoice-pro-passport', kind: 'membership_purchase',
+          paymentSource: 'passport', paymentRequest, benefits: { membershipDays: 30, credits: 150 },
+        })
+        expect(result.stdout).not.toContain(API_TOKEN)
+      }
+      expect(bodies).toEqual([
+        { kind: 'membership_purchase', paymentSource: 'passport' },
+        { kind: 'membership_purchase', paymentSource: 'passport' },
+      ])
+      expect(keys).toEqual(['purchase-passport-1', 'purchase-passport-1'])
+    })
+  })
+
+  it.each([
+    { url: 'http://merchant.example/pay', method: 'POST', body: {} },
+    { url: 'https://user:secret@merchant.example/pay', method: 'POST', body: {} },
+    { url: 'https://merchant.example/pay', method: 'GET', body: {} },
+    { url: 'https://merchant.example/pay', method: 'POST', body: 'invalid' },
+  ])('rejects a malformed public Passport request: $url $method', async (paymentRequest) => {
+    await withServer(async (_req, res) => {
+      writeJson(res, 200, { ok: true, data: {
+        invoiceId: 'invoice-invalid', kind: 'membership_purchase', paymentSource: 'passport',
+        quotes: [], requiresPayment: true, paymentRequest,
+      } })
+    }, async (port) => {
+      const result = await runPurr(port, ['instance', 'pawpilot-pro', '--payment-source', 'passport', '--idempotency-key', 'purchase-invalid', '--dry-run'])
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('invalid Passport payment request')
+      expect(result.stdout).toBe('')
+    })
+  })
+
+  it('pays an Agent Wallet Pro quote and checks fulfillment on the original invoice', async () => {
+    const requests: Array<{ path: string | undefined; body?: JsonObject }> = []
+    await withServer(async (req, res) => {
+      const body = req.method === 'POST' ? await readBody(req) : undefined
+      requests.push({ path: req.url, body })
+      if (req.url?.endsWith('/billing/quote')) {
+        assert.equal(req.headers['idempotency-key'], 'purchase-wallet-1')
+        writeJson(res, 200, { ok: true, data: {
+          invoiceId: 'invoice-pro-wallet', kind: 'membership_purchase', paymentSource: 'agent_wallet',
+          quotes: [billingQuote(paymentMethods[1], { baseUsdAmount: '99', finalUsdAmount: '99', discountUsdAmount: '0' })],
+        } })
+      } else if (req.url?.endsWith('/billing/pay')) {
+        writeJson(res, 200, { ok: true, data: { invoiceId: 'invoice-pro-wallet', state: 'confirming', txHash: '0xpro' } })
+      } else if (req.url?.endsWith('/billing/invoice-pro-wallet')) {
+        writeJson(res, 200, { ok: true, data: { invoiceId: 'invoice-pro-wallet', kind: 'membership_purchase', state: 'fulfilled' } })
+      } else throw new Error('Unexpected route')
+    }, async (port) => {
+      const result = await runPurr(port, ['instance', 'pawpilot-pro', '--payment-source', 'agent-wallet', '--idempotency-key', 'purchase-wallet-1', '--yes'])
+      expect(result.code).toBe(0)
+      expect(JSON.parse(result.stdout)).toMatchObject({ invoiceId: 'invoice-pro-wallet', kind: 'membership_purchase', state: 'fulfilled' })
+      expect(result.stderr).toContain('PawPilot Pro')
+      expect(requests).toEqual([
+        { path: `/v1/instances/${INSTANCE_ID}/billing/quote`, body: { kind: 'membership_purchase', paymentSource: 'agent_wallet' } },
+        { path: `/v1/instances/${INSTANCE_ID}/billing/pay`, body: { invoiceId: 'invoice-pro-wallet', quoteId: 'quote-usdc-base' } },
+        { path: `/v1/instances/${INSTANCE_ID}/billing/invoice-pro-wallet`, body: undefined },
+      ])
+    })
+  })
+
+  it('stops an expired Pro quote without silently creating or paying a replacement', async () => {
+    let quotes = 0
+    let pays = 0
+    await withServer(async (req, res) => {
+      await readBody(req)
+      if (req.url?.endsWith('/billing/quote')) {
+        quotes++
+        writeJson(res, 200, { ok: true, data: { invoiceId: 'invoice-pro-expired', kind: 'membership_purchase', quotes: [billingQuote(paymentMethods[1])] } })
+      } else {
+        pays++
+        writeJson(res, 409, { ok: false, error: { code: 'QUOTE_EXPIRED', message: 'Quote expired; confirm a new preview' } })
+      }
+    }, async (port) => {
+      const result = await runPurr(port, ['instance', 'pawpilot-pro', '--payment-source', 'agent-wallet', '--idempotency-key', 'purchase-expired', '--yes'])
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('invoice-pro-expired')
+      expect(quotes).toBe(1)
+      expect(pays).toBe(1)
+    })
+  })
+
   it('prints billing status summary', async () => {
     await withServer(
       async (req, res) => {

@@ -641,7 +641,7 @@ Groups:
   wallet            Wallet operations (address, balance, sign, sign-typed-data, sign-okx-x402, sign-transaction, transfer, abi-call, uniswap, sui-swap, sui-execute)
   redpacket         P2P XLayer USDT0 redpackets (send, pending, claim, sent)
   treasure-code     Pieverse Treasure Code game — one command per action (vault, attempt, final-unlock); each owns the full payment-required→sign→submit→poll flow
-  instance          Instance status, credits, token renewal, and top-up
+  instance          Instance status, credits, renewal, top-up, and PawPilot Pro
   agentkey          Discover, describe, and execute live-data tools using AI Credits
   market            Public trending tokens and their most liquid active pool
   hyperliquid       Hyperliquid account, market data, orders, transfers, deposits, and withdrawals
@@ -787,6 +787,8 @@ Examples:
   purr instance renew --token usdc-xlayer --yes
   purr instance topup --credits 100 --token USDT --yes
   purr instance topup --credits 100 --token usdc-monad --yes
+  purr instance pawpilot-pro --payment-source agent-wallet --idempotency-key <purchase-id> --yes
+  purr instance pawpilot-pro --payment-source passport --idempotency-key <purchase-id> --dry-run
   purr wallet sign --address 0x... --message "Hello"
   purr wallet sign-typed-data --address 0x... --data '{"domain":...,"types":...,"primaryType":"...","message":...}'
   purr wallet sign-okx-x402 --expected '{"amountBaseUnits":"1","chainId":196,"tokenAddress":"0x779ded...","payTo":"0x..."}'

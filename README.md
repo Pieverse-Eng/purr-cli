@@ -58,7 +58,7 @@ purr <group> <command> [options]
 | `ows-execute` | OWS-backed local step execution; not available in the Windows build |
 | `execute` | Execute `TxStep[]` JSON from a file through the configured instance wallet |
 | `evm` | Local EVM primitive builders: approve, transfer, raw, and abi-call |
-| `instance` | Instance billing status and trusted-wallet renewal |
+| `instance` | Instance billing status, renewal, credit top-up, and PawPilot Pro |
 | `agentkey` | Dynamic live-data tool discovery, schemas, single-call execution, and AI Credit receipts through the platform |
 | `store` | Browse and install agent skills from Pieverse + OKX stores |
 | `config` | Manage persistent `api-url`, `api-token`, and `instance-id` credentials |
@@ -369,6 +369,10 @@ purr instance status
 purr instance payment-methods
 purr instance renew --token <token-id-or-alias> --yes
 purr instance topup --credits <integer> --token <token-id-or-alias> --yes
+purr instance pawpilot-pro --payment-source agent-wallet --idempotency-key <purchase-id> --dry-run
+purr instance pawpilot-pro --payment-source agent-wallet --idempotency-key <purchase-id> --yes
+purr instance pawpilot-pro --payment-source passport --idempotency-key <purchase-id> --dry-run
+purr instance billing-status --invoice <invoice-id>
 purr pns resolve <handle>
 purr store list --search <keyword> --limit <limit>
 purr store info <slug>
@@ -376,6 +380,27 @@ purr store install <slug>
 purr store install <source>:<slug>
 purr store remove <slug>
 ```
+
+### PawPilot Pro for a hosted Claw
+
+`instance pawpilot-pro` purchases 30 days of membership for the current hosted
+Claw. Starter/Basic receive 150 bonus credits; Standard, PawPilot, Pro, and Ultra
+receive membership only. Hosting, its expiry, and the existing instance remain
+unchanged. The server quote is authoritative for the current price and benefits.
+
+Choose `--payment-source` for every purchase. Use one stable `--idempotency-key`
+for its preview and payment. Agent Wallet follows the existing token quote and
+payment flow; `--token` is optional and `--yes` authorizes payment. An expired
+Pro quote stops for a new preview and confirmation.
+
+Passport requires `--dry-run` and returns the same Invoice's public
+`paymentRequest: { url, method: "POST", body }`. Pass that request to the official
+Passport authentication, spending-session, and x402 execution skills. The CLI
+does not pay or check Agent Wallet affordability for Passport. Never attach
+`WALLET_API_TOKEN` or instance credentials to the merchant request.
+
+If payment has an uncertain outcome, use `billing-status --invoice` with the
+original Invoice ID. Do not start another purchase or switch payment sources.
 
 ### Arc Mainnet wallets
 

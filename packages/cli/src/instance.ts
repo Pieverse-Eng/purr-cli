@@ -8,6 +8,8 @@ import {
 } from '@pieverseio/purr-core/api-client'
 
 type JsonRecord = Record<string, unknown>
+type BillingKind = 'renewal' | 'credit_topup' | 'membership_purchase'
+type PaymentSource = 'agent_wallet' | 'passport'
 
 interface PaymentMethod {
   tokenId: string
@@ -43,13 +45,32 @@ interface BillingQuote extends PaymentMethod {
   affordability?: QuoteAffordability
 }
 
-interface BillingQuoteResponse {
+interface BillingQuoteBase {
   invoiceId: string
-  kind: 'renewal' | 'credit_topup'
+  kind: BillingKind
   state?: string
   requiresPayment?: boolean
+  benefits?: JsonRecord
+}
+
+interface PassportPaymentRequest {
+  url: string
+  method: 'POST'
+  body: JsonRecord
+}
+
+interface WalletBillingQuoteResponse extends BillingQuoteBase {
+  paymentSource?: 'agent_wallet'
   quotes: BillingQuote[]
 }
+
+interface PassportBillingQuoteResponse extends BillingQuoteBase {
+  paymentSource: 'passport'
+  quotes: []
+  paymentRequest?: PassportPaymentRequest
+}
+
+type BillingQuoteResponse = WalletBillingQuoteResponse | PassportBillingQuoteResponse
 
 class PlatformResponseError extends Error {
   readonly body: unknown
@@ -75,7 +96,7 @@ export class InstanceCliError extends Error {
   }
 }
 
-export const INSTANCE_GROUP_USAGE = `Usage: purr instance <status|credits|payment-methods|billing-status|renew|topup> [options]
+export const INSTANCE_GROUP_USAGE = `Usage: purr instance <status|credits|payment-methods|billing-status|renew|topup|pawpilot-pro> [options]
 
 Commands:
   status   Show instance billing status, renewal quote, and trusted wallet balances
@@ -84,6 +105,7 @@ Commands:
   billing-status   Check one existing billing invoice without paying again
   renew    Renew this instance using a canonical token or automatic selection
   topup    Purchase Purrfect Claw credits
+  pawpilot-pro  Purchase PawPilot Pro for this hosted instance
 
 Examples:
   purr instance status
@@ -92,7 +114,9 @@ Examples:
   purr instance billing-status --invoice <invoice-id>
   purr instance renew --token usdt-bsc
   purr instance renew --token usdc-xlayer --yes
-  purr instance topup --credits 100 --token usdc-monad --yes`
+  purr instance topup --credits 100 --token usdc-monad --yes
+  purr instance pawpilot-pro --payment-source agent-wallet --idempotency-key <purchase-id> --yes
+  purr instance pawpilot-pro --payment-source passport --idempotency-key <purchase-id> --dry-run`
 
 const INSTANCE_STATUS_USAGE = `Usage: purr instance status [--json]
 
@@ -126,6 +150,21 @@ Options:
   --token <id-or-alias>  Canonical token id or case-insensitive alias
   --dry-run              Create a quote and print the authoritative preview without paying
   --yes                  Skip interactive payment confirmation`
+
+const INSTANCE_PAWPILOT_PRO_USAGE = `Usage: purr instance pawpilot-pro --payment-source <agent-wallet|passport> --idempotency-key <purchase-id> [--token <token-id-or-alias>] [--dry-run] [--yes]
+
+Purchase 30 days of PawPilot Pro membership for this hosted Claw without extending hosting.
+Starter/Basic receive 150 bonus credits; other plans receive membership only.
+
+Options:
+  --payment-source       Required for each purchase: agent-wallet or passport
+  --idempotency-key       Reuse the same purchase ID for its preview and payment
+  --token <id-or-alias>   Agent Wallet only; omit for automatic token selection
+  --dry-run              Preview; required for Passport to return its public paymentRequest
+  --yes                  Agent Wallet only; skip interactive payment confirmation
+
+Passport payment is performed by official kpass skills using paymentRequest, never this CLI.
+For an uncertain payment, check billing-status --invoice <invoice-id>; do not buy again.`
 
 const CHAIN_NAMES: Record<number, string> = {
   1: 'Ethereum',
@@ -318,7 +357,8 @@ function parseBillingQuote(value: unknown): BillingQuote {
 }
 
 async function fetchUnifiedBillingQuote(input: {
-  kind: 'renewal' | 'credit_topup'
+  kind: BillingKind
+  paymentSource?: PaymentSource
   credits?: number
   tokenId?: string
   idempotencyKey: string
@@ -327,6 +367,7 @@ async function fetchUnifiedBillingQuote(input: {
   const body: JsonRecord = { kind: input.kind }
   if (input.credits !== undefined) body.credits = input.credits
   if (input.tokenId !== undefined) body.tokenId = input.tokenId
+  if (input.paymentSource !== undefined) body.paymentSource = input.paymentSource
 
   try {
     const response = unwrapPlatformResponse<JsonRecord>(
@@ -338,12 +379,31 @@ async function fetchUnifiedBillingQuote(input: {
     if (!invoiceId || !Array.isArray(response.quotes)) {
       throw new Error('Platform returned an invalid billing quote response')
     }
-    return {
+    const common: BillingQuoteBase = {
       invoiceId,
       kind: input.kind,
       state: asString(response.state),
       requiresPayment:
         typeof response.requiresPayment === 'boolean' ? response.requiresPayment : undefined,
+      benefits: isRecord(response.benefits) ? response.benefits : undefined,
+    }
+    if (input.paymentSource === 'passport') {
+      if (response.paymentSource !== 'passport' || response.quotes.length > 0) {
+        throw new Error('Platform returned an invalid Passport payment request')
+      }
+      return {
+        ...common,
+        paymentSource: 'passport',
+        quotes: [],
+        paymentRequest:
+          common.requiresPayment === false
+            ? undefined
+            : parsePassportPaymentRequest(response.paymentRequest),
+      }
+    }
+    return {
+      ...common,
+      paymentSource: input.paymentSource,
       quotes: response.quotes.map(parseBillingQuote),
     }
   } catch (error) {
@@ -351,8 +411,30 @@ async function fetchUnifiedBillingQuote(input: {
   }
 }
 
+function parsePassportPaymentRequest(value: unknown): PassportPaymentRequest {
+  const error = () => new Error('Platform returned an invalid Passport payment request')
+  if (
+    !isRecord(value) ||
+    typeof value.url !== 'string' ||
+    value.method !== 'POST' ||
+    !isRecord(value.body)
+  ) {
+    throw error()
+  }
+  let url: URL
+  try {
+    url = new URL(value.url)
+  } catch {
+    throw error()
+  }
+  if (url.protocol !== 'https:' || url.username || url.password) throw error()
+  // Copy only the public merchant contract. Instance credentials stay in apiPost.
+  return { url: value.url, method: 'POST', body: value.body }
+}
+
 async function createCanonicalQuote(input: {
-  kind: 'renewal' | 'credit_topup'
+  kind: BillingKind
+  paymentSource?: 'agent_wallet'
   credits?: number
   token?: string
   pinnedTokenId?: string
@@ -367,6 +449,7 @@ async function createCanonicalQuote(input: {
     kind: input.kind,
     credits: input.credits,
     tokenId: selectedTokenId,
+    paymentSource: input.paymentSource,
     idempotencyKey: input.idempotencyKey,
   })
   if (response.requiresPayment === false) {
@@ -470,11 +553,17 @@ function printPaymentMethods(methods: PaymentMethod[]): void {
 }
 
 function printCanonicalQuotePreview(
-  kind: 'renewal' | 'credit_topup',
+  kind: BillingKind,
   quoteResponse: BillingQuoteResponse,
   quote: BillingQuote,
 ): void {
-  console.error(`Instance ${kind === 'renewal' ? 'renewal' : 'credit top-up'} quote`)
+  const label =
+    kind === 'membership_purchase'
+      ? 'PawPilot Pro'
+      : kind === 'renewal'
+        ? 'renewal'
+        : 'credit top-up'
+  console.error(`Instance ${label} quote`)
   console.error(`  Invoice: ${quoteResponse.invoiceId}`)
   console.error(`  Token: ${quote.symbol} (${quote.tokenId})`)
   console.error(`  Chain: ${quote.chainId} (${quote.chainName})`)
@@ -489,6 +578,7 @@ function printCanonicalQuotePreview(
   }
   if (quote.affordability?.reason) console.error(`  Availability: ${quote.affordability.reason}`)
   console.error(`  Quote expires: ${quote.expiresAt}`)
+  if (quoteResponse.benefits) console.error(`  Benefits: ${JSON.stringify(quoteResponse.benefits)}`)
 }
 
 function printBillingOutcome(status: JsonRecord): void {
@@ -497,7 +587,7 @@ function printBillingOutcome(status: JsonRecord): void {
   if (state === 'fulfilled') {
     console.error('Billing fulfilled.')
   } else if (state === 'confirming') {
-    console.error('Payment is confirming; the renewal or credit delivery is not complete yet.')
+    console.error('Payment is confirming; billing fulfillment is not complete yet.')
   } else if (state === 'quoted') {
     console.error('Payment has not been confirmed yet.')
   } else if (state === 'failed') {
@@ -530,15 +620,18 @@ async function enrichPaymentOutcome(invoiceId: string, payment: JsonRecord): Pro
 }
 
 async function handleCanonicalBillingCommand(input: {
-  kind: 'renewal' | 'credit_topup'
+  kind: BillingKind
+  paymentSource?: 'agent_wallet'
+  idempotencyKey?: string
   credits?: number
   token?: string
   dryRun: boolean
   yes: boolean
 }): Promise<void> {
-  const billingIdempotencyKey = randomUUID()
+  const billingIdempotencyKey = input.idempotencyKey ?? randomUUID()
   const { response, quote } = await createCanonicalQuote({
     kind: input.kind,
+    paymentSource: input.paymentSource,
     credits: input.credits,
     token: input.token,
     idempotencyKey: billingIdempotencyKey,
@@ -558,6 +651,8 @@ async function handleCanonicalBillingCommand(input: {
           dryRun: true,
           invoiceId: response.invoiceId,
           kind: input.kind,
+          paymentSource: input.paymentSource,
+          benefits: response.benefits,
           quote,
         },
         null,
@@ -579,6 +674,12 @@ async function handleCanonicalBillingCommand(input: {
     try {
       payment = await payBillingQuote(response.invoiceId, quote.quoteId)
     } catch (error) {
+      if (input.kind === 'membership_purchase') {
+        console.error(
+          `Check the original Invoice with: purr instance billing-status --invoice ${response.invoiceId}`,
+        )
+        throw error
+      }
       if (!isStaleQuoteError(error)) throw error
       console.error('Billing quote was stale or expired; retrying once with a fresh quote.')
       const retry = await createCanonicalQuote({
@@ -607,6 +708,23 @@ async function handleCanonicalBillingCommand(input: {
   } finally {
     confirmation?.close()
   }
+}
+
+async function handlePassportMembershipPreview(idempotencyKey: string): Promise<void> {
+  const response = await fetchUnifiedBillingQuote({
+    kind: 'membership_purchase',
+    paymentSource: 'passport',
+    idempotencyKey,
+  })
+  if (response.requiresPayment === false) {
+    printBillingOutcome(response as unknown as JsonRecord)
+    console.log(JSON.stringify(response, null, 2))
+    return
+  }
+  console.error(
+    'PawPilot Pro Passport preview; use official kpass skills to approve and pay this Invoice.',
+  )
+  console.log(JSON.stringify({ dryRun: true, ...response }, null, 2))
 }
 
 function formatChainId(chainId: number): string {
@@ -771,6 +889,47 @@ export async function handleInstanceCommand(
     return
   }
 
+  if (command === 'pawpilot-pro') {
+    if (args.help === 'true' || args.h === 'true') {
+      console.log(INSTANCE_PAWPILOT_PRO_USAGE)
+      return
+    }
+    const source = args['payment-source']
+    if (source !== 'agent-wallet' && source !== 'passport') {
+      throw new Error('pawpilot-pro requires --payment-source agent-wallet|passport')
+    }
+    const idempotencyKey = args['idempotency-key']?.trim()
+    if (!idempotencyKey) throw new Error('pawpilot-pro requires --idempotency-key <purchase-id>')
+    const dryRun = parseBooleanFlag(args, 'dry-run')
+    const yes = parseBooleanFlag(args, 'yes')
+    if (args['chain-id'] !== undefined || args['token-address'] !== undefined) {
+      throw new Error('pawpilot-pro accepts canonical --token IDs for Agent Wallet only')
+    }
+    if (source === 'passport') {
+      if (args.token !== undefined) {
+        throw new Error('Passport does not accept --token; use its public paymentRequest')
+      }
+      if (yes) {
+        throw new Error(
+          'Passport does not accept --yes; approve payment through official kpass skills',
+        )
+      }
+      if (!dryRun)
+        throw new Error('Passport requires --dry-run to return its public paymentRequest')
+      await handlePassportMembershipPreview(idempotencyKey)
+    } else {
+      await handleCanonicalBillingCommand({
+        kind: 'membership_purchase',
+        paymentSource: 'agent_wallet',
+        idempotencyKey,
+        token: args.token,
+        dryRun,
+        yes,
+      })
+    }
+    return
+  }
+
   if (command === 'topup') {
     if (args.help === 'true' || args.h === 'true') {
       console.log(INSTANCE_TOPUP_USAGE)
@@ -790,6 +949,6 @@ export async function handleInstanceCommand(
   }
 
   throw new Error(
-    `Unknown instance command: ${command}. Use: status, credits, payment-methods, billing-status, renew, topup`,
+    `Unknown instance command: ${command}. Use: status, credits, payment-methods, billing-status, renew, topup, pawpilot-pro`,
   )
 }
